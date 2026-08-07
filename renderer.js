@@ -156,6 +156,22 @@ function moveSymbol(from, to) {
   renderList();
 }
 
+// --- 코스피/코스닥 지수 -----------------------------------------------------------
+// 개별 종목이 빠질 때 시장 전체 흐름인지 바로 알 수 있게 한 줄로 보여준다.
+async function loadIndices() {
+  const box = document.getElementById('indices');
+  const r = await api.indices();
+  if (!r.ok) { box.hidden = true; return; } // 실패하면 조용히 숨긴다(핵심 기능이 아님)
+
+  box.hidden = false;
+  box.innerHTML = r.items.map((i) => {
+    const color = i.pct === 0 ? '#9aa4b5' : (i.pct > 0 ? UP : DOWN);
+    return `<span class="ix"><span class="ixn">${esc(i.name)}</span>`
+      + `<span class="ixv">${i.value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+      + `<span class="ixp" style="color:${color}">${fmtPct(i.pct)}</span></span>`;
+  }).join('');
+}
+
 // --- 상세 + 차트 ---------------------------------------------------------------
 function renderDetail() {
   const item = state.watchlist.find((i) => i.symbol === state.selected);
@@ -349,6 +365,8 @@ async function refreshAll() {
   if (busy) return;
   busy = true;
   try {
+    await loadIndices();
+
     // 실시간 현재가는 한 번에 (요청 1건), 일봉은 rate limit 고려해 종목별 순차
     const liveMap = await fetchLive(state.watchlist.map((i) => i.symbol));
     for (const item of state.watchlist) {
@@ -430,8 +448,10 @@ let compact = false;
 // (배율·폰트에 따라 행 높이가 달라지므로 픽셀 상수를 쓰지 않는다)
 function setCompact(on) {
   const bar = document.querySelector('.bar').offsetHeight;
+  const idx = document.getElementById('indices');
+  const idxH = idx.hidden ? 0 : idx.offsetHeight; // 지수 줄은 접어도 계속 보여준다
   const row = document.querySelector('#list .row');
-  const height = bar + (row ? row.offsetHeight * 3 : 93) + 2; // +2 = 위아래 테두리
+  const height = bar + idxH + (row ? row.offsetHeight * 3 : 93) + 2; // +2 = 위아래 테두리
 
   compact = on;
   document.querySelector('.widget').classList.toggle('compact', on);

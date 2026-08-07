@@ -160,6 +160,29 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
   }
 });
 
+// 코스피/코스닥 지수 (실시간). 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
+ipcMain.handle('quote:indices', async () => {
+  const url = 'https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ';
+  const num = (v) => Number(String(v ?? '').replace(/,/g, ''));
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+    const json = await res.json();
+    const items = (json.datas || []).map((d) => ({
+      name: d.stockName,
+      value: num(d.closePriceRaw ?? d.closePrice),
+      pct: num(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
+    })).filter((i) => Number.isFinite(i.value) && Number.isFinite(i.pct));
+
+    return items.length ? { ok: true, items } : { ok: false, error: '빈 응답' };
+  } catch (err) {
+    return { ok: false, error: err.message || '지수 조회 실패' };
+  }
+});
+
 // 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버 자동완성을 쓴다.
 // (주식·ETF 모두 한글명으로 잡히고 코스피/코스닥까지 알려준다)
 ipcMain.handle('yf:search', async (_e, query) => {

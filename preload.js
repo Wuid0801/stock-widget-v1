@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   fetchChart: (params) => ipcRenderer.invoke('yf:chart', params),
   search: (query) => ipcRenderer.invoke('yf:search', query),
   realtimeQuotes: (symbols) => ipcRenderer.invoke('quote:realtime', symbols),
+  indices: () => ipcRenderer.invoke('quote:indices'),
   getState: () => ipcRenderer.invoke('state:get'),
   setState: (patch) => ipcRenderer.invoke('state:set', patch),
   dockWindow: (on, height) => ipcRenderer.send('win:dock', on, height),

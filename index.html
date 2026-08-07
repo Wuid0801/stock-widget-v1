@@ -51,6 +51,17 @@
   .widget.compact .detail { display: none; }
   .widget.compact #list { min-height: 0; }
 
+  /* --- 코스피/코스닥 지수 --- */
+  .indices {
+    flex: 0 0 auto; display: flex; gap: 12px; padding: 5px 11px;
+    font-size: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .indices[hidden] { display: none; }
+  .indices .ix { display: flex; gap: 4px; align-items: baseline; }
+  .indices .ixn { color: #6f7a8c; }
+  .indices .ixv { color: #cfd6e2; font-variant-numeric: tabular-nums; }
+  .indices .ixp { font-variant-numeric: tabular-nums; }
+
   /* --- 본문 (리스트 + 상세, 검색 오버레이의 기준) --- */
   .body { flex: 1 1 auto; display: flex; flex-direction: column; position: relative; min-height: 0; }
 
@@ -151,6 +162,8 @@
       <button id="min" title="최소화">─</button>
       <button id="close" title="닫기">✕</button>
     </div>
+
+    <div class="indices" id="indices" hidden></div>
 
     <div class="body">
     <div id="list"></div>
