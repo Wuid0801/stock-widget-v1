@@ -32,7 +32,9 @@ const btns = await page.evaluate(() => [...document.querySelectorAll('.bar butto
   region: getComputedStyle(b).webkitAppRegion })));
 console.log('버튼:', JSON.stringify(btns));
 check('최소화 버튼 존재', btns.some(b => b.id === 'min'));
-check('버튼이 no-drag (드래그영역 아님)', btns.every(b => b.region === 'no-drag'), JSON.stringify(btns.map(b=>b.region)));
+// 버튼은 드래그 영역 밖에 있어야 한다. 예전에는 드래그 영역 안에 no-drag 로 박아뒀는데,
+// 그 중첩이 투명 창 깜빡임의 원인이라 형제로 분리했다(이제 'none').
+check('버튼이 드래그 영역이 아님', btns.every((b) => b.region !== 'drag'), JSON.stringify(btns.map((b) => b.region)));
 
 // 최소화 클릭
 await page.evaluate(() => document.getElementById('min').click());
