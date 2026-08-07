@@ -181,6 +181,19 @@ function renderDetail() {
   badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : 'rgba(255,255,255,.07)';
 }
 
+// 선택 구간의 수익률 배지. 1D는 위의 일간 등락과 같은 값이라 표시하지 않는다.
+function renderPeriod(first, last) {
+  const el = document.getElementById('period');
+  if (state.timeframe === '1D' || !first || last == null) { el.hidden = true; return; }
+
+  const pct = ((last - first) / first) * 100;
+  const color = pct === 0 ? '#9aa4b5' : (pct > 0 ? UP : DOWN);
+  el.hidden = false;
+  el.textContent = `${state.timeframe} ${fmtPct(pct)}`;
+  el.style.color = color;
+  el.style.background = hexA(color, 0.16);
+}
+
 const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
@@ -298,7 +311,7 @@ async function fetchLive(symbols) {
 
 async function loadChart() {
   const item = state.watchlist.find((i) => i.symbol === state.selected);
-  if (!item) return;
+  if (!item) { document.getElementById('period').hidden = true; return; }
 
   // 종목/타임프레임을 빠르게 바꾸면 요청이 겹친다. 응답이 뒤늦게 도착한
   // 이전 요청은 버려야 헤더와 차트가 서로 다른 종목을 가리키지 않는다.
@@ -309,6 +322,7 @@ async function loadChart() {
   if (!r.ok) {
     // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
     if (chart) { chart.destroy(); chart = null; }
+    document.getElementById('period').hidden = true;
     err(`${item.name} 차트: ${r.error}`);
     return;
   }
@@ -324,6 +338,9 @@ async function loadChart() {
     closes.push(q.price);
     times.push(Date.now());
   }
+
+  // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
+  renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1]);
 
   drawChart(closes, times, !q || q.change >= 0);
 }
