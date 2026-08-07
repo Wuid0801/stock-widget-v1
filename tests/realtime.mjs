@@ -16,7 +16,9 @@ const num = (s) => Number(String(s).replace(/[^\d.-]/g,''));
 const ui = (page) => page.evaluate(() => {
   const c = Chart.getChart(document.getElementById('chart'));
   return {
+    // 장중이면 '실시간', 장 마감이면 '장마감' — 둘 다 네이버 실시간 소스를 쓰고 있다는 뜻
     badge: document.querySelector('#updated .live') ? '실시간'
+         : document.querySelector('#updated .closed') ? '장마감'
          : document.querySelector('#updated .delay') ? '20분지연' : '(없음)',
     updated: document.getElementById('updated').textContent,
     name: document.getElementById('dname').textContent,
@@ -39,7 +41,8 @@ await ready(page); await page.waitForTimeout(1200);
 const a = await ui(page);
 console.log('헤더:', a.updated, '| 상세:', a.name, a.price);
 
-check('실시간 배지 표시', a.badge === '실시간', a.badge);
+// 장중이면 '실시간', 장 마감이면 '장마감'. 어느 쪽이든 Yahoo 폴백이 아니어야 한다.
+check('네이버 실시간 소스 사용 중 (지연 아님)', a.badge === '실시간' || a.badge === '장마감', a.badge);
 
 // 같은 시각의 Naver/Yahoo 값을 직접 받아 대조
 const nv = await fetch('https://polling.finance.naver.com/api/realtime/domestic/stock/005930',{headers:H}).then(r=>r.json());

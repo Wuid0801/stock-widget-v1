@@ -146,7 +146,10 @@ ipcMain.on('win:minimize', () => {
 // 여러 종목을 한 번에 조회할 수 있어 요청 1건으로 끝난다.
 // 실패하면 { ok:false } 를 주고, 렌더러는 Yahoo 값(지연)을 그대로 쓴다.
 ipcMain.handle('quote:realtime', async (_e, symbols) => {
-  const codes = (symbols || []).map((s) => String(s).split('.')[0]).filter(Boolean);
+  // 네이버 실시간은 국내 전용. 해외 종목은 걸러내고 Yahoo 값을 그대로 쓰게 둔다.
+  const codes = (symbols || [])
+    .filter((s) => /\.(KS|KQ)$/.test(String(s)))
+    .map((s) => String(s).split('.')[0]);
   if (!codes.length) return { ok: true, quotes: {} };
 
   const url = `https://polling.finance.naver.com/api/realtime/domestic/stock/${codes.join(',')}`;
@@ -208,10 +211,12 @@ ipcMain.handle('yf:search', async (_e, query) => {
 
     const json = await res.json();
     const items = (json.result?.items || [])
-      .filter((i) => i.nationCode === 'KOR' && i.code)
+      .filter((i) => i.code && (i.nationCode === 'KOR' || i.nationCode === 'USA'))
       .map((i) => ({
-        // 코스닥이면 .KQ, 그 외(코스피)는 .KS — Yahoo 심볼 규칙
-        symbol: i.code + (i.typeCode === 'KOSDAQ' ? '.KQ' : '.KS'),
+        // 국내는 코스닥 .KQ / 코스피 .KS, 미국은 티커 그대로 (Yahoo 심볼 규칙)
+        symbol: i.nationCode === 'KOR'
+          ? i.code + (i.typeCode === 'KOSDAQ' ? '.KQ' : '.KS')
+          : i.code,
         name: i.name,
         market: i.typeName || i.typeCode,
       }));
@@ -251,6 +256,7 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       symbol,
       price: result.meta?.regularMarketPrice ?? closes[closes.length - 1],
       // 52주 고저는 meta에 이미 들어있어 추가 요청이 필요 없다
+      currency: result.meta?.currency ?? 'KRW',
       week52High: result.meta?.fiftyTwoWeekHigh ?? null,
       week52Low: result.meta?.fiftyTwoWeekLow ?? null,
       closes,

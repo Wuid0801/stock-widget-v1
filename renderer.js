@@ -64,6 +64,15 @@ const fmt = (v) => v == null ? '—'
   : v.toLocaleString('ko-KR', { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
 
 const signed = (v) => (v > 0 ? '+' : '') + fmt(v);
+
+// 해외 종목은 통화가 다르다. 원화는 정수, 그 외(USD 등)는 소수 2자리로 보여준다.
+const curOf = (symbol) => (quotes[symbol] && quotes[symbol].currency) || 'KRW';
+const money = (v, cur) => {
+  if (v == null) return '—';
+  if (!cur || cur === 'KRW') return fmt(v);
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const signedMoney = (v, cur) => (v > 0 ? '+' : '') + money(v, cur);
 // 등락률은 자릿수가 흔들리지 않게 항상 소수 2자리
 const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
 
@@ -106,7 +115,7 @@ function renderList() {
     row.innerHTML = `
       <span class="dot" style="background:${lv.color}"></span>
       <span class="name">${esc(item.name)}</span>
-      <span class="px" style="color:${color}">${q && q.price != null ? fmt(q.price) : '—'}</span>
+      <span class="px" style="color:${color}">${q && q.price != null ? money(q.price, curOf(item.symbol)) : '—'}</span>
       <span class="chg" style="color:${color}">${
         q && q.pct != null ? fmtPct(q.pct) : (q && q.error ? '오류' : '')
       }</span>
@@ -177,8 +186,11 @@ function renderDetail() {
   const item = state.watchlist.find((i) => i.symbol === state.selected);
   const q = item && quotes[item.symbol];
 
-  document.getElementById('dname').textContent = item ? item.name : '—';
-  document.getElementById('dprice').textContent = q && q.price != null ? fmt(q.price) : '—';
+  const cur = item ? curOf(item.symbol) : 'KRW';
+  document.getElementById('dprice').textContent = money(q && q.price, cur);
+  // 원화가 아니면 어느 통화인지 이름 옆에 표시
+  document.getElementById('dname').textContent = item
+    ? (cur === 'KRW' ? item.name : `${item.name} (${cur})`) : '—';
 
   const chgEl = document.getElementById('dchg');
   const badge = document.getElementById('badge');
@@ -186,13 +198,13 @@ function renderDetail() {
   if (q && q.change != null) {
     const color = q.change === 0 ? '#9aa4b5' : (q.change > 0 ? UP : DOWN);
     chgEl.style.color = color;
-    chgEl.innerHTML = `${signed(q.change)}<br>${fmtPct(q.pct)}`;
+    chgEl.innerHTML = `${signedMoney(q.change, cur)}<br>${fmtPct(q.pct)}`;
   } else {
     chgEl.textContent = '';
   }
 
   renderHolding(item && item.symbol, q && q.price);
-  renderW52(q && q.week52Low, q && q.week52High, q && q.price);
+  renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur);
 
   const lv = levelOf(q && q.rsi);
   badge.textContent = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
@@ -213,24 +225,25 @@ function renderHolding(symbol, price) {
   const color = pl === 0 ? '#9aa4b5' : (pl > 0 ? UP : DOWN);
 
   el.hidden = false;
+  const cur = curOf(symbol);
   el.innerHTML = `<span class="hqty">${fmt(h.qty)}주</span>`
-    + `<span>평단 ${fmt(h.avg)}</span>`
-    + `<span>평가 ${fmt(value)}</span>`
-    + `<span class="hpl" style="color:${color}">${signed(pl)} (${fmtPct(pct)})</span>`;
+    + `<span>평단 ${money(h.avg, cur)}</span>`
+    + `<span>평가 ${money(value, cur)}</span>`
+    + `<span class="hpl" style="color:${color}">${signedMoney(pl, cur)} (${fmtPct(pct)})</span>`;
 }
 
 // 52주 저점~고점 사이에서 현재가가 어디쯤인지. Yahoo meta 값이라 추가 요청이 없다.
-function renderW52(low, high, price) {
+function renderW52(low, high, price, cur) {
   const box = document.getElementById('w52');
   if (!low || !high || high <= low || price == null) { box.hidden = true; return; }
 
   const pos = Math.min(100, Math.max(0, ((price - low) / (high - low)) * 100));
   box.hidden = false;
-  document.getElementById('w52lo').textContent = fmt(low);
-  document.getElementById('w52hi').textContent = fmt(high);
+  document.getElementById('w52lo').textContent = money(low, cur);
+  document.getElementById('w52hi').textContent = money(high, cur);
   document.getElementById('w52mark').style.left = `${pos}%`;
-  box.title = `52주 최저 ${fmt(low)} · 최고 ${fmt(high)}\n`
-    + `현재 ${fmt(price)} — 저점 대비 ${fmtPct(((price - low) / low) * 100)}, `
+  box.title = `52주 최저 ${money(low, cur)} · 최고 ${money(high, cur)}\n`
+    + `현재 ${money(price, cur)} — 저점 대비 ${fmtPct(((price - low) / low) * 100)}, `
     + `고점 대비 ${fmtPct(((price - high) / high) * 100)}`;
 }
 
@@ -252,7 +265,7 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
-function drawChart(closes, times, up, mas = []) {
+function drawChart(closes, times, up, mas = [], cur = 'KRW') {
   const color = up ? UP : DOWN;
   if (chart) chart.destroy();
 
@@ -315,7 +328,9 @@ function drawChart(closes, times, up, mas = []) {
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
           callbacks: {
-            label: (c) => (c.dataset.label ? `${c.dataset.label} ${fmt(c.parsed.y)}` : fmt(c.parsed.y)),
+            label: (c) => (c.dataset.label
+              ? `${c.dataset.label} ${money(c.parsed.y, cur)}`
+              : money(c.parsed.y, cur)),
           },
         },
       },
@@ -327,7 +342,7 @@ function drawChart(closes, times, up, mas = []) {
         y: {
           position: 'right',
           grid: { color: 'rgba(255,255,255,.06)' },
-          ticks: { color: '#6f7a8c', font: { size: 9 }, maxTicksLimit: 4, callback: fmt },
+          ticks: { color: '#6f7a8c', font: { size: 9 }, maxTicksLimit: 4, callback: (v) => money(v, cur) },
         },
       },
     },
@@ -373,6 +388,7 @@ async function loadQuote(item, live) {
     rsi: calcRSI(closes),
     live: !!live,
     open: !!(live && live.open),
+    currency: r.currency,
     week52High: r.week52High,
     week52Low: r.week52Low,
     // 이동평균 계산용. 1M 차트는 23봉뿐이라 자체 데이터로는 20일선이 끝부분만 그려진다.
@@ -461,7 +477,7 @@ async function loadChart() {
     if (ma20) mas.push({ label: '20일', data: ma20, color: '#6f8fd6' });
   }
 
-  drawChart(closes, times, !q || q.change >= 0, mas);
+  drawChart(closes, times, !q || q.change >= 0, mas, curOf(item.symbol));
 }
 
 async function refreshAll() {

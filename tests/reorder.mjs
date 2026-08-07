@@ -19,10 +19,23 @@ const disk  = () => JSON.parse(fs.readFileSync(CFG,'utf8')).watchlist.map(w=>w.n
 const selected = () => page.evaluate(()=>document.getElementById('dname').textContent);
 
 // 실제 마우스 드래그 (Playwright 의 HTML5 DnD)
+// HTML5 드래그는 합성 마우스 이벤트라 부하가 걸리면 간헐적으로 시작되지 않는다.
+// 고정 대기 대신 순서가 실제로 바뀔 때까지 기다리고, 안 바뀌면 한 번 더 시도한다.
 async function drag(fromIdx, toIdx) {
   const rows = page.locator('#list .row');
-  await rows.nth(fromIdx).dragTo(rows.nth(toIdx));
-  await page.waitForTimeout(700);
+  const before = JSON.stringify(await names());
+
+  const attempt = async () => {
+    await rows.nth(fromIdx).dragTo(rows.nth(toIdx));
+    if (fromIdx === toIdx) { await page.waitForTimeout(400); return true; }
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(150);
+      if (JSON.stringify(await names()) !== before) return true;
+    }
+    return false;
+  };
+
+  if (!await attempt()) await attempt();
 }
 
 console.log('초기 순서:', (await names()).join(' > '));
