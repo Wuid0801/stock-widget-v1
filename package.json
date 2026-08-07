@@ -52,6 +52,7 @@
     "electronLanguages": [
       "ko",
       "en-US"
-    ]
+    ],
+    "artifactName": "KRStockWidget-Setup.exe"
   }
 }

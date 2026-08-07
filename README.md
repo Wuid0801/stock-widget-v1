@@ -23,7 +23,17 @@
 
 <img src="docs/search.png" width="240" alt="종목 검색"> <img src="docs/alerts.png" width="240" alt="목표가 알림"> <img src="docs/docked.png" width="240" alt="우하단 접기">
 
-## 설치 및 실행
+## 다운로드
+
+[**⬇ KRStockWidget-Setup.exe 내려받기**](https://github.com/Wuid0801/stock-widget-v1/releases/latest/download/KRStockWidget-Setup.exe) (약 67MB, Windows)
+
+> **처음 실행할 때 "Windows의 PC 보호" 창이 뜹니다.**
+> 코드 서명 인증서가 없는 개인 빌드라서 SmartScreen 이 경고합니다.
+> **추가 정보 → 실행**을 누르면 됩니다. 찜찜하면 아래 "직접 빌드하기"로 소스에서 만들어 쓰세요.
+
+버전은 [릴리즈 페이지](https://github.com/Wuid0801/stock-widget-v1/releases/latest)와 exe 속성(자세히 → 파일 버전)에서 확인할 수 있습니다.
+
+## 직접 빌드하기
 
 Node.js 18 이상이 필요합니다 (메인 프로세스에서 전역 `fetch`를 씁니다).
 

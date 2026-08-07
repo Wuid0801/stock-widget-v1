@@ -73,6 +73,12 @@ function createWindow() {
 
   // 전체화면 앱 위에서도 유지되도록 screen-saver 레벨
   win.setAlwaysOnTop(true, 'screen-saver');
+
+  // 이 앱은 로컬 페이지 하나만 띄운다. 어떤 경로로든 외부 페이지로 이동하거나
+  // 새 창이 열리는 일이 없도록 막는다.
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+
   win.loadFile('index.html');
 
   // 축소 모드의 임시 크기가 저장되면 재실행 시 접힌 채로 뜨므로, 평소 크기만 저장한다.
@@ -153,8 +159,9 @@ ipcMain.on('win:minimize', () => {
 // 실패하면 { ok:false } 를 주고, 렌더러는 Yahoo 값(지연)을 그대로 쓴다.
 ipcMain.handle('quote:realtime', async (_e, symbols) => {
   // 네이버 실시간은 국내 전용. 해외 종목은 걸러내고 Yahoo 값을 그대로 쓰게 둔다.
+  // 종목코드 형태를 확인해 URL 경로에 이상한 값이 끼어들지 않게 한다.
   const codes = (symbols || [])
-    .filter((s) => /\.(KS|KQ)$/.test(String(s)))
+    .filter((s) => /^[A-Za-z0-9]{1,10}\.(KS|KQ)$/.test(String(s)))
     .map((s) => String(s).split('.')[0]);
   if (!codes.length) return { ok: true, quotes: {} };
 
@@ -207,8 +214,10 @@ ipcMain.handle('quote:indices', async () => {
 // 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버 자동완성을 쓴다.
 // (주식·ETF 모두 한글명으로 잡히고 코스피/코스닥까지 알려준다)
 ipcMain.handle('yf:search', async (_e, query) => {
+  const q = String(query ?? '').slice(0, 50); // 길이 상한
+  if (!q) return { ok: true, items: [] };
   const url = 'https://m.stock.naver.com/front-api/search/autoComplete'
-    + `?query=${encodeURIComponent(query)}&target=stock`;
+    + `?query=${encodeURIComponent(q)}&target=stock`;
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
@@ -234,7 +243,16 @@ ipcMain.handle('yf:search', async (_e, query) => {
 
 // 성공: { ok:true, symbol, price, closes[], times[] }
 // 실패: { ok:false, error }  (렌더러에서 그대로 표시)
+// 렌더러가 넘기는 값은 신뢰하지 않고 허용 목록으로 검사한다.
+// (호스트는 고정이지만, 쿼리에 임의 문자열이 그대로 들어가지 않도록)
+const RANGES = new Set(['1d', '5d', '1mo', '1y']);
+const INTERVALS = new Set(['5m', '30m', '1d']);
+const SYMBOL_RE = /^[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
+
 ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
+  if (!SYMBOL_RE.test(String(symbol ?? '')) || !RANGES.has(range) || !INTERVALS.has(interval)) {
+    return { ok: false, error: '잘못된 요청' };
+  }
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
     + `?range=${range}&interval=${interval}`;
   try {
