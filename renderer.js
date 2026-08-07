@@ -19,7 +19,12 @@ const quotes = {}; // symbol -> { price, prevClose, rsi } | { error }
 let chart = null;
 let busy = false;
 let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해도 마지막 것만 반영
-let isLive = false; // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
+let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
+let marketOpen = true;   // 장중 여부. 장 마감 후에는 폴링 간격을 늘린다
+let pollTimer = null;
+
+const POLL_OPEN = 30000;   // 장중 30초
+const POLL_CLOSED = 300000; // 장 마감 후 5분 (개장 감지용 최소 확인)
 
 // --- RSI(14), Wilder smoothing -----------------------------------------------
 function calcRSI(closes, period = 14) {
@@ -247,6 +252,11 @@ async function loadQuote(item, live) {
 async function fetchLive(symbols) {
   const r = await api.realtimeQuotes(symbols);
   isLive = r.ok;
+  if (r.ok) {
+    // 실시간 응답에 장 상태가 들어있다. 못 받았으면(폴백) 장중으로 보고 평소 간격을 유지한다.
+    const list = Object.values(r.quotes);
+    if (list.length) marketOpen = list.some((q) => q.open);
+  }
   return r.ok ? r.quotes : {};
 }
 
@@ -300,7 +310,8 @@ async function refreshAll() {
     const t = new Date();
     const p = (n) => String(n).padStart(2, '0');
     document.getElementById('updated').innerHTML =
-      `<span class="${isLive ? 'live' : 'delay'}">${isLive ? '실시간' : '20분지연'}</span> `
+      `<span class="${!isLive ? 'delay' : marketOpen ? 'live' : 'closed'}">`
+      + `${!isLive ? '20분지연' : marketOpen ? '실시간' : '장마감'}</span> `
       + `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
   } finally {
     busy = false;
@@ -359,6 +370,24 @@ async function addSymbol(item) {
   await select(item.symbol);
 }
 
+// --- 접기/펴기 ---------------------------------------------------------------------
+let compact = false;
+
+// 관심종목 3행이 딱 들어가는 높이를 실제 DOM에서 재서 메인에 넘긴다
+// (배율·폰트에 따라 행 높이가 달라지므로 픽셀 상수를 쓰지 않는다)
+function setCompact(on) {
+  const bar = document.querySelector('.bar').offsetHeight;
+  const row = document.querySelector('#list .row');
+  const height = bar + (row ? row.offsetHeight * 3 : 93) + 2; // +2 = 위아래 테두리
+
+  compact = on;
+  document.querySelector('.widget').classList.toggle('compact', on);
+  const btn = document.getElementById('dock');
+  btn.classList.toggle('on', on);
+  btn.title = on ? '원래 크기로' : '우하단으로 접기';
+  api.dockWindow(on, height);
+}
+
 // --- 검색 -------------------------------------------------------------------------
 const searchEl = document.getElementById('search');
 const qEl = document.getElementById('q');
@@ -366,13 +395,16 @@ const resultsEl = document.getElementById('results');
 const hintEl = document.getElementById('qhint');
 let searchSeq = 0;
 let searchTimer = null;
+let expandedForSearch = false; // 접힌 상태에서 검색하려고 펼친 것인지 (닫을 때 되접기)
 
 const hint = (msg) => { hintEl.textContent = msg || ''; hintEl.hidden = !msg; };
 
 function openSearch() {
-  // 접힌 상태에서는 결과를 보여줄 공간이 없으니 먼저 편다
-  if (document.querySelector('.widget').classList.contains('compact')) {
-    document.getElementById('dock').click();
+  // 접힌 상태에서는 결과를 보여줄 공간이 없으니 먼저 편다.
+  // 검색을 닫으면 원래 접힌 상태로 돌려놓는다.
+  if (compact) {
+    setCompact(false);
+    expandedForSearch = true;
   }
   searchEl.hidden = false;
   qEl.value = '';
@@ -384,6 +416,10 @@ function openSearch() {
 function closeSearch() {
   clearTimeout(searchTimer);
   searchEl.hidden = true;
+  if (expandedForSearch) {
+    expandedForSearch = false;
+    setCompact(true); // 검색하려고 펼쳤던 것이므로 다시 접는다
+  }
 }
 
 async function runSearch() {
@@ -430,19 +466,10 @@ function renderTabs() {
 
 // --- 시작 -----------------------------------------------------------------------
 (async function init() {
-  // 접기: 관심종목 3행이 딱 들어가는 높이를 실제 DOM에서 재서 메인에 넘긴다
-  const dockBtn = document.getElementById('dock');
-  let compact = false;
-  dockBtn.onclick = () => {
-    const bar = document.querySelector('.bar').offsetHeight;
-    const row = document.querySelector('#list .row');
-    const height = bar + (row ? row.offsetHeight * 3 : 93) + 2; // +2 = 위아래 테두리
-
-    compact = !compact;
-    document.querySelector('.widget').classList.toggle('compact', compact);
-    dockBtn.classList.toggle('on', compact);
-    dockBtn.title = compact ? '원래 크기로' : '우하단으로 접기';
-    api.dockWindow(compact, height);
+  document.getElementById('dock').onclick = () => {
+    // 검색 중에 직접 접기를 누르면 검색만 닫고, 복귀 예약은 취소한다
+    if (!searchEl.hidden) { expandedForSearch = false; closeSearch(); }
+    setCompact(!compact);
   };
 
   document.getElementById('min').onclick = () => api.minimizeWindow();
@@ -469,6 +496,13 @@ function renderTabs() {
   renderList();
   renderDetail();
 
+  // 장 마감 후에는 값이 바뀌지 않으므로 폴링 간격을 늘린다 (밤새 켜둬도 요청이 거의 없음).
+  // 완전히 멈추면 개장을 감지하지 못하므로 5분마다 한 번은 확인한다.
   await refreshAll();
-  setInterval(refreshAll, 30000);
+  const tick = async () => {
+    await refreshAll();
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(tick, marketOpen ? POLL_OPEN : POLL_CLOSED);
+  };
+  pollTimer = setTimeout(tick, marketOpen ? POLL_OPEN : POLL_CLOSED);
 })();
