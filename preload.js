@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   getState: () => ipcRenderer.invoke('state:get'),
   setState: (patch) => ipcRenderer.invoke('state:set', patch),
   dockWindow: (on, height) => ipcRenderer.send('win:dock', on, height),
+  notify: (payload) => ipcRenderer.send('notify', payload),
   minimizeWindow: () => ipcRenderer.send('win:minimize'),
   closeWindow: () => ipcRenderer.send('win:close'),
 });

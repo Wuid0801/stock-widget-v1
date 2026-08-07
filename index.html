@@ -126,6 +126,27 @@
   .hit.dup:hover { background: transparent; }
   .qhint { padding: 8px 11px; font-size: 10px; color: #6f7a8c; }
 
+  /* --- 목표가 알림 --- */
+  .toggle { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+  .toggle input { accent-color: #5b8def; width: 13px; height: 13px; cursor: pointer; }
+  #alertList { flex: 1 1 auto; overflow-y: auto; }
+  #alertList::-webkit-scrollbar { width: 5px; }
+  #alertList::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 3px; }
+  .arow { display: flex; align-items: center; gap: 5px; padding: 5px 11px; }
+  .arow .aname { flex: 1 1 auto; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .arow input {
+    width: 68px; flex: 0 0 auto; user-select: text;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 5px; padding: 3px 5px; color: #e8ecf2; font-size: 10px;
+    font-family: inherit; outline: none; text-align: right;
+  }
+  .arow input:focus { border-color: #5b8def; }
+  .arow input::placeholder { color: #5d6675; }
+  .arow input.up:focus { border-color: #e24b4a; }
+  .arow input.dn:focus { border-color: #185fa5; }
+  /* 알림이 꺼져 있으면 입력은 되지만 동작하지 않음을 시각적으로 알린다 */
+  #alerts.off #alertList { opacity: .45; }
+
   /* --- 하단 상세 + 차트 --- */
   .detail { flex: 0 0 auto; border-top: 1px solid rgba(255, 255, 255, 0.07); padding: 9px 11px 10px; }
   .dhead { display: flex; align-items: flex-end; gap: 8px; }
@@ -171,6 +192,7 @@
       <span class="title">관심종목</span>
       <span class="updated" id="updated">불러오는 중…</span>
       <button id="add" title="종목 추가">＋</button>
+      <button id="bell" title="목표가 알림">🔔</button>
       <button id="dock" title="우하단으로 접기">◲</button>
       <button id="min" title="최소화">─</button>
       <button id="close" title="닫기">✕</button>
@@ -215,6 +237,16 @@
       </div>
       <div id="results"></div>
       <div class="qhint" id="qhint">종목명을 입력하세요</div>
+    </div>
+
+    <!-- 목표가 알림 설정 오버레이 -->
+    <div class="search" id="alerts" hidden>
+      <div class="qbar">
+        <label class="toggle"><input type="checkbox" id="alertOn" /> 알림 사용</label>
+        <button id="alertClose" title="닫기(Esc)">✕</button>
+      </div>
+      <div id="alertList"></div>
+      <div class="qhint" id="alertHint"></div>
     </div>
     </div>
   </div>

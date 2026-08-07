@@ -2,7 +2,7 @@
 // 역할: 프레임리스/반투명/항상위 위젯 창 생성, 창 상태 저장·복원,
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
-const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 
@@ -21,6 +21,8 @@ const store = new Store({
     watchlist: DEFAULT_WATCHLIST,
     selected: '005930.KS',
     timeframe: '1D',
+    // 목표가 알림. 기본은 꺼짐 — 사용자가 켜야만 알린다.
+    alerts: { enabled: false, targets: {} },
   },
 });
 
@@ -84,12 +86,19 @@ ipcMain.handle('state:get', () => ({
   watchlist: store.get('watchlist'),
   selected: store.get('selected'),
   timeframe: store.get('timeframe'),
+  alerts: store.get('alerts'),
 }));
 
 ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
-    if (['watchlist', 'selected', 'timeframe'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts'].includes(k)) store.set(k, v);
   }
+});
+
+// 목표가 도달 알림. 렌더러가 켜져 있을 때만 보낸다(켜고 끄는 판단은 렌더러 쪽).
+ipcMain.on('notify', (_e, { title, body }) => {
+  if (!Notification.isSupported()) return;
+  new Notification({ title: String(title || ''), body: String(body || '') }).show();
 });
 
 ipcMain.on('win:close', () => win && win.close());
@@ -268,6 +277,8 @@ function registerToggle() {
 }
 
 app.whenReady().then(() => {
+  // Windows에서 알림이 뜨려면 AppUserModelID가 필요하다
+  if (process.platform === 'win32') app.setAppUserModelId('com.wuid0801.kr-stock-widget');
   createWindow();
   registerToggle();
 });

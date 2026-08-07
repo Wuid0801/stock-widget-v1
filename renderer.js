@@ -450,12 +450,17 @@ async function refreshAll() {
   try {
     await loadIndices();
 
+    // 목표가 "통과" 판정을 위해 갱신 전 가격을 기억해 둔다
+    const prevPrices = {};
+    for (const i of state.watchlist) prevPrices[i.symbol] = quotes[i.symbol] && quotes[i.symbol].price;
+
     // 실시간 현재가는 한 번에 (요청 1건), 일봉은 rate limit 고려해 종목별 순차
     const liveMap = await fetchLive(state.watchlist.map((i) => i.symbol));
     for (const item of state.watchlist) {
       await loadQuote(item, liveMap[item.symbol.split('.')[0]]);
       renderList();
     }
+    checkAlerts(prevPrices);
     err(quoteErrText());
     renderDetail();
     await loadChart();
@@ -477,6 +482,7 @@ const save = () => api.setState({
   watchlist: state.watchlist,
   selected: state.selected,
   timeframe: state.timeframe,
+  alerts: state.alerts,
 });
 
 async function select(symbol) {
@@ -491,6 +497,7 @@ async function select(symbol) {
 async function removeSymbol(symbol) {
   state.watchlist = state.watchlist.filter((i) => i.symbol !== symbol);
   delete quotes[symbol];
+  delete state.alerts.targets[symbol]; // 지운 종목의 목표가가 남지 않게
 
   // 보고 있던 종목을 지웠으면 첫 종목으로 옮긴다
   if (state.selected === symbol) {
@@ -549,20 +556,31 @@ const searchEl = document.getElementById('search');
 const qEl = document.getElementById('q');
 const resultsEl = document.getElementById('results');
 const hintEl = document.getElementById('qhint');
+const alertsEl = document.getElementById('alerts');
 let searchSeq = 0;
 let searchTimer = null;
-let expandedForSearch = false; // 접힌 상태에서 검색하려고 펼친 것인지 (닫을 때 되접기)
+let expandedForPanel = false; // 접힌 상태에서 패널을 보려고 펼친 것인지 (닫을 때 되접기)
+
+// 검색·알림 패널은 접힌 상태에서 열면 잠깐 펼쳤다가, 모두 닫히면 다시 접는다
+function openPanel(el) {
+  if (compact) { setCompact(false); expandedForPanel = true; }
+  searchEl.hidden = true;
+  alertsEl.hidden = true;
+  el.hidden = false;
+}
+
+function closePanel(el) {
+  el.hidden = true;
+  if (expandedForPanel && searchEl.hidden && alertsEl.hidden) {
+    expandedForPanel = false;
+    setCompact(true);
+  }
+}
 
 const hint = (msg) => { hintEl.textContent = msg || ''; hintEl.hidden = !msg; };
 
 function openSearch() {
-  // 접힌 상태에서는 결과를 보여줄 공간이 없으니 먼저 편다.
-  // 검색을 닫으면 원래 접힌 상태로 돌려놓는다.
-  if (compact) {
-    setCompact(false);
-    expandedForSearch = true;
-  }
-  searchEl.hidden = false;
+  openPanel(searchEl);
   qEl.value = '';
   resultsEl.innerHTML = '';
   hint('종목명 또는 코드를 입력하세요');
@@ -571,11 +589,7 @@ function openSearch() {
 
 function closeSearch() {
   clearTimeout(searchTimer);
-  searchEl.hidden = true;
-  if (expandedForSearch) {
-    expandedForSearch = false;
-    setCompact(true); // 검색하려고 펼쳤던 것이므로 다시 접는다
-  }
+  closePanel(searchEl);
 }
 
 async function runSearch() {
@@ -603,6 +617,74 @@ async function runSearch() {
   }
 }
 
+// --- 목표가 알림 -------------------------------------------------------------------
+// 알림은 기본 꺼짐. 사용자가 "알림 사용"을 켜야만 실제로 알린다.
+function openAlerts() {
+  openPanel(alertsEl);
+  renderAlerts();
+}
+
+const closeAlerts = () => closePanel(alertsEl);
+
+function renderAlerts() {
+  const on = state.alerts.enabled;
+  document.getElementById('alertOn').checked = on;
+  alertsEl.classList.toggle('off', !on);
+  document.getElementById('alertHint').textContent = on
+    ? '장중에 목표가를 통과하면 알립니다 (통과 시 1회)'
+    : '알림이 꺼져 있습니다. 위 "알림 사용"을 켜야 동작합니다.';
+
+  const box = document.getElementById('alertList');
+  box.innerHTML = '';
+  if (!state.watchlist.length) {
+    box.innerHTML = '<div class="empty">관심종목이 없습니다.</div>';
+    return;
+  }
+
+  for (const item of state.watchlist) {
+    const t = state.alerts.targets[item.symbol] || {};
+    const row = document.createElement('div');
+    row.className = 'arow';
+    row.innerHTML = `<span class="aname">${esc(item.name)}</span>`
+      + `<input class="up" type="number" placeholder="상한" value="${t.up != null ? t.up : ''}" />`
+      + `<input class="dn" type="number" placeholder="하한" value="${t.down != null ? t.down : ''}" />`;
+
+    const save1 = () => {
+      const up = parseFloat(row.querySelector('.up').value);
+      const down = parseFloat(row.querySelector('.dn').value);
+      const next = {};
+      if (Number.isFinite(up)) next.up = up;
+      if (Number.isFinite(down)) next.down = down;
+      if (Object.keys(next).length) state.alerts.targets[item.symbol] = next;
+      else delete state.alerts.targets[item.symbol];
+      save();
+    };
+    row.querySelector('.up').onchange = save1;
+    row.querySelector('.dn').onchange = save1;
+    box.appendChild(row);
+  }
+}
+
+// 목표가 "통과" 시에만 알린다. 이전 가격이 없는 첫 갱신은 기준만 잡고 넘어가므로
+// 앱을 켜자마자 이미 목표가를 넘긴 종목이 무더기로 울리지 않는다.
+function checkAlerts(prevPrices) {
+  if (!state.alerts.enabled || !marketOpen) return;
+
+  for (const item of state.watchlist) {
+    const t = state.alerts.targets[item.symbol];
+    const q = quotes[item.symbol];
+    const prev = prevPrices[item.symbol];
+    if (!t || !q || q.error || prev == null) continue;
+
+    if (t.up != null && prev < t.up && q.price >= t.up) {
+      api.notify({ title: `${item.name} 상한 도달`, body: `${fmt(q.price)}원 (목표 ${fmt(t.up)}원)` });
+    }
+    if (t.down != null && prev > t.down && q.price <= t.down) {
+      api.notify({ title: `${item.name} 하한 도달`, body: `${fmt(q.price)}원 (목표 ${fmt(t.down)}원)` });
+    }
+  }
+}
+
 function renderTabs() {
   const box = document.getElementById('tf');
   box.innerHTML = '';
@@ -623,8 +705,12 @@ function renderTabs() {
 // --- 시작 -----------------------------------------------------------------------
 (async function init() {
   document.getElementById('dock').onclick = () => {
-    // 검색 중에 직접 접기를 누르면 검색만 닫고, 복귀 예약은 취소한다
-    if (!searchEl.hidden) { expandedForSearch = false; closeSearch(); }
+    // 패널이 열린 채로 직접 접기를 누르면 패널만 닫고, 복귀 예약은 취소한다
+    if (!searchEl.hidden || !alertsEl.hidden) {
+      expandedForPanel = false;
+      closeSearch();
+      closeAlerts();
+    }
     setCompact(!compact);
   };
 
@@ -633,6 +719,15 @@ function renderTabs() {
 
   document.getElementById('add').onclick = () => (searchEl.hidden ? openSearch() : closeSearch());
   document.getElementById('qclose').onclick = closeSearch;
+
+  document.getElementById('bell').onclick = () => (alertsEl.hidden ? openAlerts() : closeAlerts());
+  document.getElementById('alertClose').onclick = closeAlerts;
+  document.getElementById('alertOn').onchange = (e) => {
+    state.alerts.enabled = e.target.checked;
+    save();
+    renderAlerts();
+  };
+  alertsEl.onkeydown = (e) => { if (e.key === 'Escape') closeAlerts(); };
   qEl.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 300); };
   qEl.onkeydown = (e) => {
     if (e.key === 'Escape') closeSearch();
@@ -644,6 +739,8 @@ function renderTabs() {
   };
 
   state = await api.getState();
+  if (!state.alerts) state.alerts = { enabled: false, targets: {} };
+  if (!state.alerts.targets) state.alerts.targets = {};
   if (!state.watchlist.some((i) => i.symbol === state.selected)) {
     state.selected = state.watchlist[0] && state.watchlist[0].symbol;
   }
