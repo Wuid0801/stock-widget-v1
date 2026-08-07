@@ -4,13 +4,15 @@
   "description": "한국 주식 관심종목 데스크톱 위젯 (Electron + Yahoo Finance)",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "test": "node tests/run.mjs"
   },
   "dependencies": {
     "chart.js": "^4.4.1",
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
-    "electron": "^30.0.0"
+    "electron": "^30.0.0",
+    "playwright-core": "^1.44.0"
   }
 }
