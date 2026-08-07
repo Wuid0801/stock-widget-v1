@@ -126,8 +126,14 @@
   .hit.dup:hover { background: transparent; }
   .qhint { padding: 8px 11px; font-size: 10px; color: #6f7a8c; }
 
-  /* --- 목표가 알림 --- */
-  .toggle { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+  /* --- 설정 패널 (목표가 알림 · 보유) --- */
+  .ptitle { flex: 1 1 auto; font-size: 12px; font-weight: 700; align-self: center; }
+  .sect {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 11px 5px; font-size: 10px; font-weight: 700; color: #8a94a6;
+  }
+  .sect .sechint { font-weight: 400; color: #5d6675; }
+  .toggle { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 400; cursor: pointer; }
   .toggle input { accent-color: #5b8def; width: 13px; height: 13px; cursor: pointer; }
   #alertList { flex: 1 1 auto; overflow-y: auto; }
   #alertList::-webkit-scrollbar { width: 5px; }
@@ -145,7 +151,13 @@
   .arow input.up:focus { border-color: #e24b4a; }
   .arow input.dn:focus { border-color: #185fa5; }
   /* 알림이 꺼져 있으면 입력은 되지만 동작하지 않음을 시각적으로 알린다 */
-  #alerts.off #alertList { opacity: .45; }
+  #alerts.off #alertRows { opacity: .45; }
+
+  /* 상세의 보유/평가손익 줄 */
+  .hold { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; font-size: 10px; color: #8a94a6; }
+  .hold[hidden] { display: none; }
+  .hold .hpl { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .hold .hqty { font-variant-numeric: tabular-nums; color: #cfd6e2; }
 
   /* --- 하단 상세 + 차트 --- */
   .detail { flex: 0 0 auto; border-top: 1px solid rgba(255, 255, 255, 0.07); padding: 9px 11px 10px; }
@@ -218,6 +230,9 @@
         <div class="tf" id="tf"></div>
       </div>
 
+      <!-- 보유 수량 · 평가손익 (설정에서 입력한 경우에만) -->
+      <div class="hold" id="hold" hidden></div>
+
       <!-- 52주 최저~최고 구간에서 현재가의 위치 -->
       <div class="w52" id="w52" hidden>
         <span class="w52v" id="w52lo"></span>
@@ -239,13 +254,21 @@
       <div class="qhint" id="qhint">종목명을 입력하세요</div>
     </div>
 
-    <!-- 목표가 알림 설정 오버레이 -->
+    <!-- 목표가 알림 · 보유 설정 오버레이 -->
     <div class="search" id="alerts" hidden>
       <div class="qbar">
-        <label class="toggle"><input type="checkbox" id="alertOn" /> 알림 사용</label>
+        <span class="ptitle">설정</span>
         <button id="alertClose" title="닫기(Esc)">✕</button>
       </div>
-      <div id="alertList"></div>
+      <div id="alertList">
+        <div class="sect">
+          목표가 알림
+          <label class="toggle"><input type="checkbox" id="alertOn" /> 사용</label>
+        </div>
+        <div id="alertRows"></div>
+        <div class="sect">보유 종목 <span class="sechint">수량 · 평단가</span></div>
+        <div id="holdRows"></div>
+      </div>
       <div class="qhint" id="alertHint"></div>
     </div>
     </div>

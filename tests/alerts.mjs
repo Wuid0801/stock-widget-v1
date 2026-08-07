@@ -45,7 +45,7 @@ try {
     checked:document.getElementById('alertOn').checked,
     off:document.getElementById('alerts').classList.contains('off'),
     hint:document.getElementById('alertHint').textContent,
-    rows:document.querySelectorAll('#alertList .arow').length,
+    rows:document.querySelectorAll('#alertRows .arow').length,
     searchClosed:document.getElementById('search').hidden,
   }));
   check('알림 패널 열림', ui0.open);
@@ -60,10 +60,10 @@ try {
   check('켜면 disk 에 반영', disk().enabled===true, JSON.stringify(disk()));
   check('켜짐 안내 문구로 변경', (await page.evaluate(()=>document.getElementById('alertHint').textContent)).includes('장중'));
 
-  await page.fill('#alertList .arow:nth-child(1) input.up','300000');
-  await page.evaluate(()=>document.querySelector('#alertList .arow:nth-child(1) input.up').blur());
-  await page.fill('#alertList .arow:nth-child(1) input.dn','200000');
-  await page.evaluate(()=>document.querySelector('#alertList .arow:nth-child(1) input.dn').blur());
+  await page.fill('#alertRows .arow:nth-child(1) input.up','300000');
+  await page.evaluate(()=>document.querySelector('#alertRows .arow:nth-child(1) input.up').blur());
+  await page.fill('#alertRows .arow:nth-child(1) input.dn','200000');
+  await page.evaluate(()=>document.querySelector('#alertRows .arow:nth-child(1) input.dn').blur());
   await page.waitForTimeout(600);
   const d1=disk();
   console.log('  저장된 목표가:', JSON.stringify(d1.targets));

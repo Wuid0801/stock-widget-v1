@@ -23,6 +23,8 @@ const store = new Store({
     timeframe: '1D',
     // 목표가 알림. 기본은 꺼짐 — 사용자가 켜야만 알린다.
     alerts: { enabled: false, targets: {} },
+    // 보유 수량/평단가 (계좌 연동 없이 직접 입력)
+    holdings: {},
   },
 });
 
@@ -87,11 +89,12 @@ ipcMain.handle('state:get', () => ({
   selected: store.get('selected'),
   timeframe: store.get('timeframe'),
   alerts: store.get('alerts'),
+  holdings: store.get('holdings'),
 }));
 
 ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
-    if (['watchlist', 'selected', 'timeframe', 'alerts'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings'].includes(k)) store.set(k, v);
   }
 });
 

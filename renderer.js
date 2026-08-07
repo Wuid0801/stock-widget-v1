@@ -191,12 +191,32 @@ function renderDetail() {
     chgEl.textContent = '';
   }
 
+  renderHolding(item && item.symbol, q && q.price);
   renderW52(q && q.week52Low, q && q.week52High, q && q.price);
 
   const lv = levelOf(q && q.rsi);
   badge.textContent = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
   badge.style.color = lv.color;
   badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : 'rgba(255,255,255,.07)';
+}
+
+// 보유 수량·평단가를 입력해 둔 종목이면 평가손익을 보여준다.
+function renderHolding(symbol, price) {
+  const el = document.getElementById('hold');
+  const h = state.holdings[symbol];
+  if (!h || price == null) { el.hidden = true; return; }
+
+  const cost = h.qty * h.avg;
+  const value = h.qty * price;
+  const pl = value - cost;
+  const pct = cost ? (pl / cost) * 100 : 0;
+  const color = pl === 0 ? '#9aa4b5' : (pl > 0 ? UP : DOWN);
+
+  el.hidden = false;
+  el.innerHTML = `<span class="hqty">${fmt(h.qty)}주</span>`
+    + `<span>평단 ${fmt(h.avg)}</span>`
+    + `<span>평가 ${fmt(value)}</span>`
+    + `<span class="hpl" style="color:${color}">${signed(pl)} (${fmtPct(pct)})</span>`;
 }
 
 // 52주 저점~고점 사이에서 현재가가 어디쯤인지. Yahoo meta 값이라 추가 요청이 없다.
@@ -483,6 +503,7 @@ const save = () => api.setState({
   selected: state.selected,
   timeframe: state.timeframe,
   alerts: state.alerts,
+  holdings: state.holdings,
 });
 
 async function select(symbol) {
@@ -498,6 +519,7 @@ async function removeSymbol(symbol) {
   state.watchlist = state.watchlist.filter((i) => i.symbol !== symbol);
   delete quotes[symbol];
   delete state.alerts.targets[symbol]; // 지운 종목의 목표가가 남지 않게
+  delete state.holdings[symbol];
 
   // 보고 있던 종목을 지웠으면 첫 종목으로 옮긴다
   if (state.selected === symbol) {
@@ -632,24 +654,35 @@ function renderAlerts() {
   alertsEl.classList.toggle('off', !on);
   document.getElementById('alertHint').textContent = on
     ? '장중에 목표가를 통과하면 알립니다 (통과 시 1회)'
-    : '알림이 꺼져 있습니다. 위 "알림 사용"을 켜야 동작합니다.';
+    : '알림이 꺼져 있습니다. 위 "사용"을 켜야 동작합니다.';
 
-  const box = document.getElementById('alertList');
-  box.innerHTML = '';
+  const alertBox = document.getElementById('alertRows');
+  const holdBox = document.getElementById('holdRows');
+  alertBox.innerHTML = '';
+  holdBox.innerHTML = '';
+
   if (!state.watchlist.length) {
-    box.innerHTML = '<div class="empty">관심종목이 없습니다.</div>';
+    alertBox.innerHTML = '<div class="empty">관심종목이 없습니다.</div>';
     return;
   }
 
-  for (const item of state.watchlist) {
-    const t = state.alerts.targets[item.symbol] || {};
+  // 두 섹션 모두 "종목명 + 숫자 입력 2칸" 형태라 한 함수로 만든다.
+  const buildRow = (item, fields, onSave) => {
     const row = document.createElement('div');
     row.className = 'arow';
     row.innerHTML = `<span class="aname">${esc(item.name)}</span>`
-      + `<input class="up" type="number" placeholder="상한" value="${t.up != null ? t.up : ''}" />`
-      + `<input class="dn" type="number" placeholder="하한" value="${t.down != null ? t.down : ''}" />`;
+      + fields.map((f) => `<input class="${f.cls}" type="number" placeholder="${f.ph}"`
+        + ` value="${f.value != null ? f.value : ''}" />`).join('');
+    for (const f of fields) row.querySelector(`.${f.cls}`).onchange = onSave(row);
+    return row;
+  };
 
-    const save1 = () => {
+  for (const item of state.watchlist) {
+    const t = state.alerts.targets[item.symbol] || {};
+    alertBox.appendChild(buildRow(item, [
+      { cls: 'up', ph: '상한', value: t.up },
+      { cls: 'dn', ph: '하한', value: t.down },
+    ], (row) => () => {
       const up = parseFloat(row.querySelector('.up').value);
       const down = parseFloat(row.querySelector('.dn').value);
       const next = {};
@@ -658,10 +691,24 @@ function renderAlerts() {
       if (Object.keys(next).length) state.alerts.targets[item.symbol] = next;
       else delete state.alerts.targets[item.symbol];
       save();
-    };
-    row.querySelector('.up').onchange = save1;
-    row.querySelector('.dn').onchange = save1;
-    box.appendChild(row);
+    }));
+
+    const h = state.holdings[item.symbol] || {};
+    holdBox.appendChild(buildRow(item, [
+      { cls: 'qty', ph: '수량', value: h.qty },
+      { cls: 'avg', ph: '평단가', value: h.avg },
+    ], (row) => () => {
+      const qty = parseFloat(row.querySelector('.qty').value);
+      const avg = parseFloat(row.querySelector('.avg').value);
+      // 수량과 평단가가 모두 있어야 평가손익을 낼 수 있다
+      if (Number.isFinite(qty) && qty > 0 && Number.isFinite(avg) && avg > 0) {
+        state.holdings[item.symbol] = { qty, avg };
+      } else {
+        delete state.holdings[item.symbol];
+      }
+      save();
+      renderDetail();
+    }));
   }
 }
 
@@ -741,6 +788,7 @@ function renderTabs() {
   state = await api.getState();
   if (!state.alerts) state.alerts = { enabled: false, targets: {} };
   if (!state.alerts.targets) state.alerts.targets = {};
+  if (!state.holdings) state.holdings = {};
   if (!state.watchlist.some((i) => i.symbol === state.selected)) {
     state.selected = state.watchlist[0] && state.watchlist[0].symbol;
   }
