@@ -25,7 +25,7 @@
 
 ## 다운로드
 
-[**⬇ KRStockWidget-Setup.exe 내려받기**](https://github.com/Wuid0801/stock-widget-v1/releases/latest/download/KRStockWidget-Setup.exe) (약 67MB, Windows)
+[**⬇ KRStockWidget-Setup.exe 내려받기**](https://github.com/Wuid0801/stock-widget-v1/releases/latest/download/KRStockWidget-Setup.exe) (약 90MB, Windows 10/11 64비트)
 
 > **처음 실행할 때 "Windows의 PC 보호" 창이 뜹니다.**
 > 코드 서명 인증서가 없는 개인 빌드라서 SmartScreen 이 경고합니다.
@@ -47,7 +47,7 @@ npm start
 ### 설치 파일 만들기
 
 ```bash
-npm run dist    # dist/관심종목 위젯 Setup 1.0.0.exe  (약 67MB, 30초)
+npm run dist    # dist/KRStockWidget-Setup.exe  (약 90MB, 30초)
 ```
 
 명령은 이것 하나입니다. 아이콘 생성이 안에 포함되어 있어서 `build/icon.svg` 만 고치면 다음 빌드에 자동 반영됩니다.

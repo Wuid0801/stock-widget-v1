@@ -82,8 +82,14 @@ function createWindow() {
   win.loadFile('index.html');
 
   // 축소 모드의 임시 크기가 저장되면 재실행 시 접힌 채로 뜨므로, 평소 크기만 저장한다.
+  //
+  // 기준 크기(normalBounds)는 여기서만 갱신한다. 접을 때마다 getBounds() 로 다시 잡으면,
+  // 고배율에서 setBounds → getBounds 왕복이 1px 어긋나는 값이 되먹임돼
+  // 접기/펴기를 반복할수록 창이 계속 커진다(5회에 5px).
   const saveBounds = () => {
-    if (win && !win.isDestroyed() && !compact) store.set('bounds', win.getBounds());
+    if (!win || win.isDestroyed() || compact) return;
+    normalBounds = win.getBounds();
+    store.set('bounds', normalBounds);
   };
   win.on('moved', saveBounds);
   win.on('resized', saveBounds);
@@ -126,16 +132,18 @@ ipcMain.on('win:dock', (_e, on, height) => {
   if (on) {
     // store의 bounds에는 창을 한 번도 옮기지 않았으면 x/y가 없다.
     // 그 값으로 되돌리면 크기만 바뀌고 우하단에 머무르므로 직접 기억해 둔다.
+    // 이미 잡아둔 기준이 있으면 다시 읽지 않는다(위 saveBounds 주석 참고).
     const b = win.getBounds();
-    normalBounds = b;
+    if (!normalBounds) normalBounds = b;
     const area = screen.getDisplayMatching(b).workArea; // 작업표시줄을 피한 영역
     const margin = 12;
+    const width = normalBounds.width; // 펼친 폭과 어긋나지 않도록 기준값을 쓴다
     // 최소 높이(MIN_H)를 먼저 낮추지 않으면 접힌 높이가 그대로 클램프된다
     win.setMinimumSize(MIN_W, height);
     win.setBounds({
-      width: b.width,
+      width,
       height,
-      x: area.x + area.width - b.width - margin,
+      x: area.x + area.width - width - margin,
       y: area.y + area.height - height - margin,
     });
   } else {
