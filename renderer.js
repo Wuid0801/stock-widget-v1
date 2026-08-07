@@ -215,7 +215,7 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
-function drawChart(closes, times, up) {
+function drawChart(closes, times, up, mas = []) {
   const color = up ? UP : DOWN;
   if (chart) chart.destroy();
 
@@ -224,6 +224,7 @@ function drawChart(closes, times, up) {
     data: {
       labels: times.map((t) => labelFor(t, state.timeframe)),
       datasets: [{
+        label: '',
         data: closes,
         borderColor: color,
         borderWidth: 1.4,
@@ -239,7 +240,20 @@ function drawChart(closes, times, up) {
           g.addColorStop(1, hexA(color, 0));
           return g;
         },
-      }],
+      },
+      // 이동평균선 (일봉 타임프레임에서만 전달된다)
+      ...mas.map((m) => ({
+        label: m.label,
+        data: m.data,
+        borderColor: m.color,
+        borderWidth: 1,
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.2,
+        fill: false,
+        spanGaps: false,
+      })),
+      ],
     },
     options: {
       responsive: true,
@@ -247,13 +261,25 @@ function drawChart(closes, times, up) {
       animation: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
+        // 이동평균선이 있을 때만 어느 선인지 알려주는 작은 범례를 띄운다
+        legend: {
+          display: mas.length > 0,
+          position: 'top',
+          align: 'end',
+          labels: {
+            boxWidth: 9, boxHeight: 2, padding: 6,
+            font: { size: 9 }, color: '#8a94a6',
+            filter: (item) => !!item.text,
+          },
+        },
         tooltip: {
           displayColors: false,
           backgroundColor: 'rgba(10,13,18,.94)',
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
-          callbacks: { label: (c) => fmt(c.parsed.y) },
+          callbacks: {
+            label: (c) => (c.dataset.label ? `${c.dataset.label} ${fmt(c.parsed.y)}` : fmt(c.parsed.y)),
+          },
         },
       },
       scales: {
@@ -310,7 +336,35 @@ async function loadQuote(item, live) {
     rsi: calcRSI(closes),
     live: !!live,
     open: !!(live && live.open),
+    // 이동평균 계산용. 1M 차트는 23봉뿐이라 자체 데이터로는 20일선이 끝부분만 그려진다.
+    // 이미 받아둔 1년치를 그대로 재활용해 추가 요청 없이 앞구간까지 채운다.
+    daily: { times: r.times, closes },
   };
+}
+
+// 단순이동평균. 구간이 모자라는 앞부분은 null (Chart.js가 알아서 비워 둔다)
+function sma(closes, period) {
+  const out = new Array(closes.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= period) sum -= closes[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+// 차트 시각(times)에 맞춰 일봉 이동평균을 끌어온다. 일봉이 아닌 타임프레임은 대상 아님.
+function maFor(symbol, times, period) {
+  const d = quotes[symbol] && quotes[symbol].daily;
+  if (!d || d.closes.length < period) return null;
+
+  const values = sma(d.closes, period);
+  const byTime = new Map();
+  for (let i = 0; i < d.times.length; i++) byTime.set(d.times[i], values[i]);
+
+  const out = times.map((t) => (byTime.has(t) ? byTime.get(t) : null));
+  return out.some((v) => v != null) ? out : null;
 }
 
 // 실시간 시세 조회 (실패해도 조용히 빈 값 → Yahoo 지연 시세로 동작)
@@ -358,7 +412,17 @@ async function loadChart() {
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
   renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1]);
 
-  drawChart(closes, times, !q || q.change >= 0);
+  // 이동평균선은 일봉 타임프레임(1M/1Y)에서만 의미가 있다.
+  // 1D(5분봉)/1W(30분봉)에 "5일선"을 그리면 이름과 실제가 안 맞는다.
+  const mas = [];
+  if (TF[state.timeframe].interval === '1d') {
+    const ma5 = maFor(item.symbol, times, 5);
+    const ma20 = maFor(item.symbol, times, 20);
+    if (ma5) mas.push({ label: '5일', data: ma5, color: '#d8a13f' });
+    if (ma20) mas.push({ label: '20일', data: ma20, color: '#6f8fd6' });
+  }
+
+  drawChart(closes, times, !q || q.change >= 0, mas);
 }
 
 async function refreshAll() {
