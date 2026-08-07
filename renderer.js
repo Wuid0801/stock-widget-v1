@@ -16,6 +16,7 @@ const DAILY = { range: '1y', interval: '1d' };
 
 let state = { watchlist: [], selected: null, timeframe: '1D' };
 const quotes = {}; // symbol -> { price, prevClose, rsi } | { error }
+let dragFrom = null; // 순서 변경 드래그 중인 행 인덱스
 let chart = null;
 let busy = false;
 let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해도 마지막 것만 반영
@@ -92,7 +93,7 @@ function renderList() {
     return;
   }
 
-  for (const item of state.watchlist) {
+  state.watchlist.forEach((item, idx) => {
     const q = quotes[item.symbol];
     const row = document.createElement('div');
     row.className = 'row' + (item.symbol === state.selected ? ' on' : '');
@@ -116,8 +117,43 @@ function renderList() {
       e.stopPropagation(); // 삭제 클릭이 종목 선택으로 이어지지 않게
       removeSymbol(item.symbol);
     };
+
+    // 드래그로 순서 변경
+    row.draggable = true;
+    row.ondragstart = (e) => {
+      dragFrom = idx;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(idx)); // 일부 환경에서 데이터가 없으면 드래그가 시작되지 않는다
+      row.classList.add('dragging');
+    };
+    row.ondragover = (e) => {
+      if (dragFrom === null || dragFrom === idx) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      row.classList.add('dropto');
+    };
+    row.ondragleave = () => row.classList.remove('dropto');
+    row.ondrop = (e) => {
+      e.preventDefault();
+      row.classList.remove('dropto');
+      moveSymbol(dragFrom, idx);
+    };
+    row.ondragend = () => {
+      dragFrom = null;
+      for (const r of document.querySelectorAll('#list .row')) r.classList.remove('dragging', 'dropto');
+    };
+
     list.appendChild(row);
-  }
+  });
+}
+
+// 드래그로 관심종목 순서 변경
+function moveSymbol(from, to) {
+  if (from === null || to === null || from === to) return;
+  const [moved] = state.watchlist.splice(from, 1);
+  state.watchlist.splice(to, 0, moved);
+  save();
+  renderList();
 }
 
 // --- 상세 + 차트 ---------------------------------------------------------------
