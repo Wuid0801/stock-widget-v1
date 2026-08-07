@@ -806,7 +806,8 @@ function renderTabs() {
   if (!state.alerts.targets) state.alerts.targets = {};
   if (!state.holdings) state.holdings = {};
   if (!state.watchlist.some((i) => i.symbol === state.selected)) {
-    state.selected = state.watchlist[0] && state.watchlist[0].symbol;
+    // 관심종목이 비어 있으면 undefined 가 되는데, 그대로 저장하면 electron-store 가 거부한다
+    state.selected = (state.watchlist[0] && state.watchlist[0].symbol) || null;
   }
 
   renderTabs();

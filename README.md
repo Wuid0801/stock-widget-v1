@@ -34,6 +34,20 @@ npm start
 
 첫 실행은 화면 중앙에 340×520으로 뜹니다.
 
+### 설치 파일 만들기
+
+```bash
+npm run dist    # dist/관심종목 위젯 Setup 1.0.0.exe (NSIS 설치 파일)
+npm run icon    # build/icon.svg 를 고쳤을 때 build/icon.png 재생성
+```
+
+> **왜 서명 단계를 꺼두었나**
+> electron-builder 는 exe 아이콘을 넣을 때 `winCodeSign` 아카이브를 받아 푸는데,
+> 그 안에 macOS 용 심볼릭 링크가 들어 있어 Windows 에서는 개발자 모드나 관리자 권한 없이
+> 압축 해제가 실패합니다. 그래서 `win.signAndEditExecutable` 을 끄고,
+> 아이콘과 버전 정보는 `build/after-pack.cjs` 에서 `rcedit` 으로 직접 넣습니다.
+> 덕분에 권한 설정 없이 그대로 빌드됩니다.
+
 ## 사용법
 
 | 버튼 | 기능 |
@@ -156,10 +170,14 @@ Yahoo의 1D 봉은 20분 전에서 끊기므로, 장중에는 현재가를 끝�
 ## 파일 구조
 
 ```
-main.js       Electron 메인 프로세스 — 창 생성/상태 저장, 외부 API 프록시(IPC)
-preload.js    contextBridge로 안전한 IPC만 노출
-index.html    마크업 + CSS
-renderer.js   UI 렌더링, RSI 계산, Chart.js, 30초 폴링
+main.js               Electron 메인 프로세스 — 창 생성/상태 저장, 외부 API 프록시(IPC)
+preload.js            contextBridge로 안전한 IPC만 노출
+index.html            마크업 + CSS
+renderer.js           UI 렌더링, RSI 계산, Chart.js, 30초 폴링
+build/icon.svg        앱 아이콘 원본
+build/make-icon.cjs   icon.svg → icon.png (Electron 으로 렌더해 캡처)
+build/after-pack.cjs  패키징 후 exe 아이콘·버전 정보 삽입
+tests/                검증 스위트 (npm test)
 ```
 
 ### 보안 구조

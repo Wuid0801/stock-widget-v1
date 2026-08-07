@@ -16,6 +16,9 @@ const DEFAULT_WATCHLIST = [
 ];
 
 const store = new Store({
+  // electron-store 는 기본적으로 app.getName() 기준 폴더에 저장한다.
+  // productName 을 붙이면 저장 위치가 바뀌어 기존 설정이 통째로 사라지므로 경로를 고정한다.
+  cwd: path.join(app.getPath('appData'), 'kr-stock-widget'),
   defaults: {
     bounds: { width: 340, height: 520 },
     watchlist: DEFAULT_WATCHLIST,
@@ -53,6 +56,7 @@ function createWindow() {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
+    icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -94,6 +98,8 @@ ipcMain.handle('state:get', () => ({
 
 ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
+    // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
+    if (v === undefined) continue;
     if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings'].includes(k)) store.set(k, v);
   }
 });
