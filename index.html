@@ -148,6 +148,19 @@
   .tf button:hover { color: #dfe5ee; }
   .tf button.on { background: #2f3a4e; color: #fff; }
 
+  /* 52주 저점~고점 막대. 현재가 위치를 점으로 표시 */
+  .w52 { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 9px; color: #6f7a8c; }
+  .w52[hidden] { display: none; }
+  .w52 .w52v { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+  .w52 .w52bar {
+    flex: 1 1 auto; position: relative; height: 3px; border-radius: 2px;
+    background: linear-gradient(90deg, rgba(24,95,165,.55), rgba(255,255,255,.14), rgba(226,75,74,.55));
+  }
+  .w52 .w52bar i {
+    position: absolute; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+    border-radius: 50%; background: #e8ecf2; box-shadow: 0 0 0 1.5px rgba(0,0,0,.45);
+  }
+
   .chartbox { height: 150px; margin-top: 7px; position: relative; }
   .err { margin-top: 5px; font-size: 10px; color: #d9714f; min-height: 12px; }
 </style>
@@ -181,6 +194,13 @@
         <span class="badge" id="badge">RSI —</span>
         <span class="badge period" id="period" hidden></span>
         <div class="tf" id="tf"></div>
+      </div>
+
+      <!-- 52주 최저~최고 구간에서 현재가의 위치 -->
+      <div class="w52" id="w52" hidden>
+        <span class="w52v" id="w52lo"></span>
+        <span class="w52bar"><i id="w52mark"></i></span>
+        <span class="w52v" id="w52hi"></span>
       </div>
 
       <div class="chartbox"><canvas id="chart"></canvas></div>

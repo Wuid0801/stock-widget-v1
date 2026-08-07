@@ -191,10 +191,27 @@ function renderDetail() {
     chgEl.textContent = '';
   }
 
+  renderW52(q && q.week52Low, q && q.week52High, q && q.price);
+
   const lv = levelOf(q && q.rsi);
   badge.textContent = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
   badge.style.color = lv.color;
   badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : 'rgba(255,255,255,.07)';
+}
+
+// 52주 저점~고점 사이에서 현재가가 어디쯤인지. Yahoo meta 값이라 추가 요청이 없다.
+function renderW52(low, high, price) {
+  const box = document.getElementById('w52');
+  if (!low || !high || high <= low || price == null) { box.hidden = true; return; }
+
+  const pos = Math.min(100, Math.max(0, ((price - low) / (high - low)) * 100));
+  box.hidden = false;
+  document.getElementById('w52lo').textContent = fmt(low);
+  document.getElementById('w52hi').textContent = fmt(high);
+  document.getElementById('w52mark').style.left = `${pos}%`;
+  box.title = `52주 최저 ${fmt(low)} · 최고 ${fmt(high)}\n`
+    + `현재 ${fmt(price)} — 저점 대비 ${fmtPct(((price - low) / low) * 100)}, `
+    + `고점 대비 ${fmtPct(((price - high) / high) * 100)}`;
 }
 
 // 선택 구간의 수익률 배지. 1D는 위의 일간 등락과 같은 값이라 표시하지 않는다.
@@ -336,6 +353,8 @@ async function loadQuote(item, live) {
     rsi: calcRSI(closes),
     live: !!live,
     open: !!(live && live.open),
+    week52High: r.week52High,
+    week52Low: r.week52Low,
     // 이동평균 계산용. 1M 차트는 23봉뿐이라 자체 데이터로는 20일선이 끝부분만 그려진다.
     // 이미 받아둔 1년치를 그대로 재활용해 추가 요청 없이 앞구간까지 채운다.
     daily: { times: r.times, closes },

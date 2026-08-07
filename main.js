@@ -238,6 +238,9 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       ok: true,
       symbol,
       price: result.meta?.regularMarketPrice ?? closes[closes.length - 1],
+      // 52주 고저는 meta에 이미 들어있어 추가 요청이 필요 없다
+      week52High: result.meta?.fiftyTwoWeekHigh ?? null,
+      week52Low: result.meta?.fiftyTwoWeekLow ?? null,
       closes,
       times,
     };
