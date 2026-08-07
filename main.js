@@ -2,7 +2,7 @@
 // 역할: 프레임리스/반투명/항상위 위젯 창 생성, 창 상태 저장·복원,
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 
@@ -223,5 +223,28 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
   }
 });
 
-app.whenReady().then(createWindow);
+// 작업표시줄에 아이콘이 없어서 창을 한 번 놓치면 되살리기 번거롭다.
+// 전역 단축키로 표시/숨김을 토글한다.
+const TOGGLE_KEY = 'CommandOrControl+Alt+S';
+
+function registerToggle() {
+  const ok = globalShortcut.register(TOGGLE_KEY, () => {
+    if (!win) return;
+    if (win.isVisible() && !win.isMinimized()) {
+      win.hide();
+    } else {
+      win.show();
+      win.setAlwaysOnTop(true, 'screen-saver'); // 숨겼다 켜면 최상단 레벨이 풀리는 경우가 있다
+    }
+  });
+  // 다른 프로그램이 이미 쓰는 조합이면 등록에 실패한다. 그때는 위젯이 숨겨질 일도 없으니 그대로 둔다.
+  if (!ok) console.warn(`전역 단축키 ${TOGGLE_KEY} 등록 실패 (다른 프로그램이 사용 중일 수 있음)`);
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  registerToggle();
+});
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());
