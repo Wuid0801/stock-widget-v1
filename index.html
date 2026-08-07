@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<!-- 렌더러는 네트워크를 직접 쓰지 않는다(모든 요청은 IPC → 메인). connect-src를 막아 강제. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'" />
+<title>관심종목</title>
+<style>
+  /* 다크 반투명 위젯. 창 자체는 transparent라 .widget이 실제 배경. */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden; background: transparent;
+    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
+    color: #e8ecf2; user-select: none; -webkit-font-smoothing: antialiased;
+  }
+
+  /* 마우스 올리면 진해지고, 벗어나면 옅어진다 */
+  .widget {
+    height: 100%; display: flex; flex-direction: column;
+    background: rgba(15, 18, 25, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 12px; overflow: hidden;
+    opacity: 0.74; transition: opacity 0.18s ease;
+  }
+  .widget:hover { opacity: 1; }
+
+  /* --- 상단 바 (드래그 영역) --- */
+  .bar {
+    -webkit-app-region: drag;
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px 7px 11px; flex: 0 0 auto;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .bar .title { font-size: 12px; font-weight: 700; letter-spacing: .2px; }
+  .bar .updated { margin-left: auto; font-size: 10px; color: #6f7a8c; }
+  .bar .updated .live { color: #2fa15a; font-weight: 700; }
+  .bar .updated .delay { color: #e8862a; font-weight: 700; }
+  .bar button {
+    -webkit-app-region: no-drag;
+    width: 20px; height: 20px; padding: 0; flex: 0 0 auto;
+    background: transparent; border: 0; border-radius: 5px;
+    color: #8a94a6; font-size: 13px; line-height: 1; cursor: pointer;
+  }
+  .bar button:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+  .bar button.on { background: rgba(91, 141, 239, 0.28); color: #cfe0ff; }
+
+  /* 접힌 상태: 차트·상세를 숨기고 관심종목 목록만 남긴다 */
+  .widget.compact .detail { display: none; }
+  .widget.compact #list { min-height: 0; }
+
+  /* --- 본문 (리스트 + 상세, 검색 오버레이의 기준) --- */
+  .body { flex: 1 1 auto; display: flex; flex-direction: column; position: relative; min-height: 0; }
+
+  /* --- 관심종목 리스트 --- */
+  #list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+  #list::-webkit-scrollbar { width: 5px; }
+  #list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 3px; }
+
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 11px; cursor: pointer; border-left: 2px solid transparent;
+  }
+  .row:hover { background: rgba(255, 255, 255, 0.045); }
+  .row.on { background: rgba(255, 255, 255, 0.075); border-left-color: #5b8def; }
+  .row .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: #4a5261; }
+  .row .name { font-size: 12px; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .row .px { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .row .chg { font-size: 10px; width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+  /* 삭제 버튼은 자리를 항상 차지하되 hover에서만 보인다 (행 폭이 흔들리지 않게) */
+  .row .del {
+    width: 15px; height: 15px; flex: 0 0 auto; padding: 0;
+    background: transparent; border: 0; border-radius: 4px;
+    color: #6f7a8c; font-size: 11px; line-height: 1; cursor: pointer;
+    opacity: 0; transition: opacity .12s;
+  }
+  .row:hover .del { opacity: 1; }
+  .row .del:hover { background: rgba(226, 75, 74, .22); color: #ff9a99; }
+
+  .empty { padding: 22px 12px; text-align: center; font-size: 11px; color: #6f7a8c; line-height: 1.7; }
+
+  /* --- 검색 오버레이 --- */
+  /* 아래 목록/차트가 비쳐 읽기 어려우므로 불투명. 창 전체 반투명은 .widget 쪽에서 처리된다 */
+  .search { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column;
+            background: #0f131a; }
+  .search[hidden] { display: none; }
+  .qbar { display: flex; gap: 6px; padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .qbar input {
+    flex: 1 1 auto; min-width: 0; user-select: text;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 6px; padding: 6px 8px; color: #e8ecf2; font-size: 12px;
+    font-family: inherit; outline: none;
+  }
+  .qbar input:focus { border-color: #5b8def; }
+  .qbar input::placeholder { color: #667187; }
+  .qbar button {
+    width: 24px; flex: 0 0 auto; background: transparent; border: 0; border-radius: 5px;
+    color: #8a94a6; font-size: 12px; cursor: pointer;
+  }
+  .qbar button:hover { background: rgba(255,255,255,.1); color: #fff; }
+
+  #results { flex: 1 1 auto; overflow-y: auto; }
+  #results::-webkit-scrollbar { width: 5px; }
+  #results::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 3px; }
+  .hit { display: flex; align-items: center; gap: 8px; padding: 7px 11px; cursor: pointer; }
+  .hit:hover { background: rgba(255,255,255,.06); }
+  .hit .hname { flex: 1 1 auto; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .hit .hmeta { font-size: 10px; color: #6f7a8c; flex: 0 0 auto; }
+  .hit.dup { cursor: default; opacity: .45; }
+  .hit.dup:hover { background: transparent; }
+  .qhint { padding: 8px 11px; font-size: 10px; color: #6f7a8c; }
+
+  /* --- 하단 상세 + 차트 --- */
+  .detail { flex: 0 0 auto; border-top: 1px solid rgba(255, 255, 255, 0.07); padding: 9px 11px 10px; }
+  .dhead { display: flex; align-items: flex-end; gap: 8px; }
+  .dname { font-size: 11px; color: #97a1b2; }
+  .dprice { font-size: 19px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .dchg { margin-left: auto; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  .meta { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+  .badge {
+    font-size: 10px; font-weight: 700; padding: 2.5px 7px; border-radius: 999px;
+    background: rgba(255,255,255,.07); color: #9aa4b5; white-space: nowrap;
+  }
+  .tf { margin-left: auto; display: flex; gap: 3px; }
+  .tf button {
+    background: rgba(255,255,255,.05); border: 0; border-radius: 5px;
+    color: #8a94a6; font-size: 10px; padding: 3px 7px; cursor: pointer;
+  }
+  .tf button:hover { color: #dfe5ee; }
+  .tf button.on { background: #2f3a4e; color: #fff; }
+
+  .chartbox { height: 150px; margin-top: 7px; position: relative; }
+  .err { margin-top: 5px; font-size: 10px; color: #d9714f; min-height: 12px; }
+</style>
+</head>
+<body>
+  <div class="widget">
+    <div class="bar">
+      <span class="title">관심종목</span>
+      <span class="updated" id="updated">불러오는 중…</span>
+      <button id="add" title="종목 추가">＋</button>
+      <button id="dock" title="우하단으로 접기">◲</button>
+      <button id="min" title="최소화">─</button>
+      <button id="close" title="닫기">✕</button>
+    </div>
+
+    <div class="body">
+    <div id="list"></div>
+
+    <div class="detail">
+      <div class="dhead">
+        <div>
+          <div class="dname" id="dname">—</div>
+          <div class="dprice" id="dprice">—</div>
+        </div>
+        <div class="dchg" id="dchg"></div>
+      </div>
+
+      <div class="meta">
+        <span class="badge" id="badge">RSI —</span>
+        <div class="tf" id="tf"></div>
+      </div>
+
+      <div class="chartbox"><canvas id="chart"></canvas></div>
+      <div class="err" id="err"></div>
+    </div>
+
+    <!-- 종목 검색 오버레이 -->
+    <div class="search" id="search" hidden>
+      <div class="qbar">
+        <input id="q" type="text" spellcheck="false" placeholder="종목명 또는 코드 (예: 삼성전자, 005930)" />
+        <button id="qclose" title="닫기(Esc)">✕</button>
+      </div>
+      <div id="results"></div>
+      <div class="qhint" id="qhint">종목명을 입력하세요</div>
+    </div>
+    </div>
+  </div>
+
+  <script src="./node_modules/chart.js/dist/chart.umd.js"></script>
+  <script src="./renderer.js"></script>
+</body>
+</html>
