@@ -6,8 +6,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node tests/run.mjs",
-    "icon": "electron build/make-icon.cjs",
-    "dist": "electron-builder --win"
+    "dist": "electron build/make-icon.cjs && electron-builder --win"
   },
   "dependencies": {
     "chart.js": "^4.4.1",
@@ -34,11 +33,12 @@
       "**/*",
       "!tests/**",
       "!docs/**",
-      "!*.md"
+      "!*.md",
+      "!**/*.map"
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -48,6 +48,10 @@
       "createDesktopShortcut": true,
       "shortcutName": "관심종목 위젯"
     },
-    "afterPack": "build/after-pack.cjs"
+    "afterPack": "build/after-pack.cjs",
+    "electronLanguages": [
+      "ko",
+      "en-US"
+    ]
   }
 }

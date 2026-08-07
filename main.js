@@ -56,7 +56,7 @@ function createWindow() {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
-    icon: path.join(__dirname, 'build', 'icon.png'),
+    icon: path.join(__dirname, 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
