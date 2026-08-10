@@ -51,7 +51,7 @@ function calcRSI(closes, period = 14) {
 
 // 과열도 5단계
 function levelOf(rsi) {
-  if (rsi == null) return { label: '—', color: '#4a5261' };
+  if (rsi == null) return { label: '—', color: cssVar('--dot-off') };
   if (rsi >= 80) return { label: '극과열', color: '#c0272d' };
   if (rsi >= 70) return { label: '과열', color: '#e8862a' };
   if (rsi >= 45) return { label: '안정', color: '#2fa15a' };
@@ -75,6 +75,10 @@ const money = (v, cur) => {
 const signedMoney = (v, cur) => (v > 0 ? '+' : '') + money(v, cur);
 // 등락률은 자릿수가 흔들리지 않게 항상 소수 2자리
 const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+
+// 색은 CSS 변수 한 곳에서만 정의한다. 차트도 그리는 시점에 여기서 읽어가므로
+// 테마를 바꾸면 같은 값이 따라온다.
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // 종목명은 외부 API 응답이라 innerHTML에 그대로 넣지 않는다
 const esc = (s) => String(s).replace(/[&<>"]/g,
@@ -110,7 +114,7 @@ function renderList() {
     const lv = levelOf(q && q.rsi);
     const up = q && q.change > 0;
     const flat = !q || !q.change;
-    const color = flat ? '#9aa4b5' : (up ? UP : DOWN);
+    const color = flat ? cssVar('--flat') : (up ? UP : DOWN);
 
     row.innerHTML = `
       <span class="dot" style="background:${lv.color}"></span>
@@ -174,7 +178,7 @@ async function loadIndices() {
 
   box.hidden = false;
   box.innerHTML = r.items.map((i) => {
-    const color = i.pct === 0 ? '#9aa4b5' : (i.pct > 0 ? UP : DOWN);
+    const color = i.pct === 0 ? cssVar('--flat') : (i.pct > 0 ? UP : DOWN);
     return `<span class="ix"><span class="ixn">${esc(i.name)}</span>`
       + `<span class="ixv">${i.value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
       + `<span class="ixp" style="color:${color}">${fmtPct(i.pct)}</span></span>`;
@@ -196,7 +200,7 @@ function renderDetail() {
   const badge = document.getElementById('badge');
 
   if (q && q.change != null) {
-    const color = q.change === 0 ? '#9aa4b5' : (q.change > 0 ? UP : DOWN);
+    const color = q.change === 0 ? cssVar('--flat') : (q.change > 0 ? UP : DOWN);
     chgEl.style.color = color;
     chgEl.innerHTML = `${signedMoney(q.change, cur)}<br>${fmtPct(q.pct)}`;
   } else {
@@ -209,7 +213,7 @@ function renderDetail() {
   const lv = levelOf(q && q.rsi);
   badge.textContent = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
   badge.style.color = lv.color;
-  badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : 'rgba(255,255,255,.07)';
+  badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : cssVar('--chip');
 }
 
 // 보유 수량·평단가를 입력해 둔 종목이면 평가손익을 보여준다.
@@ -222,7 +226,7 @@ function renderHolding(symbol, price) {
   const value = h.qty * price;
   const pl = value - cost;
   const pct = cost ? (pl / cost) * 100 : 0;
-  const color = pl === 0 ? '#9aa4b5' : (pl > 0 ? UP : DOWN);
+  const color = pl === 0 ? cssVar('--flat') : (pl > 0 ? UP : DOWN);
 
   el.hidden = false;
   const cur = curOf(symbol);
@@ -253,7 +257,7 @@ function renderPeriod(first, last) {
   if (state.timeframe === '1D' || !first || last == null) { el.hidden = true; return; }
 
   const pct = ((last - first) / first) * 100;
-  const color = pct === 0 ? '#9aa4b5' : (pct > 0 ? UP : DOWN);
+  const color = pct === 0 ? cssVar('--flat') : (pct > 0 ? UP : DOWN);
   el.hidden = false;
   el.textContent = `${state.timeframe} ${fmtPct(pct)}`;
   el.style.color = color;
@@ -265,7 +269,9 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
+let lastChart = null;
 function drawChart(closes, times, up, mas = [], cur = 'KRW') {
+  lastChart = { closes, times, up, mas, cur };
   const color = up ? UP : DOWN;
   if (chart) chart.destroy();
 
@@ -295,7 +301,7 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
       ...mas.map((m) => ({
         label: m.label,
         data: m.data,
-        borderColor: m.color,
+        borderColor: cssVar(m.varName),
         borderWidth: 1,
         pointRadius: 0,
         pointHitRadius: 0,
@@ -318,13 +324,17 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
           align: 'end',
           labels: {
             boxWidth: 9, boxHeight: 2, padding: 6,
-            font: { size: 9 }, color: '#8a94a6',
+            font: { size: 9 }, color: cssVar('--dim'),
             filter: (item) => !!item.text,
           },
         },
         tooltip: {
           displayColors: false,
-          backgroundColor: 'rgba(10,13,18,.94)',
+          backgroundColor: cssVar('--tooltip'),
+          titleColor: cssVar('--text'),
+          bodyColor: cssVar('--text'),
+          borderColor: cssVar('--border'),
+          borderWidth: 1,
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
           callbacks: {
@@ -337,12 +347,12 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: '#6f7a8c', font: { size: 9 }, maxTicksLimit: 4, maxRotation: 0, autoSkip: true },
+          ticks: { color: cssVar('--mute'), font: { size: 9 }, maxTicksLimit: 4, maxRotation: 0, autoSkip: true },
         },
         y: {
           position: 'right',
-          grid: { color: 'rgba(255,255,255,.06)' },
-          ticks: { color: '#6f7a8c', font: { size: 9 }, maxTicksLimit: 4, callback: (v) => money(v, cur) },
+          grid: { color: cssVar('--grid') },
+          ticks: { color: cssVar('--mute'), font: { size: 9 }, maxTicksLimit: 4, callback: (v) => money(v, cur) },
         },
       },
     },
@@ -473,8 +483,8 @@ async function loadChart() {
   if (TF[state.timeframe].interval === '1d') {
     const ma5 = maFor(item.symbol, times, 5);
     const ma20 = maFor(item.symbol, times, 20);
-    if (ma5) mas.push({ label: '5일', data: ma5, color: '#d8a13f' });
-    if (ma20) mas.push({ label: '20일', data: ma20, color: '#6f8fd6' });
+    if (ma5) mas.push({ label: '5일', data: ma5, varName: '--ma5' });
+    if (ma20) mas.push({ label: '20일', data: ma20, varName: '--ma20' });
   }
 
   drawChart(closes, times, !q || q.change >= 0, mas, curOf(item.symbol));
@@ -520,6 +530,8 @@ const save = () => api.setState({
   timeframe: state.timeframe,
   alerts: state.alerts,
   holdings: state.holdings,
+  theme: state.theme,
+  opacity: state.opacity,
 });
 
 async function select(symbol) {
@@ -655,6 +667,38 @@ async function runSearch() {
   }
 }
 
+// --- 테마 -------------------------------------------------------------------------
+// 색은 CSS 변수라 data-theme 만 바꾸면 화면은 즉시 따라온다.
+// 차트는 그릴 때 값을 읽어가므로 한 번 다시 그려준다(네트워크 재요청 없음).
+function applyTheme(theme) {
+  state.theme = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = state.theme;
+  for (const b of document.querySelectorAll('#themeSeg button')) {
+    b.classList.toggle('on', b.dataset.theme === state.theme);
+  }
+  if (lastChart) drawChart(lastChart.closes, lastChart.times, lastChart.up, lastChart.mas, lastChart.cur);
+  renderList();
+  renderDetail();
+}
+
+// 평소(마우스가 벗어났을 때) 불투명도. preview=true 면 hover 중에도 그 값으로 보여준다.
+let previewTimer = null;
+function applyOpacity(pct, preview = false) {
+  const v = Math.min(100, Math.max(30, Number(pct) || 74));
+  state.opacity = v;
+  document.documentElement.style.setProperty('--idle-opacity', String(v / 100));
+  document.getElementById('opacityVal').textContent = `${v}%`;
+  document.getElementById('opacity').value = String(v);
+
+  if (!preview) return;
+  // 조절하는 동안에는 마우스가 위젯 위에 있어 hover 로 또렷해진다.
+  // 잠깐 hover 를 무시해 실제 진하기를 보여주고, 손을 떼면 원래대로.
+  const w = document.querySelector('.widget');
+  w.classList.add('preview');
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => w.classList.remove('preview'), 900);
+}
+
 // --- 목표가 알림 -------------------------------------------------------------------
 // 알림은 기본 꺼짐. 사용자가 "알림 사용"을 켜야만 실제로 알린다.
 function openAlerts() {
@@ -785,6 +829,12 @@ function renderTabs() {
 
   document.getElementById('bell').onclick = () => (alertsEl.hidden ? openAlerts() : closeAlerts());
   document.getElementById('alertClose').onclick = closeAlerts;
+  for (const b of document.querySelectorAll('#themeSeg button')) {
+    b.onclick = () => { applyTheme(b.dataset.theme); save(); };
+  }
+  const opEl = document.getElementById('opacity');
+  opEl.oninput = () => applyOpacity(opEl.value, true); // 끄는 동안 미리보기
+  opEl.onchange = () => save();                       // 손을 뗄 때만 저장
   document.getElementById('alertOn').onchange = (e) => {
     state.alerts.enabled = e.target.checked;
     save();
@@ -805,6 +855,8 @@ function renderTabs() {
   if (!state.alerts) state.alerts = { enabled: false, targets: {} };
   if (!state.alerts.targets) state.alerts.targets = {};
   if (!state.holdings) state.holdings = {};
+  applyTheme(state.theme);
+  applyOpacity(state.opacity);
   if (!state.watchlist.some((i) => i.symbol === state.selected)) {
     // 관심종목이 비어 있으면 undefined 가 되는데, 그대로 저장하면 electron-store 가 거부한다
     state.selected = (state.watchlist[0] && state.watchlist[0].symbol) || null;

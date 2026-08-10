@@ -28,6 +28,8 @@ const store = new Store({
     alerts: { enabled: false, targets: {} },
     // 보유 수량/평단가 (계좌 연동 없이 직접 입력)
     holdings: {},
+    theme: 'dark', // 'dark' | 'light'
+    opacity: 74,   // 평소(마우스가 벗어났을 때) 불투명도 %
   },
 });
 
@@ -106,13 +108,15 @@ ipcMain.handle('state:get', () => ({
   timeframe: store.get('timeframe'),
   alerts: store.get('alerts'),
   holdings: store.get('holdings'),
+  theme: store.get('theme'),
+  opacity: store.get('opacity'),
 }));
 
 ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity'].includes(k)) store.set(k, v);
   }
 });
 
