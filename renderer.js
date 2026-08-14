@@ -8,11 +8,33 @@ const TF = {
   '1D': { range: '1d', interval: '5m' },
   '1W': { range: '5d', interval: '30m' },
   '1M': { range: '1mo', interval: '1d' },
+  '3M': { range: '3mo', interval: '1d' },
   '1Y': { range: '1y', interval: '1d' },
 };
 
-// RSI 계산 및 리스트 가격/등락에 쓰는 일봉 시리즈 (충분한 표본을 위해 1년치)
-const DAILY = { range: '1y', interval: '1d' };
+// 선택 가능한 이동평균 기간(일)
+const MA_PERIODS = [5, 10, 20, 40, 60, 80, 120, 240, 360];
+
+// 차트 구간에 비해 지나치게 긴 이동평균은 그리지 않는다.
+// 1M(22봉) 차트의 360일선은 거의 수평선인데 y축만 크게 벌려 놓아서
+// 정작 주가 움직임이 세로 39%까지 눌린다(삼성전자 실측). 구간 봉 수의 1.5배까지만 허용.
+const MA_SPAN = 1.5;
+
+// 조금 굵게(1.2px) 그릴 기간. 나머지는 1px.
+const MA_THICK = new Set([20, 40, 80]);
+let chartBars = 0; // 현재 차트의 봉 수. 0이면 이동평균을 안 그리는 타임프레임(1D/1W)
+const maFits = (p) => chartBars > 0 && p <= chartBars * MA_SPAN;
+
+// RSI·이동평균 계산용 일봉 시리즈.
+// 1Y 차트(243봉)에 MA360 을 끝까지 그리려면 앞으로 360봉이 더 필요해 총 603봉 이상이어야 한다.
+// 1년치(243) · 2년치(484) 로는 모자라 5년치(약 1219봉)를 받는다.
+const DAILY = { range: '5y', interval: '1d' };
+
+// 5년치는 응답이 커서(종목당 약 80KB) 30초마다 받으면 낭비다.
+// 일봉은 장중에 마지막 봉만 움직이므로 캐시하고 가끔만 다시 받는다.
+// 현재가는 실시간(네이버)에서 따로 오므로 화면은 30초마다 그대로 갱신된다.
+const DAILY_TTL = 30 * 60 * 1000;
+const dailyCache = {}; // symbol -> { at, price, closes, times, currency, week52High, week52Low }
 
 let state = { watchlist: [], selected: null, timeframe: '1D' };
 const quotes = {}; // symbol -> { price, prevClose, rsi } | { error }
@@ -269,10 +291,27 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
+// 이동평균선 범례. 실제로 그린 선만, 기간 숫자 뒤에 그 색을 붙여 보여준다.
+function renderMaLegend(mas) {
+  const box = document.getElementById('maLegend');
+  box.hidden = mas.length === 0;
+  box.innerHTML = '';
+  for (const m of mas) {
+    const s = document.createElement('span');
+    s.textContent = m.p;
+    s.title = `${m.p}일 이동평균`;
+    const i = document.createElement('i');
+    i.style.background = cssVar(m.varName);
+    s.appendChild(i);
+    box.appendChild(s);
+  }
+}
+
 let lastChart = null;
 function drawChart(closes, times, up, mas = [], cur = 'KRW') {
   lastChart = { closes, times, up, mas, cur };
   const color = up ? UP : DOWN;
+  renderMaLegend(mas); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
   if (chart) chart.destroy();
 
   chart = new Chart(document.getElementById('chart'), {
@@ -283,7 +322,8 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
         label: '',
         data: closes,
         borderColor: color,
-        borderWidth: 1.4,
+        swatch: 'transparent', // 주가선은 툴팁에 색 표시를 하지 않는다
+        borderWidth: 2,
         pointRadius: 0,
         pointHitRadius: 8,
         tension: 0.15,
@@ -291,18 +331,24 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
         backgroundColor: (ctx) => {
           const area = ctx.chart.chartArea;
           if (!area) return 'transparent';
+          // 채움이 진하면 그 안에 들어간 이동평균선이 묻힌다.
+          // 위쪽만 옅게 남기고 아래 절반은 빠르게 비워 이평선이 지나갈 자리를 만든다.
           const g = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
           g.addColorStop(0, hexA(color, 0.38));
+          g.addColorStop(0.55, hexA(color, 0.12));
           g.addColorStop(1, hexA(color, 0));
           return g;
         },
       },
-      // 이동평균선 (일봉 타임프레임에서만 전달된다)
+      // 이동평균선 (일봉 타임프레임에서만 전달된다).
+      // 전부 80% 불투명도. 주가선은 2px 라 여러 개를 켜도 굵기로 먼저 읽힌다.
       ...mas.map((m) => ({
-        label: m.label,
+        label: String(m.p), // 툴팁에 기간 숫자만 (단위 "일"은 생략)
         data: m.data,
-        borderColor: cssVar(m.varName),
-        borderWidth: 1,
+        borderColor: hexA(cssVar(m.varName), 0.8),
+        // 툴팁 색 표시는 7px 라 흐리면 안 보인다 → 원색을 쓴다
+        swatch: cssVar(m.varName),
+        borderWidth: MA_THICK.has(m.p) ? 1.2 : 1,
         pointRadius: 0,
         pointHitRadius: 0,
         tension: 0.2,
@@ -317,19 +363,19 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
       animation: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        // 이동평균선이 있을 때만 어느 선인지 알려주는 작은 범례를 띄운다
-        legend: {
-          display: mas.length > 0,
-          position: 'top',
-          align: 'end',
-          labels: {
-            boxWidth: 9, boxHeight: 2, padding: 6,
-            font: { size: 9 }, color: cssVar('--dim'),
-            filter: (item) => !!item.text,
-          },
-        },
+        // 범례는 띄우지 않는다. 이동평균을 여러 개 켜면 두 줄로 늘어나
+        // 150px 짜리 차트에서 35px 가까이 잡아먹는다.
+        // 어느 선이 무엇인지는 설정의 색 있는 칩과 툴팁이 알려준다.
+        legend: { display: false },
         tooltip: {
-          displayColors: false,
+          // 범례를 없앤 대신 툴팁의 색 표시로 어느 선인지 알린다
+          displayColors: true,
+          // 색 상자와 숫자 사이 간격 = boxWidth + 2 + boxPadding (Chart.js 계산식)
+          boxWidth: 7, boxHeight: 7, boxPadding: 1,
+          // Chart.js 는 색 상자 밑에 흰색을 먼저 깐다(반투명 색을 위한 밑칠).
+          // 그대로 두면 주가선처럼 색을 안 쓰는 줄에 흰 네모가 남는다.
+          // 이동평균 색은 전부 불투명이라 밑칠이 필요 없다.
+          multiKeyBackground: 'transparent',
           backgroundColor: cssVar('--tooltip'),
           titleColor: cssVar('--text'),
           bodyColor: cssVar('--text'),
@@ -338,9 +384,25 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
           callbacks: {
+            // 주가는 본문이 아니라 beforeBody 로 올린다.
+            // 본문 줄은 색 상자만큼 안쪽으로 밀리지만 beforeBody 는 왼쪽 끝에 붙는다.
+            beforeBody: (items) => {
+              const p = items.find((i) => i.datasetIndex === 0);
+              return p ? money(p.parsed.y, cur) : [];
+            },
+            // 기본값은 backgroundColor 를 쓰는데 주가선은 그라데이션 함수, 이동평균선은
+            // 아예 없어서 색이 안 나온다. 데이터셋에 넣어 둔 선 색을 쓴다.
+            labelColor: (c) => ({
+              borderColor: 'transparent',
+              backgroundColor: c.dataset.swatch,
+              borderWidth: 0,
+              borderRadius: 2,
+            }),
+            // 주가는 beforeBody 에서 이미 그렸다. 여기서 빈 배열을 주면
+            // Chart.js 가 그 줄을 통째로 건너뛰어 색 상자 자리도 생기지 않는다.
             label: (c) => (c.dataset.label
-              ? `${c.dataset.label} ${money(c.parsed.y, cur)}`
-              : money(c.parsed.y, cur)),
+              ? `${c.dataset.label}  ${money(c.parsed.y, cur)}`
+              : []),
           },
         },
       },
@@ -370,10 +432,32 @@ function quoteErrText() {
 
 // 일봉 1년치로 현재가/전일종가/RSI를 만든다.
 // meta.chartPreviousClose는 "range 시작 직전" 종가라 일간 등락에 쓸 수 없다 → closes[len-2] 사용.
+// 일봉 시리즈를 캐시에서 꺼낸다. 만료됐으면 다시 받고, 실패하면 있던 캐시를 그대로 쓴다.
+async function dailyFor(symbol, ttl) {
+  const cached = dailyCache[symbol];
+  if (cached && Date.now() - cached.at < ttl) return cached;
+
+  const r = await api.fetchChart({ symbol, ...DAILY });
+  if (!r.ok) return cached || { error: r.error };
+
+  dailyCache[symbol] = {
+    at: Date.now(),
+    price: r.price,
+    closes: r.closes,
+    times: r.times,
+    currency: r.currency,
+    week52High: r.week52High,
+    week52Low: r.week52Low,
+  };
+  return dailyCache[symbol];
+}
+
 async function loadQuote(item, live) {
-  const r = await api.fetchChart({ symbol: item.symbol, ...DAILY });
-  if (!r.ok) {
-    quotes[item.symbol] = { error: r.error };
+  // 실시간 가격이 따로 오면 일봉은 오래 캐시해도 된다.
+  // 실시간이 없으면(폴백) 일봉의 가격을 그대로 쓰므로 짧게만 캐시한다.
+  const r = await dailyFor(item.symbol, live ? DAILY_TTL : 60000);
+  if (!r || r.error) {
+    quotes[item.symbol] = { error: r ? r.error : '조회 실패' };
     return;
   }
 
@@ -457,6 +541,7 @@ async function loadChart() {
   if (!r.ok) {
     // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
     if (chart) { chart.destroy(); chart = null; }
+    renderMaLegend([]);
     document.getElementById('period').hidden = true;
     err(`${item.name} 차트: ${r.error}`);
     return;
@@ -477,14 +562,17 @@ async function loadChart() {
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
   renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1]);
 
-  // 이동평균선은 일봉 타임프레임(1M/1Y)에서만 의미가 있다.
+  // 이동평균선은 일봉 타임프레임(1M/3M/1Y)에서만 의미가 있다.
   // 1D(5분봉)/1W(30분봉)에 "5일선"을 그리면 이름과 실제가 안 맞는다.
+  const daily = TF[state.timeframe].interval === '1d';
+  const bars = daily ? r.times.length : 0;
+  if (bars !== chartBars) { chartBars = bars; renderMaChips(); } // 켤 수 있는 기간이 바뀐다
+
   const mas = [];
-  if (TF[state.timeframe].interval === '1d') {
-    const ma5 = maFor(item.symbol, times, 5);
-    const ma20 = maFor(item.symbol, times, 20);
-    if (ma5) mas.push({ label: '5일', data: ma5, varName: '--ma5' });
-    if (ma20) mas.push({ label: '20일', data: ma20, varName: '--ma20' });
+  for (const p of state.maPeriods) {
+    if (!maFits(p)) continue; // 구간에 비해 너무 긴 선은 y축만 벌리므로 건너뛴다
+    const data = maFor(item.symbol, times, p);
+    if (data) mas.push({ p, data, varName: `--ma-${p}` });
   }
 
   drawChart(closes, times, !q || q.change >= 0, mas, curOf(item.symbol));
@@ -532,6 +620,7 @@ const save = () => api.setState({
   holdings: state.holdings,
   theme: state.theme,
   opacity: state.opacity,
+  maPeriods: state.maPeriods,
 });
 
 async function select(symbol) {
@@ -558,7 +647,7 @@ async function removeSymbol(symbol) {
   renderDetail();
 
   if (state.selected) await loadChart();
-  else if (chart) { chart.destroy(); chart = null; }
+  else if (chart) { chart.destroy(); chart = null; renderMaLegend([]); }
 }
 
 async function addSymbol(item) {
@@ -679,6 +768,7 @@ function applyTheme(theme) {
   if (lastChart) drawChart(lastChart.closes, lastChart.times, lastChart.up, lastChart.mas, lastChart.cur);
   renderList();
   renderDetail();
+  renderMaChips(); // 칩 색도 테마를 따라간다
 }
 
 // 평소(마우스가 벗어났을 때) 불투명도. preview=true 면 hover 중에도 그 값으로 보여준다.
@@ -699,11 +789,47 @@ function applyOpacity(pct, preview = false) {
   previewTimer = setTimeout(() => w.classList.remove('preview'), 900);
 }
 
+// 표시할 이동평균 기간 선택. 켜진 칩은 실제 선 색을 그대로 띠어 차트와 대조하기 쉽다.
+function renderMaChips() {
+  const box = document.getElementById('maChips');
+  box.innerHTML = '';
+
+  for (const p of MA_PERIODS) {
+    const on = state.maPeriods.includes(p);
+    const fits = maFits(p);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = String(p);
+    b.title = fits
+      ? `${p}일 이동평균`
+      : `${p}일 이동평균 — ${state.timeframe} 구간에는 너무 길어 지금은 그리지 않습니다`;
+    if (on) {
+      const c = cssVar(`--ma-${p}`);
+      b.className = fits ? 'on' : 'on off';
+      b.style.color = c;
+      b.style.borderColor = c;
+      b.style.background = hexA(c, 0.14);
+    } else if (!fits) {
+      b.className = 'off';
+    }
+    b.onclick = () => {
+      state.maPeriods = on
+        ? state.maPeriods.filter((x) => x !== p)
+        : [...state.maPeriods, p].sort((x, y) => x - y);
+      save();
+      renderMaChips();
+      loadChart();
+    };
+    box.appendChild(b);
+  }
+}
+
 // --- 목표가 알림 -------------------------------------------------------------------
 // 알림은 기본 꺼짐. 사용자가 "알림 사용"을 켜야만 실제로 알린다.
 function openAlerts() {
   openPanel(alertsEl);
   renderAlerts();
+  renderMaChips();
 }
 
 const closeAlerts = () => closePanel(alertsEl);
@@ -855,8 +981,13 @@ function renderTabs() {
   if (!state.alerts) state.alerts = { enabled: false, targets: {} };
   if (!state.alerts.targets) state.alerts.targets = {};
   if (!state.holdings) state.holdings = {};
+  // 저장된 값에 모르는 기간이 섞여 있으면 걸러낸다
+  state.maPeriods = Array.isArray(state.maPeriods)
+    ? state.maPeriods.filter((p) => MA_PERIODS.includes(p)).sort((a, b) => a - b)
+    : [5, 20, 60];
   applyTheme(state.theme);
   applyOpacity(state.opacity);
+  renderMaChips();
   if (!state.watchlist.some((i) => i.symbol === state.selected)) {
     // 관심종목이 비어 있으면 undefined 가 되는데, 그대로 저장하면 electron-store 가 거부한다
     state.selected = (state.watchlist[0] && state.watchlist[0].symbol) || null;

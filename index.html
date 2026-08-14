@@ -55,8 +55,16 @@
     /* 차트 */
     --grid: rgba(255, 255, 255, 0.06);
     --tooltip: rgba(10, 13, 18, 0.94);
-    --ma5: #d8a13f;
-    --ma20: #6f8fd6;
+    /* 이동평균선 9종. 상승 빨강 / 하락 파랑과 겹치지 않게 고른다. */
+    --ma-5: #f2b544;
+    --ma-10: #e8823c;
+    --ma-20: #6f8fd6;
+    --ma-40: #57b6a6;
+    --ma-60: #9b7fd4;
+    --ma-80: #d3739f;
+    --ma-120: #8fb63f;
+    --ma-240: #4aa3c7;
+    --ma-360: #b0b8c4;
 
     /* 마우스가 벗어났을 때의 불투명도. 설정에서 조절하며 JS가 덮어쓴다. */
     --idle-opacity: 0.74;
@@ -107,8 +115,15 @@
 
     --grid: rgba(0, 0, 0, 0.08);
     --tooltip: rgba(255, 255, 255, 0.96);
-    --ma5: #b8811f;
-    --ma20: #3f63b0;
+    --ma-5: #b8811f;
+    --ma-10: #c2601a;
+    --ma-20: #3f63b0;
+    --ma-40: #2c8377;
+    --ma-60: #6f4fae;
+    --ma-80: #a8407a;
+    --ma-120: #5f8016;
+    --ma-240: #1f7397;
+    --ma-360: #6b7480;
   }
 
   /* 반투명 위젯. 창 자체는 transparent라 .widget이 실제 배경. */
@@ -273,6 +288,18 @@
     accent-color: var(--accent); cursor: pointer;
   }
   .ohint { padding: 3px 11px 0; font-size: 9px; color: var(--faint); line-height: 1.5; }
+
+  /* 이동평균 기간 선택. 켜진 칩은 해당 선의 색을 그대로 띤다. */
+  .machips { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 11px 0; }
+  .machips button {
+    background: var(--chip-2); border: 1px solid transparent; border-radius: 5px;
+    color: var(--dim); font-size: 10px; padding: 3px 7px; cursor: pointer;
+    font-family: inherit; font-variant-numeric: tabular-nums;
+  }
+  .machips button:hover { color: var(--text-3); }
+  .machips button.on { font-weight: 700; }
+  /* 지금 타임프레임 구간에 비해 너무 긴 기간 — 켜져 있어도 그려지지 않는다 */
+  .machips button.off { opacity: .32; }
   .toggle input { accent-color: var(--accent); width: 13px; height: 13px; cursor: pointer; }
   #alertList { flex: 1 1 auto; overflow-y: auto; }
   #alertList::-webkit-scrollbar { width: 5px; }
@@ -305,7 +332,16 @@
   .dprice { font-size: 19px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
   .dchg { margin-left: auto; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
 
-  .meta { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+  /* 타임프레임이 5개라 좁은 폭에서는 넘칠 수 있다. 넘치면 다음 줄로 내려보낸다. */
+  .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; row-gap: 5px; margin-top: 7px; }
+
+  /* 이동평균선 범례 — 기간 숫자 뒤에 그 선의 색 */
+  .malegend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; row-gap: 3px; margin-top: 6px; }
+  .malegend span {
+    display: inline-flex; align-items: center; gap: 2px;
+    font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums;
+  }
+  .malegend i { width: 7px; height: 7px; border-radius: 2px; }
   .badge {
     font-size: 10px; font-weight: 700; padding: 2.5px 7px; border-radius: 999px;
     background: var(--chip); color: var(--flat); white-space: nowrap;
@@ -315,7 +351,7 @@
   .tf { margin-left: auto; display: flex; gap: 3px; }
   .tf button {
     background: var(--chip-2); border: 0; border-radius: 5px;
-    color: var(--dim); font-size: 10px; padding: 3px 7px; cursor: pointer;
+    color: var(--dim); font-size: 10px; padding: 3px 6px; cursor: pointer;
   }
   .tf button:hover { color: var(--text-3); }
   .tf button.on { background: var(--tf-on-bg); color: var(--tf-on-fg); }
@@ -333,7 +369,9 @@
     border-radius: 50%; background: var(--w52-mark); box-shadow: 0 0 0 1.5px var(--w52-ring);
   }
 
-  .chartbox { height: 150px; margin-top: 7px; position: relative; }
+  /* 창을 세로로 늘리면 차트도 같이 커진다. 최소 150px(기본 창 높이일 때의 크기)는
+     지키고, 300px 를 넘어 관심종목 목록을 다 밀어내지는 않게 한다. */
+  .chartbox { height: clamp(150px, 26vh, 300px); margin-top: 7px; position: relative; }
   .err { margin-top: 5px; font-size: 10px; color: var(--err); min-height: 12px; }
 </style>
 </head>
@@ -375,6 +413,9 @@
         <span class="badge period" id="period" hidden></span>
         <div class="tf" id="tf"></div>
       </div>
+
+      <!-- 이동평균선 범례. 차트 안에 넣으면 높이를 잡아먹어 밖으로 뺐다. -->
+      <div class="malegend" id="maLegend" hidden></div>
 
       <!-- 보유 수량 · 평가손익 (설정에서 입력한 경우에만) -->
       <div class="hold" id="hold" hidden></div>
@@ -420,6 +461,10 @@
           <span class="oval" id="opacityVal">74%</span>
         </div>
         <div class="ohint">마우스를 올리면 항상 또렷해집니다. 위 값은 벗어났을 때의 진하기입니다.</div>
+
+        <div class="sect">이동평균선 <span class="sechint">일봉 차트(1M · 3M · 1Y)에만 표시</span></div>
+        <div class="machips" id="maChips"></div>
+        <div class="ohint">흐린 기간은 지금 보고 있는 구간에 비해 너무 길어 그리지 않습니다. 더 긴 타임프레임으로 바꾸면 나타납니다.</div>
         <div class="sect">
           목표가 알림
           <label class="toggle"><input type="checkbox" id="alertOn" /> 사용</label>

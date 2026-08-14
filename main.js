@@ -30,6 +30,7 @@ const store = new Store({
     holdings: {},
     theme: 'dark', // 'dark' | 'light'
     opacity: 74,   // 평소(마우스가 벗어났을 때) 불투명도 %
+    maPeriods: [5, 20, 60], // 표시할 이동평균 기간(일)
   },
 });
 
@@ -110,13 +111,14 @@ ipcMain.handle('state:get', () => ({
   holdings: store.get('holdings'),
   theme: store.get('theme'),
   opacity: store.get('opacity'),
+  maPeriods: store.get('maPeriods'),
 }));
 
 ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods'].includes(k)) store.set(k, v);
   }
 });
 
@@ -257,7 +259,7 @@ ipcMain.handle('yf:search', async (_e, query) => {
 // 실패: { ok:false, error }  (렌더러에서 그대로 표시)
 // 렌더러가 넘기는 값은 신뢰하지 않고 허용 목록으로 검사한다.
 // (호스트는 고정이지만, 쿼리에 임의 문자열이 그대로 들어가지 않도록)
-const RANGES = new Set(['1d', '5d', '1mo', '1y']);
+const RANGES = new Set(['1d', '5d', '1mo', '3mo', '1y', '5y']);
 const INTERVALS = new Set(['5m', '30m', '1d']);
 const SYMBOL_RE = /^[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
 
