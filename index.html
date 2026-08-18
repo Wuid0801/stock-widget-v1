@@ -139,7 +139,7 @@
 
   /* 마우스 올리면 진해지고, 벗어나면 옅어진다 */
   .widget {
-    height: 100%; display: flex; flex-direction: column;
+    height: 100%; display: flex; flex-direction: column; position: relative;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 12px; overflow: hidden;
@@ -243,6 +243,22 @@
 
   /* --- 검색 오버레이 --- */
   /* 아래 목록/차트가 비쳐 읽기 어려우므로 불투명. 창 전체 반투명은 .widget 쪽에서 처리된다 */
+  /* 삭제 되돌리기 줄. 레이아웃을 밀지 않도록 창 바닥에 겹쳐 띄운다
+     (접힌 상태에서 목록 높이가 줄어드는 걸 막는다). */
+  .undo {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 8;
+    display: flex; align-items: center; gap: 8px; padding: 7px 11px;
+    font-size: 10px; color: var(--text-2);
+    background: var(--tooltip); border-top: 1px solid var(--border);
+  }
+  .undo[hidden] { display: none; }
+  .undo button {
+    margin-left: auto; flex: 0 0 auto;
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-family: inherit; font-size: 10px; font-weight: 700; color: var(--accent);
+  }
+  .undo button:hover { text-decoration: underline; }
+
   .search { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column;
             background: var(--panel); }
   .search[hidden] { display: none; }
@@ -501,6 +517,12 @@
       </div>
       <div class="qhint" id="alertHint"></div>
     </div>
+    </div>
+
+    <!-- 삭제 되돌리기. 잠깐 떠 있다가 사라진다. -->
+    <div class="undo" id="undo" hidden>
+      <span id="undoText"></span>
+      <button type="button" id="undoBtn">되돌리기</button>
     </div>
   </div>
 

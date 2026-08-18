@@ -758,6 +758,30 @@ async function fetchLive(symbols) {
   return r.ok ? r.quotes : {};
 }
 
+// 차트 응답 캐시. 종목·타임프레임을 오갈 때마다 같은 걸 다시 받으면
+// 매번 네트워크 왕복을 기다리게 된다. 1D(5분봉)만 폴링 주기와 같은 30초로 두고
+// 나머지는 5분 — 일봉이 30초마다 바뀔 일은 없다.
+const chartCache = new Map(); // `symbol|range|interval` -> { at, ttl, r }
+const chartTtl = (interval) => (interval === '5m' ? 30000 : 5 * 60 * 1000);
+
+async function fetchChartCached(symbol, tf) {
+  const key = `${symbol}|${tf.range}|${tf.interval}`;
+  const hit = chartCache.get(key);
+  if (hit && Date.now() - hit.at < hit.ttl) return hit.r;
+
+  const r = await api.fetchChart({ symbol, ...tf });
+  if (!r.ok) return r; // 실패는 캐시하지 않는다 (다음 시도에서 바로 다시 받게)
+
+  // 만료된 항목을 치워 캐시가 무한정 늘지 않게 한다
+  const now = Date.now();
+  for (const [k, v] of chartCache) if (now - v.at >= v.ttl) chartCache.delete(k);
+
+  chartCache.set(key, { at: now, ttl: chartTtl(tf.interval), r });
+  return r;
+}
+
+let lastDrawSig = null; // 내용이 그대로면 다시 그리지 않는다
+
 async function loadChart() {
   const item = state.watchlist.find((i) => i.symbol === state.selected);
   if (!item) { document.getElementById('period').hidden = true; return; }
@@ -765,13 +789,14 @@ async function loadChart() {
   // 종목/타임프레임을 빠르게 바꾸면 요청이 겹친다. 응답이 뒤늦게 도착한
   // 이전 요청은 버려야 헤더와 차트가 서로 다른 종목을 가리키지 않는다.
   const seq = ++chartSeq;
-  const r = await api.fetchChart({ symbol: item.symbol, ...TF[state.timeframe] });
+  const r = await fetchChartCached(item.symbol, TF[state.timeframe]);
   if (seq !== chartSeq) return;
 
   if (!r.ok) {
     // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
     if (chart) { chart.destroy(); chart = null; }
     lastChart = null;
+    lastDrawSig = null;
     renderMaLegend();
     renderCrossBadge([], []);
     document.getElementById('period').hidden = true;
@@ -830,10 +855,19 @@ async function loadChart() {
   const lows = pad(r.lows, (i) => closes[i]);
 
   const held = state.holdings[item.symbol];
+  const up = !q || q.change >= 0;
+  const avg = held && held.avg > 0 ? held.avg : null;
+
+  // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다.
+  // 다시 그리면 차트가 통째로 재생성돼 마우스를 올려둔 범례 값도 같이 지워진다.
+  const sig = `${item.symbol}|${state.timeframe}|${closes.length}`
+    + `|${closes[closes.length - 1]}|${up}|${avg}|${mas.map((m) => m.p).join()}`;
+  if (sig === lastDrawSig) return;
+  lastDrawSig = sig;
+
   drawChart({
-    closes, times, up: !q || q.change >= 0, mas, cur: curOf(item.symbol),
-    volumes, highs, lows, crosses,
-    avg: held && held.avg > 0 ? held.avg : null,
+    closes, times, up, mas, cur: curOf(item.symbol),
+    volumes, highs, lows, crosses, avg,
   });
 }
 
@@ -892,7 +926,62 @@ async function select(symbol) {
 }
 
 // --- 관심종목 추가/삭제 -----------------------------------------------------------
+// 삭제는 관심종목만이 아니라 직접 입력한 목표가·보유(수량·평단가)까지 같이 지운다.
+// 평단가는 다른 데서 복원되지 않으므로, 막는 대신 잠깐 되돌릴 기회를 준다.
+// 실수는 보통 한 번이라 마지막 하나만 기억한다.
+const UNDO_MS = 6000;
+let undoSnap = null;
+let undoTimer = null;
+
+function hideUndo() {
+  clearTimeout(undoTimer);
+  undoSnap = null;
+  document.getElementById('undo').hidden = true;
+}
+
+function showUndo(snap) {
+  undoSnap = snap;
+  document.getElementById('undoText').textContent = `${snap.item.name} 삭제됨`;
+  document.getElementById('undo').hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, UNDO_MS);
+}
+
+async function undoRemove() {
+  const s = undoSnap;
+  if (!s) return;
+  hideUndo();
+
+  // 원래 자리에 다시 끼워 넣는다 (그 사이 목록이 짧아졌으면 끝에)
+  state.watchlist.splice(Math.min(s.index, state.watchlist.length), 0, s.item);
+  if (s.target) state.alerts.targets[s.item.symbol] = s.target;
+  if (s.holding) state.holdings[s.item.symbol] = s.holding;
+  save();
+
+  renderList();
+  if (s.wasSelected) await select(s.item.symbol);
+
+  // 시세 캐시도 지웠으므로 그 종목만 다시 받는다.
+  // refreshAll 은 폴링이 도는 중이면 busy 로 그냥 빠져나가 값이 한참 비어 보인다.
+  const live = await fetchLive([s.item.symbol]);
+  await loadQuote(s.item, live[s.item.symbol.split('.')[0]]);
+  renderList();
+  renderDetail();
+  await renderFolio();
+}
+
 async function removeSymbol(symbol) {
+  const index = state.watchlist.findIndex((i) => i.symbol === symbol);
+  const item = state.watchlist[index];
+  if (!item) return;
+  showUndo({
+    item,
+    index,
+    target: state.alerts.targets[symbol],
+    holding: state.holdings[symbol],
+    wasSelected: state.selected === symbol,
+  });
+
   state.watchlist = state.watchlist.filter((i) => i.symbol !== symbol);
   delete quotes[symbol];
   delete state.alerts.targets[symbol]; // 지운 종목의 목표가가 남지 않게
@@ -909,7 +998,7 @@ async function removeSymbol(symbol) {
 
   if (state.selected) await loadChart();
   else if (chart) {
-    chart.destroy(); chart = null; lastChart = null;
+    chart.destroy(); chart = null; lastChart = null; lastDrawSig = null;
     renderMaLegend(); renderCrossBadge([], []);
   }
 }
@@ -933,6 +1022,54 @@ async function addSymbol(item) {
   renderList();
   await select(item.symbol);
 }
+
+// --- 키보드 ------------------------------------------------------------------------
+// 항상 떠 있는 작은 창이라 매번 행을 마우스로 조준하는 게 번거롭다.
+// 입력 중이거나 패널(검색·설정)이 열려 있으면 그쪽이 우선이라 아무것도 하지 않는다.
+function moveSelection(step) {
+  const list = state.watchlist;
+  if (!list.length) return;
+
+  const cur = list.findIndex((i) => i.symbol === state.selected);
+  const next = cur < 0 ? list[0] : list[(cur + step + list.length) % list.length];
+  select(next.symbol).then(() => {
+    const row = document.querySelector('#list .row.on');
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (!searchEl.hidden || !alertsEl.hidden) return;
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    if (!undoSnap) return;
+    e.preventDefault();
+    undoRemove();
+    return;
+  }
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    moveSelection(e.key === 'ArrowDown' ? 1 : -1);
+    return;
+  }
+
+  const tabs = Object.keys(TF); // 1~5 → 1D · 1W · 1M · 3M · 1Y
+  if (e.key >= '1' && e.key <= String(tabs.length)) {
+    const key = tabs[Number(e.key) - 1];
+    if (key === state.timeframe) return;
+    state.timeframe = key;
+    save();
+    renderTabs();
+    loadChart();
+    return;
+  }
+
+  if (e.key === 'Escape') setCompact(!compact);
+});
 
 // --- 접기/펴기 ---------------------------------------------------------------------
 let compact = false;
@@ -1216,6 +1353,7 @@ function renderTabs() {
 
   document.getElementById('min').onclick = () => api.minimizeWindow();
   document.getElementById('close').onclick = () => api.closeWindow();
+  document.getElementById('undoBtn').onclick = () => undoRemove();
 
   document.getElementById('add').onclick = () => (searchEl.hidden ? openSearch() : closeSearch());
   document.getElementById('qclose').onclick = closeSearch;
