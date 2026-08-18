@@ -509,6 +509,18 @@ function bindChartLeave() {
 }
 
 let lastChart = null;
+
+// 차트를 지울 때 딸린 상태까지 한 번에 정리한다.
+// 흩어 두면 상태가 하나 늘 때마다 여러 곳을 고쳐야 하고, 빠뜨리면 유령 값이 남는다.
+function clearChart() {
+  if (chart) { chart.destroy(); chart = null; }
+  lastChart = null;
+  lastDrawSig = null;
+  hoverIdx = null;
+  renderMaLegend();
+  renderCrossBadge([], []);
+}
+
 function drawChart(arg) {
   lastChart = arg;
   const {
@@ -824,11 +836,7 @@ async function loadChart() {
 
   if (!r.ok) {
     // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
-    if (chart) { chart.destroy(); chart = null; }
-    lastChart = null;
-    lastDrawSig = null;
-    renderMaLegend();
-    renderCrossBadge([], []);
+    clearChart();
     document.getElementById('period').hidden = true;
     err(`${item.name} 차트: ${r.error}`);
     return;
@@ -1032,13 +1040,12 @@ async function removeSymbol(symbol) {
   save();
   renderList();
   renderDetail();
-  renderFolio();
+  // 환율을 받아올 수 있어 async 다. 여기서 기다리면 차트 갱신이 늦어지므로 띄워만 두되,
+  // 실패를 삼키지는 않는다(그냥 두면 unhandled rejection).
+  renderFolio().catch(console.error);
 
   if (state.selected) await loadChart();
-  else if (chart) {
-    chart.destroy(); chart = null; lastChart = null; lastDrawSig = null;
-    renderMaLegend(); renderCrossBadge([], []);
-  }
+  else clearChart();
 }
 
 async function addSymbol(item) {
@@ -1335,7 +1342,7 @@ function renderAlerts() {
       }
       save();
       renderDetail();
-      renderFolio();
+      renderFolio().catch(console.error); // 동기 콜백이라 await 할 수 없다
     }));
   }
 }
