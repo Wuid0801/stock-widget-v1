@@ -379,31 +379,61 @@ const fmtVol = (v) => {
   return v.toLocaleString();
 };
 
-// 보유 평단가를 가로 점선으로. 데이터셋으로 넣으면 평단가가 차트 범위 밖일 때
+// 가로 기준선(보유 평단가 · 전일 종가). 데이터셋으로 넣으면 값이 차트 범위 밖일 때
 // y축이 통째로 늘어나므로, 축과 무관하게 캔버스에 직접 그리고 범위를 벗어나면 생략한다.
-const avgLinePlugin = {
-  id: 'avgLine',
+const hLinePlugin = {
+  id: 'hLine',
   afterDatasetsDraw(c, _args, opts) {
-    if (opts.value == null) return;
+    const lines = opts.lines || [];
+    if (!lines.length) return;
     const area = c.chartArea;
-    const y = c.scales.y.getPixelForValue(opts.value);
-    if (y < area.top || y > area.bottom) return;
+    const ctx = c.ctx;
+
+    for (const ln of lines) {
+      const y = c.scales.y.getPixelForValue(ln.value);
+      if (y < area.top || y > area.bottom) continue;
+
+      const color = cssVar(ln.varName);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(area.left, y);
+      ctx.lineTo(area.right, y);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = color;
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(ln.label, area.left + 2, y - 1);
+      ctx.restore();
+    }
+  },
+};
+
+// 마우스를 올린 시점을 세로선으로 짚어준다. 툴팁만으로는 x축 어디인지 눈으로 따라가야 한다.
+// 툴팁이 잡고 있는 요소를 그대로 쓰므로 표시 위치가 어긋나지 않는다.
+const crosshairPlugin = {
+  id: 'crosshair',
+  afterDatasetsDraw(c) {
+    const active = c.tooltip && c.tooltip.getActiveElements ? c.tooltip.getActiveElements() : [];
+    if (!active.length) return;
+
+    const area = c.chartArea;
+    const x = active[0].element.x;
+    if (x < area.left || x > area.right) return;
 
     const ctx = c.ctx;
     ctx.save();
-    ctx.strokeStyle = cssVar('--avg-line');
+    ctx.strokeStyle = cssVar('--crosshair');
     ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
+    ctx.setLineDash([2, 3]);
     ctx.beginPath();
-    ctx.moveTo(area.left, y);
-    ctx.lineTo(area.right, y);
+    ctx.moveTo(x, area.top);
+    ctx.lineTo(x, area.bottom);
     ctx.stroke();
-
-    ctx.setLineDash([]);
-    ctx.fillStyle = cssVar('--avg-line');
-    ctx.font = '9px system-ui, sans-serif';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('평단', area.left + 2, y - 1);
     ctx.restore();
   },
 };
@@ -483,7 +513,7 @@ function drawChart(arg) {
   lastChart = arg;
   const {
     closes, times, up, mas = [], cur = 'KRW',
-    volumes = [], highs = [], lows = [], avg = null, crosses = [],
+    volumes = [], highs = [], lows = [], hLines = [], crosses = [],
   } = arg;
   const color = up ? UP : DOWN;
   hoverIdx = null;
@@ -496,7 +526,7 @@ function drawChart(arg) {
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
-    plugins: [avgLinePlugin, crossMarkPlugin],
+    plugins: [hLinePlugin, crossMarkPlugin, crosshairPlugin],
     data: {
       labels: times.map((t) => labelFor(t, state.timeframe)),
       datasets: [{
@@ -593,7 +623,7 @@ function drawChart(arg) {
         // 150px 짜리 차트에서 35px 가까이 잡아먹는다.
         // 어느 선이 무엇인지는 설정의 색 있는 칩과 툴팁이 알려준다.
         legend: { display: false },
-        avgLine: { value: avg },
+        hLine: { lines: hLines },
         crossMark: { list: crosses },
         tooltip: {
           // 이동평균 값은 툴팁이 아니라 위쪽 범례에 띄운다.
@@ -856,18 +886,26 @@ async function loadChart() {
 
   const held = state.holdings[item.symbol];
   const up = !q || q.change >= 0;
-  const avg = held && held.avg > 0 ? held.avg : null;
+
+  // 가로 기준선. 전일 종가는 장중(1D)에만 의미가 있다 —
+  // 일봉 차트에서는 마지막에서 두 번째 점일 뿐이라 기준선이 될 이유가 없다.
+  const hLines = [];
+  if (held && held.avg > 0) hLines.push({ value: held.avg, label: '평단', varName: '--avg-line' });
+  if (state.timeframe === '1D' && q && q.prevClose != null) {
+    hLines.push({ value: q.prevClose, label: '전일', varName: '--prev-line' });
+  }
 
   // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다.
   // 다시 그리면 차트가 통째로 재생성돼 마우스를 올려둔 범례 값도 같이 지워진다.
   const sig = `${item.symbol}|${state.timeframe}|${closes.length}`
-    + `|${closes[closes.length - 1]}|${up}|${avg}|${mas.map((m) => m.p).join()}`;
+    + `|${closes[closes.length - 1]}|${up}|${mas.map((m) => m.p).join()}`
+    + `|${hLines.map((l) => l.value).join()}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, highs, lows, crosses, avg,
+    volumes, highs, lows, crosses, hLines,
   });
 }
 
