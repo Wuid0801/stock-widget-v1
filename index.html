@@ -54,6 +54,7 @@
 
     /* 차트 */
     --grid: rgba(255, 255, 255, 0.06);
+    --avg-line: #9aa4b2; /* 보유 평단가 점선 */
     --tooltip: rgba(10, 13, 18, 0.94);
     /* 이동평균선 9종. 상승 빨강 / 하락 파랑과 겹치지 않게 고른다. */
     --ma-5: #f2b544;
@@ -114,6 +115,7 @@
     --w52-ring: rgba(255, 255, 255, 0.85);
 
     --grid: rgba(0, 0, 0, 0.08);
+    --avg-line: #6b7480; /* 보유 평단가 점선 */
     --tooltip: rgba(255, 255, 255, 0.96);
     --ma-5: #b8811f;
     --ma-10: #c2601a;
@@ -342,11 +344,18 @@
     font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums;
   }
   .malegend i { width: 7px; height: 7px; border-radius: 2px; }
+  /* 차트에 마우스를 올렸을 때 들어가는 값. 비어 있어도 폭을 유지해 줄바꿈이 흔들리지 않게 한다. */
+  .malegend b { min-width: 42px; text-align: right; font-weight: 400; color: var(--text-3); }
   .badge {
     font-size: 10px; font-weight: 700; padding: 2.5px 7px; border-radius: 999px;
     background: var(--chip); color: var(--flat); white-space: nowrap;
   }
   .badge.period { font-variant-numeric: tabular-nums; }
+  /* 골든크로스는 상승 계열(빨강), 데드크로스는 하락 계열(파랑) — 한국 관례 */
+  .badge.cross { font-variant-numeric: tabular-nums; }
+  .badge.cross.up { background: rgba(226, 75, 74, .16); color: #e24b4a; }
+  .badge.cross.down { background: rgba(24, 95, 165, .18); color: #4d8fd6; }
+  [data-theme="light"] .badge.cross.down { color: #185fa5; }
   .badge[hidden] { display: none; }
   .tf { margin-left: auto; display: flex; gap: 3px; }
   .tf button {
@@ -411,6 +420,8 @@
       <div class="meta">
         <span class="badge" id="badge">RSI —</span>
         <span class="badge period" id="period" hidden></span>
+        <!-- 가장 최근 골든/데드크로스 -->
+        <span class="badge cross" id="cross" hidden></span>
         <div class="tf" id="tf"></div>
       </div>
 

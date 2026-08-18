@@ -255,7 +255,7 @@ ipcMain.handle('yf:search', async (_e, query) => {
   }
 });
 
-// 성공: { ok:true, symbol, price, closes[], times[] }
+// 성공: { ok:true, symbol, price, closes[], times[], volumes[] }
 // 실패: { ok:false, error }  (렌더러에서 그대로 표시)
 // 렌더러가 넘기는 값은 신뢰하지 않고 허용 목록으로 검사한다.
 // (호스트는 고정이지만, 쿼리에 임의 문자열이 그대로 들어가지 않도록)
@@ -279,13 +279,17 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
 
     // close 배열에는 실제로 null이 섞여 나온다 → timestamp와 짝을 맞춰 제거
     const rawCloses = result.indicators?.quote?.[0]?.close || [];
+    // 거래량은 close 와 같은 객체에 이미 들어있다 (추가 요청 없음)
+    const rawVolumes = result.indicators?.quote?.[0]?.volume || [];
     const stamps = result.timestamp || [];
     const closes = [];
     const times = [];
+    const volumes = [];
     for (let i = 0; i < rawCloses.length; i++) {
       if (rawCloses[i] == null) continue;
       closes.push(rawCloses[i]);
       times.push(stamps[i] * 1000);
+      volumes.push(rawVolumes[i] ?? 0);
     }
     if (!closes.length) return { ok: false, error: '빈 데이터' };
 
@@ -299,6 +303,7 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       week52Low: result.meta?.fiftyTwoWeekLow ?? null,
       closes,
       times,
+      volumes,
     };
   } catch (err) {
     return { ok: false, error: err.message || '요청 실패' };

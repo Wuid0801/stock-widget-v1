@@ -22,6 +22,10 @@ const MA_SPAN = 1.5;
 
 // 조금 굵게(1.2px) 그릴 기간. 나머지는 1px.
 const MA_THICK = new Set([20, 40, 80]);
+
+// 골든/데드크로스를 볼 이동평균 조합.
+// 60/80 처럼 가까운 기간끼리는 횡보 구간에서 계속 교차해 신호 가치가 없어 넣지 않는다.
+const CROSS_PAIRS = [[5, 20], [20, 60]];
 let chartBars = 0; // 현재 차트의 봉 수. 0이면 이동평균을 안 그리는 타임프레임(1D/1W)
 const maFits = (p) => chartBars > 0 && p <= chartBars * MA_SPAN;
 
@@ -292,14 +296,25 @@ const hexA = (hex, a) => {
 };
 
 // 이동평균선 범례. 실제로 그린 선만, 기간 숫자 뒤에 그 색을 붙여 보여준다.
-function renderMaLegend(mas) {
+// 차트에 마우스를 올리면 그 시점의 값까지 같이 보여준다(툴팁 대신 여기에 띄운다).
+let hoverIdx = null;
+function renderMaLegend() {
   const box = document.getElementById('maLegend');
+  const mas = (lastChart && lastChart.mas) || [];
   box.hidden = mas.length === 0;
   box.innerHTML = '';
   for (const m of mas) {
+    const v = hoverIdx == null ? null : m.data[hoverIdx];
     const s = document.createElement('span');
-    s.textContent = m.p;
     s.title = `${m.p}일 이동평균`;
+
+    s.append(String(m.p));
+    // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
+    // 범례가 한 줄에서 두 줄로 접히면서 아래 차트가 들썩인다.
+    const val = document.createElement('b');
+    val.textContent = v == null ? '' : money(v, lastChart.cur);
+    s.appendChild(val);
+
     const i = document.createElement('i');
     i.style.background = cssVar(m.varName);
     s.appendChild(i);
@@ -307,22 +322,136 @@ function renderMaLegend(mas) {
   }
 }
 
+// 거래량은 자릿수가 커서 그대로 두면 툴팁이 길어진다
+const fmtVol = (v) => {
+  if (v >= 1e8) return `${(v / 1e8).toFixed(1)}억`;
+  if (v >= 1e4) return `${Math.round(v / 1e4).toLocaleString()}만`;
+  return v.toLocaleString();
+};
+
+// 보유 평단가를 가로 점선으로. 데이터셋으로 넣으면 평단가가 차트 범위 밖일 때
+// y축이 통째로 늘어나므로, 축과 무관하게 캔버스에 직접 그리고 범위를 벗어나면 생략한다.
+const avgLinePlugin = {
+  id: 'avgLine',
+  afterDatasetsDraw(c, _args, opts) {
+    if (opts.value == null) return;
+    const area = c.chartArea;
+    const y = c.scales.y.getPixelForValue(opts.value);
+    if (y < area.top || y > area.bottom) return;
+
+    const ctx = c.ctx;
+    ctx.save();
+    ctx.strokeStyle = cssVar('--avg-line');
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(area.left, y);
+    ctx.lineTo(area.right, y);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.fillStyle = cssVar('--avg-line');
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('평단', area.left + 2, y - 1);
+    ctx.restore();
+  },
+};
+
+// 가장 최근 교차를 배지로. 차트를 보지 않고 목록만 넘겨도 알 수 있게.
+function renderCrossBadge(crosses, times) {
+  const el = document.getElementById('cross');
+  const last = crosses[crosses.length - 1];
+  if (!last) { el.hidden = true; return; }
+
+  const days = Math.round((Date.now() - times[last.i]) / 86400000);
+  el.hidden = false;
+  el.textContent = `${last.pair} ${last.golden ? '골든' : '데드'} · ${days <= 0 ? '오늘' : `${days}일 전`}`;
+  el.classList.toggle('up', last.golden);
+  el.classList.toggle('down', !last.golden);
+}
+
+// 단기선이 장기선을 뚫은 지점. 위로 뚫으면 골든, 아래로 뚫으면 데드.
+function crossings(short, long) {
+  const out = [];
+  for (let i = 1; i < short.length; i++) {
+    const s0 = short[i - 1]; const l0 = long[i - 1];
+    const s1 = short[i]; const l1 = long[i];
+    if (s0 == null || l0 == null || s1 == null || l1 == null) continue;
+    if (s0 <= l0 && s1 > l1) out.push({ i, y: s1, golden: true });
+    else if (s0 >= l0 && s1 < l1) out.push({ i, y: s1, golden: false });
+  }
+  return out;
+}
+
+// 교차 지점 표식. 골든은 선 아래에 ▲, 데드는 선 위에 ▼.
+// 평단가 점선과 마찬가지로 축을 건드리지 않도록 캔버스에 직접 그린다.
+const crossMarkPlugin = {
+  id: 'crossMark',
+  afterDatasetsDraw(c, _args, opts) {
+    const list = opts.list || [];
+    if (!list.length) return;
+    const area = c.chartArea;
+    const ctx = c.ctx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(area.left, area.top, area.width, area.height);
+    ctx.clip(); // 축 눈금 위로 삐져나가지 않게
+
+    for (const k of list) {
+      const x = c.scales.x.getPixelForValue(k.i);
+      const y = c.scales.y.getPixelForValue(k.y);
+      const dir = k.golden ? 1 : -1; // 골든은 아래쪽, 데드는 위쪽
+      const tip = y + dir * 6;
+      ctx.fillStyle = k.golden ? UP : DOWN;
+      ctx.beginPath();
+      ctx.moveTo(x, tip);
+      ctx.lineTo(x - 3.5, tip + dir * 5);
+      ctx.lineTo(x + 3.5, tip + dir * 5);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  },
+};
+
+// 차트를 벗어나면 범례를 기간 숫자만 남은 상태로 되돌린다.
+// 캔버스는 다시 만들어지지 않으므로 한 번만 붙인다.
+let leaveBound = false;
+function bindChartLeave() {
+  if (leaveBound) return;
+  leaveBound = true;
+  document.getElementById('chart').addEventListener('mouseleave', () => {
+    if (hoverIdx === null) return;
+    hoverIdx = null;
+    renderMaLegend();
+  });
+}
+
 let lastChart = null;
-function drawChart(closes, times, up, mas = [], cur = 'KRW') {
-  lastChart = { closes, times, up, mas, cur };
+function drawChart(arg) {
+  lastChart = arg;
+  const { closes, times, up, mas = [], cur = 'KRW', volumes = [], avg = null, crosses = [] } = arg;
   const color = up ? UP : DOWN;
-  renderMaLegend(mas); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
+  hoverIdx = null;
+  renderMaLegend(); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
   if (chart) chart.destroy();
+  bindChartLeave();
+
+  // 거래량 막대는 차트 아래 1/4 만 쓰도록 별도 y축을 최댓값의 4배로 잡는다
+  const maxVol = volumes.length ? Math.max(...volumes) : 0;
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
+    plugins: [avgLinePlugin, crossMarkPlugin],
     data: {
       labels: times.map((t) => labelFor(t, state.timeframe)),
       datasets: [{
         label: '',
         data: closes,
+        yAxisID: 'y',
+        order: 1, // 거래량 막대(0)보다 뒤에 그려서 위로 올라온다
         borderColor: color,
-        swatch: 'transparent', // 주가선은 툴팁에 색 표시를 하지 않는다
         borderWidth: 2,
         pointRadius: 0,
         pointHitRadius: 8,
@@ -343,11 +472,10 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
       // 이동평균선 (일봉 타임프레임에서만 전달된다).
       // 전부 80% 불투명도. 주가선은 2px 라 여러 개를 켜도 굵기로 먼저 읽힌다.
       ...mas.map((m) => ({
-        label: String(m.p), // 툴팁에 기간 숫자만 (단위 "일"은 생략)
         data: m.data,
+        yAxisID: 'y',
+        order: 2,
         borderColor: hexA(cssVar(m.varName), 0.8),
-        // 툴팁 색 표시는 7px 라 흐리면 안 보인다 → 원색을 쓴다
-        swatch: cssVar(m.varName),
         borderWidth: MA_THICK.has(m.p) ? 1.2 : 1,
         pointRadius: 0,
         pointHitRadius: 0,
@@ -355,6 +483,20 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
         fill: false,
         spanGaps: false,
       })),
+      // 거래량. label 이 빈 문자열이라 툴팁 본문에는 줄이 생기지 않고,
+      // 값은 beforeBody 에서 주가 밑에 따로 붙인다.
+      ...(maxVol > 0 ? [{
+        type: 'bar',
+        label: '',
+        isVolume: true,
+        data: volumes,
+        yAxisID: 'yVol',
+        order: 0, // 가장 먼저 = 주가선·이평선 뒤에
+        backgroundColor: hexA(color, 0.2),
+        borderWidth: 0,
+        barPercentage: 1,
+        categoryPercentage: 1,
+      }] : []),
       ],
     },
     options: {
@@ -362,20 +504,25 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
       maintainAspectRatio: false,
       animation: false,
       interaction: { mode: 'index', intersect: false },
+      // 가리키는 시점의 이동평균 값을 범례에 띄운다(툴팁을 늘리지 않기 위해)
+      onHover: (_e, els) => {
+        const idx = els.length ? els[0].index : null;
+        if (idx === hoverIdx) return;
+        hoverIdx = idx;
+        renderMaLegend();
+      },
       plugins: {
         // 범례는 띄우지 않는다. 이동평균을 여러 개 켜면 두 줄로 늘어나
         // 150px 짜리 차트에서 35px 가까이 잡아먹는다.
         // 어느 선이 무엇인지는 설정의 색 있는 칩과 툴팁이 알려준다.
         legend: { display: false },
+        avgLine: { value: avg },
+        crossMark: { list: crosses },
         tooltip: {
-          // 범례를 없앤 대신 툴팁의 색 표시로 어느 선인지 알린다
-          displayColors: true,
-          // 색 상자와 숫자 사이 간격 = boxWidth + 2 + boxPadding (Chart.js 계산식)
-          boxWidth: 7, boxHeight: 7, boxPadding: 1,
-          // Chart.js 는 색 상자 밑에 흰색을 먼저 깐다(반투명 색을 위한 밑칠).
-          // 그대로 두면 주가선처럼 색을 안 쓰는 줄에 흰 네모가 남는다.
-          // 이동평균 색은 전부 불투명이라 밑칠이 필요 없다.
-          multiKeyBackground: 'transparent',
+          // 이동평균 값은 툴팁이 아니라 위쪽 범례에 띄운다.
+          // 툴팁은 켠 이평선 수만큼 세로로 늘어나서, 9개면 197px 까지 커져
+          // 150px 짜리 차트를 통째로 덮었다. 지금은 날짜·주가·거래량 3줄로 고정된다.
+          displayColors: false,
           backgroundColor: cssVar('--tooltip'),
           titleColor: cssVar('--text'),
           bodyColor: cssVar('--text'),
@@ -384,25 +531,17 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
           callbacks: {
-            // 주가는 본문이 아니라 beforeBody 로 올린다.
-            // 본문 줄은 색 상자만큼 안쪽으로 밀리지만 beforeBody 는 왼쪽 끝에 붙는다.
+            // 내용은 전부 beforeBody 로 올린다(본문은 비운다).
             beforeBody: (items) => {
+              const lines = [];
               const p = items.find((i) => i.datasetIndex === 0);
-              return p ? money(p.parsed.y, cur) : [];
+              if (p) lines.push(money(p.parsed.y, cur));
+              const v = items.find((i) => i.dataset.isVolume);
+              if (v && v.parsed.y) lines.push(`거래량 ${fmtVol(v.parsed.y)}`);
+              return lines;
             },
-            // 기본값은 backgroundColor 를 쓰는데 주가선은 그라데이션 함수, 이동평균선은
-            // 아예 없어서 색이 안 나온다. 데이터셋에 넣어 둔 선 색을 쓴다.
-            labelColor: (c) => ({
-              borderColor: 'transparent',
-              backgroundColor: c.dataset.swatch,
-              borderWidth: 0,
-              borderRadius: 2,
-            }),
-            // 주가는 beforeBody 에서 이미 그렸다. 여기서 빈 배열을 주면
-            // Chart.js 가 그 줄을 통째로 건너뛰어 색 상자 자리도 생기지 않는다.
-            label: (c) => (c.dataset.label
-              ? `${c.dataset.label}  ${money(c.parsed.y, cur)}`
-              : []),
+            // 빈 배열을 주면 Chart.js 가 그 줄을 통째로 건너뛴다 → 본문이 비고 높이가 고정된다
+            label: () => [],
           },
         },
       },
@@ -415,6 +554,13 @@ function drawChart(closes, times, up, mas = [], cur = 'KRW') {
           position: 'right',
           grid: { color: cssVar('--grid') },
           ticks: { color: cssVar('--mute'), font: { size: 9 }, maxTicksLimit: 4, callback: (v) => money(v, cur) },
+        },
+        // 거래량 전용 축. 최댓값의 4배를 천장으로 잡아 막대가 아래 1/4 만 차지한다.
+        yVol: {
+          display: false,
+          beginAtZero: true,
+          max: maxVol * 4,
+          grid: { display: false },
         },
       },
     },
@@ -541,7 +687,9 @@ async function loadChart() {
   if (!r.ok) {
     // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
     if (chart) { chart.destroy(); chart = null; }
-    renderMaLegend([]);
+    lastChart = null;
+    renderMaLegend();
+    renderCrossBadge([], []);
     document.getElementById('period').hidden = true;
     err(`${item.name} 차트: ${r.error}`);
     return;
@@ -575,7 +723,27 @@ async function loadChart() {
     if (data) mas.push({ p, data, varName: `--ma-${p}` });
   }
 
-  drawChart(closes, times, !q || q.change >= 0, mas, curOf(item.symbol));
+  // 골든/데드크로스. 양쪽 이평선이 실제로 그려지는 조합만 본다
+  // (설정 칩에서 5·20·60 을 다 켜둬야 두 쌍 모두 나온다).
+  const byPeriod = new Map(mas.map((m) => [m.p, m.data]));
+  const crosses = [];
+  for (const [s, l] of CROSS_PAIRS) {
+    const a = byPeriod.get(s); const b = byPeriod.get(l);
+    if (!a || !b) continue;
+    for (const c of crossings(a, b)) crosses.push({ ...c, pair: `${s}/${l}` });
+  }
+  crosses.sort((x, y) => x.i - y.i);
+  renderCrossBadge(crosses, times);
+
+  // 1D 는 현재가를 끝에 이어붙였으므로 거래량 배열보다 한 칸 길다 → 마지막 봉은 0 으로 채운다
+  const volumes = r.volumes ? r.volumes.slice(0, closes.length) : [];
+  while (volumes.length < closes.length) volumes.push(0);
+
+  const held = state.holdings[item.symbol];
+  drawChart({
+    closes, times, up: !q || q.change >= 0, mas, cur: curOf(item.symbol), volumes, crosses,
+    avg: held && held.avg > 0 ? held.avg : null,
+  });
 }
 
 async function refreshAll() {
@@ -647,7 +815,10 @@ async function removeSymbol(symbol) {
   renderDetail();
 
   if (state.selected) await loadChart();
-  else if (chart) { chart.destroy(); chart = null; renderMaLegend([]); }
+  else if (chart) {
+    chart.destroy(); chart = null; lastChart = null;
+    renderMaLegend(); renderCrossBadge([], []);
+  }
 }
 
 async function addSymbol(item) {
@@ -765,7 +936,7 @@ function applyTheme(theme) {
   for (const b of document.querySelectorAll('#themeSeg button')) {
     b.classList.toggle('on', b.dataset.theme === state.theme);
   }
-  if (lastChart) drawChart(lastChart.closes, lastChart.times, lastChart.up, lastChart.mas, lastChart.cur);
+  if (lastChart) drawChart(lastChart);
   renderList();
   renderDetail();
   renderMaChips(); // 칩 색도 테마를 따라간다
