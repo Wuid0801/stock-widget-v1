@@ -211,6 +211,56 @@ async function loadIndices() {
   }).join('');
 }
 
+// --- 보유 종목 합계 ---------------------------------------------------------------
+// 달러 종목이 섞이면 그냥 더할 수 없어 원화로 환산한다. 환율은 천천히 움직이므로 30분 캐시.
+let fxRate = null;
+let fxAt = 0;
+const FX_TTL = 30 * 60 * 1000;
+
+async function usdKrw() {
+  if (fxRate && Date.now() - fxAt < FX_TTL) return fxRate;
+  const r = await api.fxUsdKrw();
+  if (r.ok) { fxRate = r.rate; fxAt = Date.now(); }
+  return fxRate; // 실패하면 직전 값(없으면 null)
+}
+
+async function renderFolio() {
+  const box = document.getElementById('folio');
+
+  // 수량·평단가가 모두 있고 현재가를 받은 종목만 센다
+  const held = state.watchlist
+    .map((i) => ({ i, h: state.holdings[i.symbol], q: quotes[i.symbol] }))
+    .filter((x) => x.h && x.h.qty > 0 && x.h.avg > 0 && x.q && x.q.price != null);
+
+  if (!held.length) { box.hidden = true; return; }
+
+  const foreign = held.some((x) => curOf(x.i.symbol) !== 'KRW');
+  const rate = foreign ? await usdKrw() : null;
+  if (foreign && !rate) {
+    // 환율을 못 받으면 합계가 틀린 값이 되므로 숫자를 내놓지 않는다
+    box.hidden = false;
+    box.innerHTML = '<span class="fn">보유</span><span class="fv">환율을 받지 못해 합계를 낼 수 없습니다</span>';
+    return;
+  }
+
+  let value = 0; let cost = 0;
+  for (const { i, h, q } of held) {
+    const k = curOf(i.symbol) === 'KRW' ? 1 : rate;
+    value += q.price * h.qty * k;
+    cost += h.avg * h.qty * k;
+  }
+
+  const gain = value - cost;
+  const pct = cost > 0 ? (gain / cost) * 100 : 0;
+  const color = gain === 0 ? cssVar('--flat') : (gain > 0 ? UP : DOWN);
+
+  box.hidden = false;
+  box.innerHTML = `<span class="fn">보유 ${held.length}종목</span>`
+    + `<span class="fv">${fmt(Math.round(value))}</span>`
+    + (foreign ? `<span class="fx">$${fmt(Math.round(rate))}</span>` : '')
+    + `<span class="fp" style="color:${color}">${signed(Math.round(gain))} (${fmtPct(pct)})</span>`;
+}
+
 // --- 상세 + 차트 ---------------------------------------------------------------
 function renderDetail() {
   const item = state.watchlist.find((i) => i.symbol === state.selected);
@@ -431,7 +481,10 @@ function bindChartLeave() {
 let lastChart = null;
 function drawChart(arg) {
   lastChart = arg;
-  const { closes, times, up, mas = [], cur = 'KRW', volumes = [], avg = null, crosses = [] } = arg;
+  const {
+    closes, times, up, mas = [], cur = 'KRW',
+    volumes = [], highs = [], lows = [], avg = null, crosses = [],
+  } = arg;
   const color = up ? UP : DOWN;
   hoverIdx = null;
   renderMaLegend(); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
@@ -450,7 +503,7 @@ function drawChart(arg) {
         label: '',
         data: closes,
         yAxisID: 'y',
-        order: 1, // 거래량 막대(0)보다 뒤에 그려서 위로 올라온다
+        order: 2, // 거래량 막대(0)·고저 밴드(1)보다 뒤에 그려서 위로 올라온다
         borderColor: color,
         borderWidth: 2,
         pointRadius: 0,
@@ -469,12 +522,36 @@ function drawChart(arg) {
           return g;
         },
       },
+      // 고가~저가 밴드. 종가 하나만 그리면 하루에 얼마나 흔들렸는지가 안 보인다.
+      // 위(고가) 데이터셋이 fill:'+1' 로 바로 다음(저가)까지 채운다 → 배열에서 붙어 있어야 한다.
+      ...(highs.length ? [{
+        label: '',
+        data: highs,
+        yAxisID: 'y',
+        order: 1,
+        borderWidth: 0,
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.15,
+        fill: '+1',
+        backgroundColor: hexA(color, 0.16),
+      }, {
+        label: '',
+        data: lows,
+        yAxisID: 'y',
+        order: 1,
+        borderWidth: 0,
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.15,
+        fill: false,
+      }] : []),
       // 이동평균선 (일봉 타임프레임에서만 전달된다).
       // 전부 80% 불투명도. 주가선은 2px 라 여러 개를 켜도 굵기로 먼저 읽힌다.
       ...mas.map((m) => ({
         data: m.data,
         yAxisID: 'y',
-        order: 2,
+        order: 3,
         borderColor: hexA(cssVar(m.varName), 0.8),
         borderWidth: MA_THICK.has(m.p) ? 1.2 : 1,
         pointRadius: 0,
@@ -491,7 +568,7 @@ function drawChart(arg) {
         isVolume: true,
         data: volumes,
         yAxisID: 'yVol',
-        order: 0, // 가장 먼저 = 주가선·이평선 뒤에
+        order: 0, // 가장 먼저 = 밴드·주가선·이평선 뒤에
         backgroundColor: hexA(color, 0.2),
         borderWidth: 0,
         barPercentage: 1,
@@ -536,7 +613,14 @@ function drawChart(arg) {
               const lines = [];
               const p = items.find((i) => i.datasetIndex === 0);
               if (p) lines.push(money(p.parsed.y, cur));
-              const v = items.find((i) => i.dataset.isVolume);
+
+              const i = p ? p.dataIndex : -1;
+              const hi = highs[i]; const lo = lows[i];
+              if (hi != null && lo != null && hi !== lo) {
+                lines.push(`고저 ${money(lo, cur)} ~ ${money(hi, cur)}`);
+              }
+
+              const v = items.find((x) => x.dataset.isVolume);
               if (v && v.parsed.y) lines.push(`거래량 ${fmtVol(v.parsed.y)}`);
               return lines;
             },
@@ -735,13 +819,20 @@ async function loadChart() {
   crosses.sort((x, y) => x.i - y.i);
   renderCrossBadge(crosses, times);
 
-  // 1D 는 현재가를 끝에 이어붙였으므로 거래량 배열보다 한 칸 길다 → 마지막 봉은 0 으로 채운다
-  const volumes = r.volumes ? r.volumes.slice(0, closes.length) : [];
-  while (volumes.length < closes.length) volumes.push(0);
+  // 1D 는 현재가를 끝에 이어붙였으므로 봉 단위 배열들보다 한 칸 길다 → 마지막 칸을 채운다
+  const pad = (src, fill) => {
+    const a = src ? src.slice(0, closes.length) : [];
+    while (a.length < closes.length) a.push(typeof fill === 'function' ? fill(a.length) : fill);
+    return a;
+  };
+  const volumes = pad(r.volumes, 0);
+  const highs = pad(r.highs, (i) => closes[i]);
+  const lows = pad(r.lows, (i) => closes[i]);
 
   const held = state.holdings[item.symbol];
   drawChart({
-    closes, times, up: !q || q.change >= 0, mas, cur: curOf(item.symbol), volumes, crosses,
+    closes, times, up: !q || q.change >= 0, mas, cur: curOf(item.symbol),
+    volumes, highs, lows, crosses,
     avg: held && held.avg > 0 ? held.avg : null,
   });
 }
@@ -765,6 +856,7 @@ async function refreshAll() {
     checkAlerts(prevPrices);
     err(quoteErrText());
     renderDetail();
+    await renderFolio();
     await loadChart();
 
     // 시세가 실시간인지 20분 지연인지 숨기지 않고 표시한다
@@ -813,6 +905,7 @@ async function removeSymbol(symbol) {
   save();
   renderList();
   renderDetail();
+  renderFolio();
 
   if (state.selected) await loadChart();
   else if (chart) {
@@ -850,8 +943,10 @@ function setCompact(on) {
   const bar = document.querySelector('.bar').offsetHeight;
   const idx = document.getElementById('indices');
   const idxH = idx.hidden ? 0 : idx.offsetHeight; // 지수 줄은 접어도 계속 보여준다
+  const folio = document.getElementById('folio');
+  const folioH = folio.hidden ? 0 : folio.offsetHeight; // 보유 합계도 접힌 상태에서 계속 보여준다
   const row = document.querySelector('#list .row');
-  const height = bar + idxH + (row ? row.offsetHeight * 3 : 93) + 2; // +2 = 위아래 테두리
+  const height = bar + idxH + folioH + (row ? row.offsetHeight * 3 : 93) + 2; // +2 = 위아래 테두리
 
   compact = on;
   document.querySelector('.widget').classList.toggle('compact', on);
@@ -1065,6 +1160,7 @@ function renderAlerts() {
       }
       save();
       renderDetail();
+      renderFolio();
     }));
   }
 }

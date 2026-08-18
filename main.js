@@ -225,6 +225,22 @@ ipcMain.handle('quote:indices', async () => {
   }
 });
 
+// 원/달러 환율. 포트폴리오 합계에서 달러 종목을 원화로 환산할 때만 쓴다.
+// 심볼 'KRW=X' 는 '=' 때문에 yf:chart 의 심볼 허용 패턴에 걸린다.
+// 패턴을 넓히는 대신 URL 을 고정한 전용 핸들러를 둔다(렌더러 입력이 아예 없다).
+ipcMain.handle('fx:usdkrw', async () => {
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?range=1d&interval=1d';
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+    const rate = (await res.json())?.chart?.result?.[0]?.meta?.regularMarketPrice;
+    return Number.isFinite(rate) ? { ok: true, rate } : { ok: false, error: '빈 응답' };
+  } catch (err) {
+    return { ok: false, error: err.message || '환율 조회 실패' };
+  }
+});
+
 // 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버 자동완성을 쓴다.
 // (주식·ETF 모두 한글명으로 잡히고 코스피/코스닥까지 알려준다)
 ipcMain.handle('yf:search', async (_e, query) => {
@@ -255,7 +271,7 @@ ipcMain.handle('yf:search', async (_e, query) => {
   }
 });
 
-// 성공: { ok:true, symbol, price, closes[], times[], volumes[] }
+// 성공: { ok:true, symbol, price, closes[], times[], volumes[], highs[], lows[] }
 // 실패: { ok:false, error }  (렌더러에서 그대로 표시)
 // 렌더러가 넘기는 값은 신뢰하지 않고 허용 목록으로 검사한다.
 // (호스트는 고정이지만, 쿼리에 임의 문자열이 그대로 들어가지 않도록)
@@ -279,17 +295,25 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
 
     // close 배열에는 실제로 null이 섞여 나온다 → timestamp와 짝을 맞춰 제거
     const rawCloses = result.indicators?.quote?.[0]?.close || [];
-    // 거래량은 close 와 같은 객체에 이미 들어있다 (추가 요청 없음)
-    const rawVolumes = result.indicators?.quote?.[0]?.volume || [];
+    // 거래량·고가·저가는 close 와 같은 객체에 이미 들어있다 (추가 요청 없음)
+    const q0 = result.indicators?.quote?.[0] || {};
+    const rawVolumes = q0.volume || [];
+    const rawHighs = q0.high || [];
+    const rawLows = q0.low || [];
     const stamps = result.timestamp || [];
     const closes = [];
     const times = [];
     const volumes = [];
+    const highs = [];
+    const lows = [];
     for (let i = 0; i < rawCloses.length; i++) {
       if (rawCloses[i] == null) continue;
       closes.push(rawCloses[i]);
       times.push(stamps[i] * 1000);
       volumes.push(rawVolumes[i] ?? 0);
+      // 고가/저가가 비면 종가로 대체해 밴드 폭이 0 이 되게 한다
+      highs.push(rawHighs[i] ?? rawCloses[i]);
+      lows.push(rawLows[i] ?? rawCloses[i]);
     }
     if (!closes.length) return { ok: false, error: '빈 데이터' };
 
@@ -304,6 +328,8 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       closes,
       times,
       volumes,
+      highs,
+      lows,
     };
   } catch (err) {
     return { ok: false, error: err.message || '요청 실패' };
