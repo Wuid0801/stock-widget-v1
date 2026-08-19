@@ -393,6 +393,7 @@ const hLinePlugin = {
     if (!lines.length) return;
     const area = c.chartArea;
     const ctx = c.ctx;
+    const drawnAt = []; // 이미 라벨을 찍은 y 좌표
 
     for (const ln of lines) {
       const y = c.scales.y.getPixelForValue(ln.value);
@@ -408,11 +409,15 @@ const hLinePlugin = {
       ctx.lineTo(area.right, y);
       ctx.stroke();
 
-      ctx.setLineDash([]);
-      ctx.fillStyle = color;
-      ctx.font = '9px system-ui, sans-serif';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(ln.label, area.left + 2, y - 1);
+      // 선끼리 가까우면 글자가 포개진다. 선은 그리고 라벨만 생략한다.
+      if (!drawnAt.some((prev) => Math.abs(prev - y) < 10)) {
+        drawnAt.push(y);
+        ctx.setLineDash([]);
+        ctx.fillStyle = color;
+        ctx.font = '9px system-ui, sans-serif';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(ln.label, area.left + 2, y - 1);
+      }
       ctx.restore();
     }
   },
@@ -759,6 +764,7 @@ async function loadQuote(item, live) {
     rsi: calcRSI(closes),
     live: !!live,
     open: !!(live && live.open),
+    session: (live && live.session) || null, // 'regular' | 'pre' | 'after' | 'closed'
     currency: r.currency,
     week52High: r.week52High,
     week52Low: r.week52Low,
@@ -912,6 +918,13 @@ async function loadChart() {
   if (held && held.avg > 0) hLines.push({ value: held.avg, label: '평단', varName: '--avg-line' });
   if (state.timeframe === '1D' && q && q.prevClose != null) {
     hLines.push({ value: q.prevClose, label: '전일', varName: '--prev-line' });
+
+    // 시간외에는 차트(정규장 종가)와 헤더 현재가가 벌어진다. 그 현재가를 선으로 짚어준다.
+    // 봉으로 이어붙이지 않는 이유는 시계열이 없고(현재가 한 점), x축이 카테고리라
+    // 10분 간격·30분 공백이 5분봉과 같은 폭으로 그려져 시간이 왜곡되기 때문이다.
+    if ((q.session === 'after' || q.session === 'pre') && q.price != null) {
+      hLines.push({ value: q.price, label: '시간외', varName: '--over-line' });
+    }
   }
 
   // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다.
