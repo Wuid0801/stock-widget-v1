@@ -187,13 +187,35 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
     const json = await res.json();
+    const num = (v) => Number(String(v ?? '').replace(/,/g, ''));
     const quotes = {};
     for (const d of json.datas || []) {
-      const price = Number(d.closePriceRaw);
-      const change = Number(d.compareToPreviousClosePriceRaw); // 하락이면 이미 음수
+      let price = Number(d.closePriceRaw);
+      let change = Number(d.compareToPreviousClosePriceRaw); // 하락이면 이미 음수
       if (!Number.isFinite(price) || !Number.isFinite(change)) continue;
+
+      // 'regular' 정규장 · 'pre' 장전 시간외 · 'after' 장후·시간외 단일가 · 'closed' 전부 종료.
+      let session = d.marketStatus === 'OPEN' ? 'regular' : 'closed';
+
+      // 정규장이 끝나도 시간외가 열려 있으면 그쪽이 지금 가격이다.
+      // 응답에 이미 들어있어 추가 요청은 없다. overPrice 계열은 Raw 필드가 없어 콤마를 걷어낸다.
+      const over = d.overMarketPriceInfo;
+      if (session !== 'regular' && over && over.overMarketStatus === 'OPEN') {
+        const p = num(over.overPrice);
+        const c = num(over.compareToPreviousClosePrice);
+        if (Number.isFinite(p) && p > 0 && Number.isFinite(c)) {
+          price = p;
+          change = c; // 전일 종가 대비 (네이버가 주는 기준 그대로)
+          session = over.tradingSessionType === 'BEFORE_MARKET' ? 'pre' : 'after';
+        }
+      }
+
       // 심볼 접미사(.KS/.KQ)가 어긋나도 되도록 종목코드로만 넘긴다
-      quotes[d.itemCode] = { price, change, prevClose: price - change, open: d.marketStatus === 'OPEN' };
+      quotes[d.itemCode] = {
+        price, change, prevClose: price - change,
+        open: session === 'regular',
+        session,
+      };
     }
     if (!Object.keys(quotes).length) return { ok: false, error: '빈 응답' };
     return { ok: true, quotes };

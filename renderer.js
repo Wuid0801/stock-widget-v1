@@ -47,7 +47,12 @@ let chart = null;
 let busy = false;
 let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해도 마지막 것만 반영
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
-let marketOpen = true;   // 장중 여부. 장 마감 후에는 폴링 간격을 늘린다
+// 거래 시간(정규장 또는 시간외) 여부. 폴링 간격과 목표가 알림 판정에 쓴다.
+let marketOpen = true;
+// 표시용 세션 구분. 'regular' 정규장 · 'over' 시간외 · 'closed' 전부 종료
+let sessionKind = 'regular';
+const SESSION_TEXT = { regular: '실시간', over: '시간외', closed: '장마감' };
+const SESSION_CLASS = { regular: 'live', over: 'over', closed: 'closed' };
 let pollTimer = null;
 
 const POLL_OPEN = 30000;   // 장중 30초
@@ -794,8 +799,14 @@ async function fetchLive(symbols) {
   isLive = r.ok;
   if (r.ok) {
     // 실시간 응답에 장 상태가 들어있다. 못 받았으면(폴백) 장중으로 보고 평소 간격을 유지한다.
+    // 시간외에도 가격이 움직이므로 폴링을 늦추지 않는다.
     const list = Object.values(r.quotes);
-    if (list.length) marketOpen = list.some((q) => q.open);
+    if (list.length) {
+      const kinds = new Set(list.map((q) => q.session));
+      sessionKind = kinds.has('regular') ? 'regular'
+        : (kinds.has('after') || kinds.has('pre')) ? 'over' : 'closed';
+      marketOpen = sessionKind !== 'closed';
+    }
   }
   return r.ok ? r.quotes : {};
 }
@@ -943,8 +954,8 @@ async function refreshAll() {
     const t = new Date();
     const p = (n) => String(n).padStart(2, '0');
     document.getElementById('updated').innerHTML =
-      `<span class="${!isLive ? 'delay' : marketOpen ? 'live' : 'closed'}">`
-      + `${!isLive ? '20분지연' : marketOpen ? '실시간' : '장마감'}</span> `
+      `<span class="${!isLive ? 'delay' : SESSION_CLASS[sessionKind]}">`
+      + `${!isLive ? '20분지연' : SESSION_TEXT[sessionKind]}</span> `
       + `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
   } finally {
     busy = false;
