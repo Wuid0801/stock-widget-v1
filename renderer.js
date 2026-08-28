@@ -1004,14 +1004,20 @@ async function loadChart() {
   // 종목/타임프레임을 빠르게 바꾸면 요청이 겹친다. 응답이 뒤늦게 도착한
   // 이전 요청은 버려야 헤더와 차트가 서로 다른 종목을 가리키지 않는다.
   const seq = ++chartSeq;
-  const r = await fetchChartCached(item.symbol, TF[state.timeframe]);
+  const tf = TF[state.timeframe];
+  const r = await fetchChartCached(item.symbol, tf);
   if (seq !== chartSeq) return;
 
   if (!r.ok) {
     // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
     clearChart();
     document.getElementById('period').hidden = true;
-    err(`${item.name} 차트: ${r.error}`);
+    // 장 시작 직후엔 Yahoo가 한국 분봉을 아직 안 채워 빈 응답이 온다.
+    // 일봉(1M 이상)은 정상이므로 고장이 아니라는 걸 알려준다.
+    const intraday = tf.interval !== '1d';
+    err(intraday && r.error === '빈 데이터'
+      ? `${item.name} ${state.timeframe}: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`
+      : `${item.name} 차트: ${r.error}`);
     return;
   }
 
@@ -1032,7 +1038,7 @@ async function loadChart() {
 
   // 이동평균선은 일봉 타임프레임(1M/3M/1Y)에서만 의미가 있다.
   // 1D(5분봉)/1W(30분봉)에 "5일선"을 그리면 이름과 실제가 안 맞는다.
-  const daily = TF[state.timeframe].interval === '1d';
+  const daily = tf.interval === '1d';
   const bars = daily ? r.times.length : 0;
   if (bars !== chartBars) { chartBars = bars; renderMaChips(); } // 켤 수 있는 기간이 바뀐다
 
