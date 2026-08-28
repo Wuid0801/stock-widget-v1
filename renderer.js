@@ -266,6 +266,35 @@ async function renderFolio() {
     + `<span class="fp" style="color:${color}">${signed(Math.round(gain))} (${fmtPct(pct)})</span>`;
 }
 
+// --- 업종 -----------------------------------------------------------------------
+// Yahoo 값을 영어 그대로 쓴다. 번역하지 않으니 11개짜리 sector 대신
+// 150개가 넘는 industry 를 쓸 수 있다 — 훨씬 구체적이다.
+// (Technology 면 삼성전자·SK하이닉스가 한 칸인데, industry 로는
+//  Consumer Electronics 와 Semiconductors 로 갈린다)
+// 거래소 업종("전기/전자")과는 분류 자체가 다르다. GICS 기준이다.
+//
+// 업종은 바뀌지 않으므로 한 번 받으면 세션 내내 재사용한다.
+// null 도 캐시한다 — ETF 처럼 값이 없는 종목을 볼 때마다 다시 묻지 않기 위해.
+const sectors = new Map();
+
+async function sectorFor(symbol) {
+  if (sectors.has(symbol)) return sectors.get(symbol);
+  const r = await api.sector(symbol);
+  // 실패는 캐시하지 않는다(일시적 오류일 수 있다). 값 없음(null)은 캐시한다.
+  if (!r.ok) return null;
+  const name = r.industry || r.sector || null;
+  sectors.set(symbol, name);
+  return name;
+}
+
+// 종목명 옆 회색 업종. 조회가 늦게 와도 그 사이 다른 종목을 고르면 버린다.
+async function loadSector(item) {
+  const el = document.getElementById('dsector');
+  const name = await sectorFor(item.symbol);
+  if (state.selected !== item.symbol) return;
+  el.textContent = name || '';
+}
+
 // --- 상세 + 차트 ---------------------------------------------------------------
 function renderDetail() {
   const item = state.watchlist.find((i) => i.symbol === state.selected);
@@ -274,8 +303,15 @@ function renderDetail() {
   const cur = item ? curOf(item.symbol) : 'KRW';
   document.getElementById('dprice').textContent = money(q && q.price, cur);
   // 원화가 아니면 어느 통화인지 이름 옆에 표시
-  document.getElementById('dname').textContent = item
+  document.getElementById('dnameText').textContent = item
     ? (cur === 'KRW' ? item.name : `${item.name} (${cur})`) : '—';
+
+  // 업종은 네트워크를 타므로 종목이 바뀌면 일단 비우고 채워 넣는다.
+  // 이전 종목의 업종이 새 종목 이름 옆에 잠깐 남으면 잘못된 정보가 된다.
+  const secEl = document.getElementById('dsector');
+  const cached = item && sectors.get(item.symbol);
+  secEl.textContent = cached || '';
+  if (item && !sectors.has(item.symbol)) loadSector(item).catch(console.error);
 
   const chgEl = document.getElementById('dchg');
   const badge = document.getElementById('badge');

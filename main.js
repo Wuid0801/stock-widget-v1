@@ -263,6 +263,26 @@ ipcMain.handle('fx:usdkrw', async () => {
   }
 });
 
+// 업종. Yahoo 의 quoteSummary(assetProfile)는 크럼 토큰을 요구해 막히는데,
+// 검색 엔드포인트는 심볼로 조회하면 인증 없이 sector/industry 를 같이 준다.
+// 분류는 GICS 기준이라 한국거래소 업종("전기/전자")과 다르고, ETF 는 값이 없다.
+ipcMain.handle('yf:sector', async (_e, symbol) => {
+  if (!SYMBOL_RE.test(String(symbol ?? ''))) return { ok: false, error: '잘못된 요청' };
+  const url = 'https://query1.finance.yahoo.com/v1/finance/search'
+    + `?q=${encodeURIComponent(symbol)}&quotesCount=1&newsCount=0`;
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+    const hit = (await res.json())?.quotes?.[0];
+    // 심볼이 정확히 맞을 때만 쓴다. 검색이라 엉뚱한 종목이 1등으로 올 수 있다.
+    if (!hit || hit.symbol !== symbol) return { ok: true, sector: null, industry: null };
+    return { ok: true, sector: hit.sectorDisp || null, industry: hit.industryDisp || null };
+  } catch (err) {
+    return { ok: false, error: err.message || '업종 조회 실패' };
+  }
+});
+
 // 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버 자동완성을 쓴다.
 // (주식·ETF 모두 한글명으로 잡히고 코스피/코스닥까지 알려준다)
 ipcMain.handle('yf:search', async (_e, query) => {

@@ -202,12 +202,41 @@ npm run dist    # dist/KRStockWidget-Setup.exe  (약 90MB, 30초)
 | 거래량 · 고가 · 저가 | Yahoo Finance | 차트 응답에 포함되어 추가 요청 없음 |
 | 원/달러 환율 | Yahoo Finance | `KRW=X`, 30분 캐시. 보유에 달러 종목이 있을 때만 |
 | 종목 검색 | Naver 자동완성 | 주식·ETF 한글 검색 |
+| 업종 | Yahoo 검색 | 심볼당 1회, 세션 캐시. ETF 는 값 없음 |
 
 ### 왜 나눠 쓰는가
 
 - **Yahoo 한국 시세는 20분 지연입니다.** 실측 결과 세 종목 모두 기준시각이 정확히 20분 전이었고, 삼성전자 기준 3,250원(1.4%) 차이가 났습니다. 그래서 현재가만 Naver 실시간으로 덮어씁니다.
 - **Yahoo 검색은 한글 쿼리에 HTTP 400을 반환합니다.** `query1`/`query2`/`lang` 지정/`autocomplete` 모두 실패해서 검색은 Naver를 씁니다.
 - **차트·RSI는 Yahoo를 유지합니다.** RSI 는 일봉 종가 기반이라 20분 지연의 영향이 거의 없고(마지막 종가만 현재가로 치환), 비공식 API 의존도를 낮추기 위해서입니다.
+
+### 업종
+
+종목명 옆에 회색 작은 글씨로 붙습니다. **Yahoo 값을 영어 그대로** 씁니다.
+
+```
+삼성전자 · Consumer Electronics
+```
+
+Yahoo 의 `quoteSummary`(assetProfile)는 크럼 토큰을 요구해 `Invalid Crumb` 으로 막히는데, **검색 엔드포인트에 심볼을 넣으면 인증 없이** `sector` · `industry` 를 같이 줍니다. 검색이라 엉뚱한 종목이 1등으로 올 수 있어 **심볼이 정확히 일치할 때만** 씁니다.
+
+번역하지 않으므로 11개짜리 `sector` 대신 **150개가 넘는 `industry`** 를 씁니다. `sector` 로는 삼성전자·SK하이닉스가 똑같이 `Technology` 인데, `industry` 로는 `Consumer Electronics` 와 `Semiconductors` 로 갈립니다. `industry` 가 없으면 `sector` 로 내려갑니다.
+
+업종은 바뀌지 않으므로 세션 캐시에 담습니다. 값이 없는 경우(`null`)도 캐시합니다 — ETF 를 볼 때마다 다시 묻지 않기 위해서입니다. 조회 실패만 캐시하지 않습니다.
+
+> **거래소 업종이 아닙니다.** Yahoo 는 GICS 기준이라 삼성전자가 `Consumer Electronics` 로 애플과 같은 칸에 들어갑니다. 한국거래소 기준으로는 "전기/전자" 입니다.
+
+실측 커버리지 (2026-08-26):
+
+| 종목 | quoteType | 표시 |
+|---|---|---|
+| 삼성전자 | EQUITY | Consumer Electronics |
+| SK하이닉스 | EQUITY | Semiconductors |
+| 알테오젠 (코스닥) | EQUITY | Biotechnology |
+| Apple | EQUITY | Consumer Electronics |
+| KODEX 200 | **ETF** | (비움) |
+
+영어라 길어질 수 있어(`Semiconductor Equipment & Materials`) 이름 줄을 `text-overflow: ellipsis` 로 자릅니다. 안 자르면 등락률이 오른쪽으로 밀려납니다.
 
 ### 폴백
 

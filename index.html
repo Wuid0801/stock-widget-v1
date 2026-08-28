@@ -365,7 +365,16 @@
   /* --- 하단 상세 + 차트 --- */
   .detail { flex: 0 0 auto; border-top: 1px solid var(--line-2); padding: 9px 11px 10px; }
   .dhead { display: flex; align-items: flex-end; gap: 8px; }
-  .dname { font-size: 11px; color: var(--dname); }
+  /* 업종이 영어라 길다(Semiconductor Equipment & Materials 같은 것도 있다).
+     넘치면 등락률을 밀어내므로 이름 줄에서 잘라낸다. */
+  .dhead > div:first-child { flex: 1 1 auto; min-width: 0; }
+  .dname {
+    font-size: 11px; color: var(--dname);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  /* 업종 — 종목명보다 한 단계 더 흐리고 작게. 값이 없으면 자리를 차지하지 않는다 */
+  .dsector { font-size: 9px; color: var(--faint); }
+  .dsector:not(:empty)::before { content: ' · '; }
   .dprice { font-size: 19px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
   .dchg { margin-left: auto; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -449,7 +458,9 @@
     <div class="detail">
       <div class="dhead">
         <div>
-          <div class="dname" id="dname">—</div>
+          <div class="dname" id="dname">
+            <span id="dnameText">—</span><span class="dsector" id="dsector"></span>
+          </div>
           <div class="dprice" id="dprice">—</div>
         </div>
         <div class="dchg" id="dchg"></div>
