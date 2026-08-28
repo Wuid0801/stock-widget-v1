@@ -392,24 +392,37 @@ let hoverIdx = null;
 function renderMaLegend() {
   const box = document.getElementById('maLegend');
   const mas = (lastChart && lastChart.mas) || [];
-  box.hidden = mas.length === 0;
+  const trends = (lastChart && lastChart.trends) || [];
+  box.hidden = mas.length === 0 && trends.length === 0;
   box.innerHTML = '';
-  for (const m of mas) {
-    const v = hoverIdx == null ? null : m.data[hoverIdx];
+
+  // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
+  // 범례가 한 줄에서 두 줄로 접히면서 아래 차트가 들썩인다.
+  const add = (label, value, varName, title, dashed) => {
     const s = document.createElement('span');
-    s.title = `${m.p}일 이동평균`;
-
-    s.append(String(m.p));
-    // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
-    // 범례가 한 줄에서 두 줄로 접히면서 아래 차트가 들썩인다.
+    s.title = title;
+    s.append(label);
     const val = document.createElement('b');
-    val.textContent = v == null ? '' : money(v, lastChart.cur);
+    val.textContent = value == null ? '' : money(value, lastChart.cur);
     s.appendChild(val);
-
     const i = document.createElement('i');
-    i.style.background = cssVar(m.varName);
+    i.style.background = cssVar(varName);
+    if (dashed) i.className = 'dash';
     s.appendChild(i);
     box.appendChild(s);
+  };
+
+  for (const m of mas) {
+    add(String(m.p), hoverIdx == null ? null : m.data[hoverIdx],
+      m.varName, `${m.p}일 이동평균`);
+  }
+  // 추세선은 마우스를 안 올렸을 때 마지막 봉(오늘) 값을 보여준다.
+  // 이동평균과 달리 개수가 둘로 고정이라 늘 떠 있어도 줄이 넘치지 않는다.
+  for (const t of trends) {
+    const sup = t.varName === '--sup-line';
+    const i = hoverIdx == null ? t.data.length - 1 : hoverIdx;
+    add(sup ? '지지' : '저항', t.data[i], t.varName,
+      sup ? '저점을 잇는 지지선' : '고점을 잇는 저항선', true);
   }
 }
 
@@ -510,6 +523,95 @@ function crossings(short, long) {
   return out;
 }
 
+// --- 추세선 ---------------------------------------------------------------------
+// 저점끼리 이으면 지지선, 고점끼리 이으면 저항선. 3M · 1Y 에서만 그린다 —
+// 1M(21봉)은 구간이 짧고, 1D/1W 는 분봉이라 "추세"라고 부를 구간이 아니다.
+const TREND_TF = new Set(['3M', '1Y']);
+
+// 이 정도는 걸쳐야 추세라고 부를 수 있다(봉 수).
+const TREND_MIN_SPAN = 20;
+// 현재가에서 이만큼 벗어난 선은 그리지 않는다. 직선 하나로 설명되지 않는 구간에서는
+// 껍질이 엉뚱한 데를 가리킨다 — 삼성전자 1Y 에서 저항 +75%, 지지 −24% 가 나왔다.
+// 안 보이는 것보다 그럴듯한데 틀린 숫자가 나쁘므로, 통과 못 하면 그 선은 뺀다.
+const TREND_MAX_GAP = 0.10;
+
+// 볼록 껍질(Andrew monotone chain). 점은 x 오름차순으로 들어온다.
+// 모든 봉의 저가(고가)를 넣는다. 스윙 피벗만 넣으면 피벗이 아닌 봉이 선 아래로
+// 삐져나온다 — 실제로 20봉 중 3봉이 최대 17,871원까지 뚫었다.
+function hull(pts, low) {
+  const out = [];
+  for (const p of pts) {
+    while (out.length >= 2) {
+      const a = out[out.length - 2]; const b = out[out.length - 1];
+      const cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+      if (low ? cross <= 0 : cross >= 0) out.pop();
+      else break;
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+// 껍질에서 가장 긴 선분이 추세선이다. 마지막 선분을 쓰면 안 된다 —
+// 껍질은 기울기가 단조라 마지막이 언제나 가장 가파른 선분이고,
+// 그걸 앞으로 연장하면 현재가를 뚫고 올라간다(지지선이 주가 위로 갔다).
+//
+// 선은 그 선분의 시작점부터 마지막 봉까지만 채우고 앞쪽은 null 로 둔다.
+// 카테고리 축이라 봉이 없는 구간으로는 뻗을 수 없고, 뒤로 늘이면 y축만 넓어진다.
+function trendLine(values, len, low, price) {
+  const pts = [];
+  for (let i = 0; i < values.length; i++) if (values[i] != null) pts.push([i, values[i]]);
+  const h = hull(pts, low);
+
+  let best = null;
+  for (let k = 1; k < h.length; k++) {
+    const span = h[k][0] - h[k - 1][0];
+    if (!best || span > best.span) best = { span, a: h[k - 1], b: h[k] };
+  }
+  if (!best || best.span < TREND_MIN_SPAN) return null;
+
+  const [x1, y1] = best.a;
+  const [x2, y2] = best.b;
+  const slope = (y2 - y1) / (x2 - x1);
+  const today = y1 + slope * (len - 1 - x1);
+  if (!price || Math.abs(today - price) / price > TREND_MAX_GAP) return null;
+
+  const out = new Array(len).fill(null);
+  for (let i = x1; i < len; i++) out[i] = y1 + slope * (i - x1);
+  return { data: out, slope, from: x1 };
+}
+
+// 두 추세선이 만나는 봉 인덱스. 기울기가 같으면 평행이라 만나지 않는다.
+// 인덱스는 소수로 나오고, 마지막 봉보다 뒤여야(수렴 중이어야) 의미가 있다.
+function meetAt(a, b) {
+  if (a.slope === b.slope) return null;
+  const ay = a.data[a.from] - a.slope * a.from; // y절편
+  const by = b.data[b.from] - b.slope * b.from;
+  return (by - ay) / (a.slope - b.slope);
+}
+
+// 삼각수렴까지 남은 거래일. 벌어지는 중이면 교차점이 과거로 나오는데,
+// 그건 "이미 지났다"가 아니라 값 자체가 의미 없는 경우라 표시하지 않는다.
+function renderConvergeBadge(trends, len) {
+  const el = document.getElementById('converge');
+  const sup = trends.find((t) => t.varName === '--sup-line');
+  const res = trends.find((t) => t.varName === '--res-line');
+  el.hidden = true;
+  if (!sup || !res) return;
+
+  const at = meetAt(sup, res);
+  if (at == null) return;
+  // 교차점은 소수로 나온다. 올림이라 "n거래일"은 "마지막 봉에서 n 번째 봉 안에 만난다".
+  // 반올림하면 0.6(거의 붙음)과 1.4(다음 봉에도 안 만남)가 똑같이 1 이 된다.
+  const bars = Math.ceil(at - (len - 1));
+  if (bars <= 0 || bars > 250) return; // 1년 밖은 사실상 평행선이다
+
+  // 봉은 거래일이다. 달력으로는 대략 7/5 배 — 공휴일은 반영하지 못한다.
+  const weeks = Math.round((bars * 7) / 5 / 7);
+  el.hidden = false;
+  el.textContent = `수렴 ${bars}거래일${weeks >= 2 ? ` · 약 ${weeks}주` : ''}`;
+}
+
 // 교차 지점 표식. 골든은 선 아래에 ▲, 데드는 선 위에 ▼.
 // 평단가 점선과 마찬가지로 축을 건드리지 않도록 캔버스에 직접 그린다.
 const crossMarkPlugin = {
@@ -565,13 +667,14 @@ function clearChart() {
   hoverIdx = null;
   renderMaLegend();
   renderCrossBadge([], []);
+  renderConvergeBadge([], 0);
 }
 
 function drawChart(arg) {
   lastChart = arg;
   const {
     closes, times, up, mas = [], cur = 'KRW',
-    volumes = [], highs = [], lows = [], hLines = [], crosses = [],
+    volumes = [], highs = [], lows = [], hLines = [], crosses = [], trends = [],
   } = arg;
   const color = up ? UP : DOWN;
   hoverIdx = null;
@@ -645,6 +748,23 @@ function drawChart(arg) {
         pointRadius: 0,
         pointHitRadius: 0,
         tension: 0.2,
+        fill: false,
+        spanGaps: false,
+      })),
+      // 지지·저항 추세선 (3M 에서만 전달된다).
+      // 점선 1px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
+      // 정규 데이터셋이라 y축이 알아서 범위에 넣는다. 캔버스에 직접 그리면
+      // 기울어진 선의 양 끝이 축 밖으로 나가 말없이 잘린다(시간외 선에서 겪음).
+      ...trends.map((t) => ({
+        data: t.data,
+        yAxisID: 'y',
+        order: 3,
+        borderColor: cssVar(t.varName),
+        borderWidth: 1.6,
+        borderDash: [5, 3],
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0,
         fill: false,
         spanGaps: false,
       })),
@@ -945,6 +1065,18 @@ async function loadChart() {
   const highs = pad(r.highs, (i) => closes[i]);
   const lows = pad(r.lows, (i) => closes[i]);
 
+  // 추세선은 3M · 1Y 에서만. 검사를 통과 못 한 쪽은 빠지므로
+  // 지지선만, 저항선만, 또는 둘 다 없는 상태가 정상이다.
+  const trends = [];
+  if (TREND_TF.has(state.timeframe)) {
+    const price = closes[closes.length - 1];
+    const sup = trendLine(lows, closes.length, true, price);
+    const res = trendLine(highs, closes.length, false, price);
+    if (sup) trends.push({ ...sup, varName: '--sup-line' });
+    if (res) trends.push({ ...res, varName: '--res-line' });
+  }
+  renderConvergeBadge(trends, closes.length);
+
   const held = state.holdings[item.symbol];
   const up = !q || q.change >= 0;
 
@@ -973,7 +1105,7 @@ async function loadChart() {
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, highs, lows, crosses, hLines,
+    volumes, highs, lows, crosses, hLines, trends,
   });
 }
 
