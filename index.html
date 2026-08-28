@@ -409,6 +409,9 @@
   [data-theme="light"] .badge.cross.down { color: #185fa5; }
   /* 수렴은 방향이 없는 정보라 등락 색을 쓰지 않고 추세선 색 하나만 빌린다 */
   .badge.converge { font-variant-numeric: tabular-nums; color: var(--sup-line); }
+  /* 돌파는 뚫린 선의 색을 그대로 쓴다 — 차트의 어느 선 이야기인지 바로 잇도록 */
+  .badge.breakout { font-variant-numeric: tabular-nums; color: var(--res-line); }
+  .badge.breakout.sup { color: var(--sup-line); }
   .badge[hidden] { display: none; }
   .tf { margin-left: auto; display: flex; gap: 3px; }
   .tf button {
@@ -480,6 +483,8 @@
         <span class="badge period" id="period" hidden></span>
         <!-- 가장 최근 골든/데드크로스 -->
         <span class="badge cross" id="cross" hidden></span>
+        <!-- 최근 5봉이 추세선을 뚫었을 때. 돌파가 있으면 아래 수렴 배지는 뜨지 않는다 -->
+        <span class="badge breakout" id="breakout" hidden></span>
         <!-- 지지선과 저항선이 만나기까지 남은 거래일 (3M · 1Y) -->
         <span class="badge converge" id="converge" hidden></span>
         <div class="tf" id="tf"></div>

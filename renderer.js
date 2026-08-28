@@ -530,14 +530,23 @@ const TREND_TF = new Set(['3M', '1Y']);
 
 // 이 정도는 걸쳐야 추세라고 부를 수 있다(봉 수).
 const TREND_MIN_SPAN = 20;
-// 현재가에서 이만큼 벗어난 선은 그리지 않는다. 직선 하나로 설명되지 않는 구간에서는
-// 껍질이 엉뚱한 데를 가리킨다 — 삼성전자 1Y 에서 저항 +75%, 지지 −24% 가 나왔다.
-// 안 보이는 것보다 그럴듯한데 틀린 숫자가 나쁘므로, 통과 못 하면 그 선은 뺀다.
-const TREND_MAX_GAP = 0.10;
+// 선을 만들 때 빼두는 최근 봉 수. 이 봉들은 껍질에 넣지 않으므로 선을 뚫을 수 있다.
+// 마지막 봉까지 넣으면 껍질이 늘 그 봉을 감싸서 선이 정의상 절대 뚫리지 않는다 —
+// 돌파가 일어나도 선이 오늘 고가에 다시 맞춰질 뿐이라 돌파를 말할 수 없었다.
+const TREND_LOOKBACK = 5;
+// 선분 끝점이 피팅 창 끝에서 이보다 멀면 채택하지 않는다. 오래된 선분을 끝까지
+// 연장하는 것이 "껍질이 엉뚱한 데를 가리킨다"의 실제 원인이었다 — 상승 뒤 급락
+// 구간에서 최장 선분이 상승 구간이라 삼성전자 1Y 저항이 +75% 로 나왔다.
+const TREND_MAX_EXTEND = 10;
+// 이보다 적게 넘은 것은 돌파로 치지 않는다. 껍질은 원래 선에 닿으므로 스치는 일이
+// 흔하다 — 실측에서 Apple 3M 저가가 지지선을 0.035%(11센트) 스쳤다. 실제 돌파는
+// 2.6% · 4.2% · 8.5% 로 나와서 0.5~2% 어디를 잡아도 결과가 같다.
+const TREND_MIN_BREAK = 0.01;
 
 // 볼록 껍질(Andrew monotone chain). 점은 x 오름차순으로 들어온다.
-// 모든 봉의 저가(고가)를 넣는다. 스윙 피벗만 넣으면 피벗이 아닌 봉이 선 아래로
+// 피팅 창 안의 모든 봉을 넣는다. 스윙 피벗만 넣으면 피벗이 아닌 봉이 선 아래로
 // 삐져나온다 — 실제로 20봉 중 3봉이 최대 17,871원까지 뚫었다.
+// (창 밖의 최근 봉이 뚫는 것은 의도한 것이고, 그게 돌파다)
 function hull(pts, low) {
   const out = [];
   for (const p of pts) {
@@ -558,9 +567,10 @@ function hull(pts, low) {
 //
 // 선은 그 선분의 시작점부터 마지막 봉까지만 채우고 앞쪽은 null 로 둔다.
 // 카테고리 축이라 봉이 없는 구간으로는 뻗을 수 없고, 뒤로 늘이면 y축만 넓어진다.
-function trendLine(values, len, low, price) {
+function trendLine(values, len, low) {
+  const fitEnd = len - TREND_LOOKBACK; // 껍질에 넣는 봉은 [0, fitEnd) 뿐이다
   const pts = [];
-  for (let i = 0; i < values.length; i++) if (values[i] != null) pts.push([i, values[i]]);
+  for (let i = 0; i < fitEnd; i++) if (values[i] != null) pts.push([i, values[i]]);
   const h = hull(pts, low);
 
   let best = null;
@@ -572,13 +582,28 @@ function trendLine(values, len, low, price) {
 
   const [x1, y1] = best.a;
   const [x2, y2] = best.b;
-  const slope = (y2 - y1) / (x2 - x1);
-  const today = y1 + slope * (len - 1 - x1);
-  if (!price || Math.abs(today - price) / price > TREND_MAX_GAP) return null;
+  if (fitEnd - 1 - x2 > TREND_MAX_EXTEND) return null;
 
+  const slope = (y2 - y1) / (x2 - x1);
   const out = new Array(len).fill(null);
   for (let i = x1; i < len; i++) out[i] = y1 + slope * (i - x1);
-  return { data: out, slope, from: x1 };
+  return { data: out, slope, from: x1, to: x2 };
+}
+
+// 빼둔 최근 봉이 선을 넘었는가. 가장 크게 벗어난 봉 하나를 돌려준다.
+// 저항은 고가가 선 위로, 지지는 저가가 선 아래로 나간 것이 돌파다.
+// 닿기만 한 봉(gap 0)은 돌파가 아니다 — 껍질은 원래 선에 닿는다.
+function breakoutOf(line, extremes, len, low) {
+  let best = null;
+  for (let i = Math.max(line.from, len - TREND_LOOKBACK); i < len; i++) {
+    const y = line.data[i];
+    const v = extremes[i];
+    if (y == null || v == null) continue;
+    const gap = low ? y - v : v - y;
+    if (gap / y < TREND_MIN_BREAK) continue;
+    if (!best || gap > best.gap) best = { at: i, gap, pct: gap / y };
+  }
+  return best;
 }
 
 // 두 추세선이 만나는 봉 인덱스. 기울기가 같으면 평행이라 만나지 않는다.
@@ -590,13 +615,34 @@ function meetAt(a, b) {
   return (by - ay) / (a.slope - b.slope);
 }
 
-// 삼각수렴까지 남은 거래일. 벌어지는 중이면 교차점이 과거로 나오는데,
+// 추세선 배지 둘 — 돌파와 수렴.
+//
+// 돌파가 있으면 수렴은 표시하지 않는다. 한쪽이 이미 끝난 선인데 두 선이 만나는
+// 시점을 말하면 틀린 정보가 되고, 폭 340px 에 배지가 셋 이상 들어가면 줄이 접힌다.
+//
+// 수렴은 삼각수렴까지 남은 거래일이다. 벌어지는 중이면 교차점이 과거로 나오는데,
 // 그건 "이미 지났다"가 아니라 값 자체가 의미 없는 경우라 표시하지 않는다.
-function renderConvergeBadge(trends, len) {
+function renderTrendBadges(trends, len, times = []) {
+  const brk = document.getElementById('breakout');
   const el = document.getElementById('converge');
+  brk.hidden = true;
+  el.hidden = true;
+
+  // 양쪽이 다 뚫렸으면 더 크게 벗어난 쪽만 보여준다(배지 하나로 고정).
+  const hit = trends.filter((t) => t.broke).sort((a, b) => b.broke.pct - a.broke.pct)[0];
+  if (hit) {
+    const isSup = hit.varName === '--sup-line';
+    // 크로스 배지와 같은 방식으로 실제 달력 일수를 쓴다.
+    const days = Math.round((Date.now() - times[hit.broke.at]) / 86400000);
+    brk.hidden = false;
+    brk.classList.toggle('sup', isSup);
+    brk.textContent = `${isSup ? '지지 이탈' : '저항 돌파'} ${fmtPct(hit.broke.pct * 100)}`
+      + ` · ${days <= 0 ? '오늘' : `${days}일 전`}`;
+    return;
+  }
+
   const sup = trends.find((t) => t.varName === '--sup-line');
   const res = trends.find((t) => t.varName === '--res-line');
-  el.hidden = true;
   if (!sup || !res) return;
 
   const at = meetAt(sup, res);
@@ -667,7 +713,7 @@ function clearChart() {
   hoverIdx = null;
   renderMaLegend();
   renderCrossBadge([], []);
-  renderConvergeBadge([], 0);
+  renderTrendBadges([], 0);
 }
 
 function drawChart(arg) {
@@ -1075,13 +1121,14 @@ async function loadChart() {
   // 지지선만, 저항선만, 또는 둘 다 없는 상태가 정상이다.
   const trends = [];
   if (TREND_TF.has(state.timeframe)) {
-    const price = closes[closes.length - 1];
-    const sup = trendLine(lows, closes.length, true, price);
-    const res = trendLine(highs, closes.length, false, price);
-    if (sup) trends.push({ ...sup, varName: '--sup-line' });
-    if (res) trends.push({ ...res, varName: '--res-line' });
+    const len = closes.length;
+    const sup = trendLine(lows, len, true);
+    const res = trendLine(highs, len, false);
+    // 선을 만들 때 빼둔 최근 봉이 그 선을 뚫었는지 같이 담는다.
+    if (sup) trends.push({ ...sup, varName: '--sup-line', broke: breakoutOf(sup, lows, len, true) });
+    if (res) trends.push({ ...res, varName: '--res-line', broke: breakoutOf(res, highs, len, false) });
   }
-  renderConvergeBadge(trends, closes.length);
+  renderTrendBadges(trends, closes.length, times);
 
   const held = state.holdings[item.symbol];
   const up = !q || q.change >= 0;

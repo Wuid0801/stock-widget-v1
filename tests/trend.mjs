@@ -1,0 +1,155 @@
+// 지지·저항 추세선 회귀 가드 — 앱을 띄우지 않고 renderer.js 의 추세선 계산만
+// 떼어내 검증한다(rsi.mjs 와 같은 방식).
+//
+// 핵심 성질은 하나다: 추세선은 최근 TREND_LOOKBACK 봉을 빼고 만든다.
+// 그래야 그 봉들이 선을 뚫을 수 있고, 뚫렸다는 사실을 말할 수 있다.
+// 마지막 봉까지 껍질에 넣으면 껍질이 늘 마지막 봉을 감싸므로 선은 정의상
+// 절대 뚫리지 않는다 — 돌파가 일어나도 선이 오늘 고가에 다시 맞춰질 뿐이다.
+import fs from 'node:fs';
+import path from 'node:path';
+import { APP_DIR } from './_paths.mjs';
+
+// renderer.js 의 이 두 주석이 잘라내기 경계다. 옮기면 여기도 같이 고쳐야 한다.
+const START = 'const TREND_TF';
+const END = '// 두 추세선이 만나는 봉 인덱스';
+
+const src = fs.readFileSync(path.join(APP_DIR, 'renderer.js'), 'utf8');
+const a = src.indexOf(START);
+const b = src.indexOf(END);
+if (a < 0 || b < 0) { console.log('FAIL: renderer.js 에서 추세선 블록을 찾지 못함'); process.exit(1); }
+
+const T = new Function(`${src.slice(a, b)}
+  return {
+    hull, trendLine,
+    breakoutOf: typeof breakoutOf === 'function' ? breakoutOf : null,
+    LOOKBACK: typeof TREND_LOOKBACK !== 'undefined' ? TREND_LOOKBACK : null,
+    MIN_SPAN: typeof TREND_MIN_SPAN !== 'undefined' ? TREND_MIN_SPAN : null,
+    MAX_EXTEND: typeof TREND_MAX_EXTEND !== 'undefined' ? TREND_MAX_EXTEND : null,
+  };`)();
+
+let fails = 0;
+const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
+
+// --- 데이터 만들기 -------------------------------------------------------------
+// 고가가 봉당 100원씩 정확히 내려가는 하락 추세. 전부 한 직선 위에 있어
+// 껍질이 구간 전체를 잇는 선분 하나가 된다(연장 거리 0).
+const decline = (n) => Array.from({ length: n }, (_, i) => 20000 - 100 * i);
+
+// 결정적 의사난수. Math.random 은 재현이 안 돼 쓰지 않는다.
+let seed = 20260828;
+const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+
+console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${T.MAX_EXTEND}\n`);
+
+// --- 1. 제외 구간의 봉은 선을 만드는 데 참여하지 않는다 -------------------------
+{
+  const N = 50;
+  const base = decline(N);
+  const plain = T.trendLine(base, N, false);
+
+  const spiked = decline(N);
+  spiked[N - 1] = 99999; // 마지막 봉만 터무니없이 높게
+  const after = T.trendLine(spiked, N, false);
+
+  check('마지막 봉 고가를 99,999 로 바꿔도 저항선 기울기가 그대로다',
+    plain && after && plain.slope === after.slope,
+    plain && after ? `${plain.slope} → ${after.slope}` : `plain=${plain} after=${after}`);
+}
+
+// --- 2. 돌파해도 선이 오늘 고가에 다시 맞춰지지 않는다 --------------------------
+{
+  const N = 50;
+  const highs = decline(N);
+  highs[N - 1] = 16000; // 하락선(오늘값 15,100) 위로 급등
+  const line = T.trendLine(highs, N, false);
+
+  check('돌파한 날의 저항선 오늘값이 그날 고가보다 낮다',
+    line && line.data[N - 1] < highs[N - 1],
+    line ? `선 ${line.data[N - 1]} vs 고가 ${highs[N - 1]}` : 'line=null');
+}
+
+// --- 3. 돌파를 감지한다 ---------------------------------------------------------
+{
+  const N = 50;
+  const highs = decline(N);
+  highs[N - 1] = 16000;
+  const line = T.trendLine(highs, N, false);
+  const bo = line && T.breakoutOf && T.breakoutOf(line, highs, N, false);
+
+  check('저항 돌파가 마지막 봉에서 잡힌다', !!bo && bo.at === N - 1,
+    bo ? `at=${bo.at}` : `bo=${bo}`);
+  check('돌파 폭이 900원 · 약 6% 로 계산된다',
+    !!bo && Math.round(bo.gap) === 900 && Math.abs(bo.pct - 900 / 15100) < 1e-9,
+    bo ? `gap=${bo.gap} pct=${bo.pct}` : '');
+}
+
+// --- 4. 뚫지 않았으면 돌파가 아니다 ---------------------------------------------
+{
+  const N = 50;
+  const highs = decline(N); // 마지막 봉도 정확히 선 위에 있다(gap 0)
+  const line = T.trendLine(highs, N, false);
+  const bo = line && T.breakoutOf && T.breakoutOf(line, highs, N, false);
+  check('선에 닿기만 하고 넘지 않으면 돌파가 아니다', line && bo === null,
+    bo ? `gap=${bo.gap}` : '');
+}
+
+// --- 5. 지지선도 같은 성질을 갖는다 ---------------------------------------------
+{
+  const N = 50;
+  const lows = decline(N);
+  lows[N - 1] = 14000; // 하락 지지선(오늘값 15,100) 아래로 이탈
+  const line = T.trendLine(lows, N, true);
+  const bo = line && T.breakoutOf && T.breakoutOf(line, lows, N, true);
+
+  check('지지선 이탈이 잡히고 선은 저가에 맞춰지지 않는다',
+    !!line && !!bo && bo.at === N - 1 && line.data[N - 1] > lows[N - 1],
+    line ? `선 ${line.data[N - 1]} vs 저가 ${lows[N - 1]}` : 'line=null');
+}
+
+// --- 6. 최근까지 유효하지 않은 선분은 채택하지 않는다 ---------------------------
+// 50봉 상승 뒤 급락. 위쪽 껍질의 최장 선분은 상승 구간이라 끝점이 한참 과거에
+// 있고, 그걸 끝까지 연장하면 실제 고가보다 한참 위를 가리킨다(1Y 저항 +75% 사례).
+{
+  const N = 76;
+  const highs = Array.from({ length: N }, (_, i) => (i <= 50 ? 10000 + 200 * i : 20000 - 400 * (i - 50)));
+  const line = T.trendLine(highs, N, false);
+  check('상승 뒤 급락 구간에서는 저항선을 채택하지 않는다', line === null,
+    line ? `채택됨 (끝점 ${line.to}봉, 창 끝 ${N - 1 - T.LOOKBACK}봉, 오늘값 ${Math.round(line.data[N - 1])})` : '');
+}
+
+// --- 7. 구간이 짧으면 채택하지 않는다 -------------------------------------------
+{
+  const N = 24; // 피팅 창이 19봉뿐이라 20봉 조건을 만족할 수 없다
+  const line = T.trendLine(decline(N), N, false);
+  check('피팅 창이 20봉에 못 미치면 선을 그리지 않는다', line === null,
+    line ? `채택됨 (span ${line.to - line.from})` : '');
+}
+
+// --- 8. 껍질 성질: 피팅 구간 안에서는 아무 봉도 선을 넘지 않는다 ----------------
+{
+  const N = 60;
+  const highs = Array.from({ length: N }, (_, i) => Math.round(18000 - 80 * i + (rnd() - 0.5) * 600));
+  const line = T.trendLine(highs, N, false);
+  let over = 0;
+  if (line) {
+    for (let i = line.from; i <= N - 1 - T.LOOKBACK; i++) if (highs[i] > line.data[i] + 1e-9) over++;
+  }
+  check('피팅 구간 안에서 저항선을 넘는 봉이 없다', !!line && over === 0,
+    line ? `${over}봉 초과` : 'line=null');
+}
+
+// --- 9. 스치듯 넘은 것은 돌파가 아니다 -----------------------------------------
+// 실측에서 Apple 3M 저가가 지지선을 0.035%(11센트) 스쳤다. 그걸 "이탈" 로 띄우면
+// 배지에 0.0% 가 찍힌다 — 안 보이는 것보다 그럴듯한데 틀린 숫자가 나쁘다.
+{
+  const N = 50;
+  const highs = decline(N);
+  highs[N - 1] = 15115; // 선 15,100 대비 +0.10%
+  const line = T.trendLine(highs, N, false);
+  const bo = line && T.breakoutOf && T.breakoutOf(line, highs, N, false);
+  check('선을 0.1% 스친 것은 돌파가 아니다', !!line && bo === null,
+    bo ? `pct=${(bo.pct * 100).toFixed(3)}%` : (line ? '' : 'line=null'));
+}
+
+console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
+process.exit(fails === 0 ? 0 : 1);

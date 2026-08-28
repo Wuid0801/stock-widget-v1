@@ -13,9 +13,10 @@ import { resetConfig } from './_paths.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// 빠른 것부터. 앱을 띄우지 않는 rsi 가 먼저 돌아 계산 회귀를 즉시 잡는다.
+// 빠른 것부터. 앱을 띄우지 않는 rsi · trend 가 먼저 돌아 계산 회귀를 즉시 잡는다.
 const ORDER = [
   'rsi.mjs',
+  'trend.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',
