@@ -151,5 +151,39 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
     bo ? `pct=${(bo.pct * 100).toFixed(3)}%` : (line ? '' : 'line=null'));
 }
 
+// --- 10. 값이 0 이하로 내려가는 선은 그리지 않는다 -----------------------------
+// 급락 종목에서 지지선을 앞으로 연장하면 주가가 음수인 지점을 가리킬 수 있다.
+// 0 이하의 가격은 뜻이 없고, 정규 데이터셋이라 y축이 그 값까지 늘어나 눈금에
+// 음수가 찍힌다. 예전 ±10% 검사가 우연히 막아주던 것이라 대체 규칙이 필요하다.
+{
+  const N = 62; // 3M
+  const bottom = 800; // 50봉 만에 10,000 → 800 (92% 급락) 뒤 반등
+  const lows = [];
+  for (let i = 0; i < N; i++) {
+    lows.push(Math.round(i <= 50
+      ? 10000 - ((10000 - bottom) * i) / 50
+      : bottom + ((i - 50) * (10000 - bottom)) / 50 * 1.6));
+  }
+  const line = T.trendLine(lows, N, true);
+  const drawn = line ? line.data.filter((v) => v != null) : [];
+  const worst = drawn.length ? Math.min(...drawn) : null;
+  check('92% 급락 구간에서 음수로 내려가는 지지선은 채택하지 않는다',
+    line === null || worst > 0,
+    line ? `오늘값 ${Math.round(line.data[N - 1])}, 최솟값 ${Math.round(worst)}` : '');
+}
+
+// --- 11. 선 값이 0 이하일 때 돌파를 오판하지 않는다 -----------------------------
+// gap / y 로 비율을 재므로 y 가 음수면 부호가 뒤집힌다. 저가가 선보다 한참 위에
+// 있는데도(이탈이 아닌데도) 큰 이탈로 보고하던 실측 사례가 있었다.
+{
+  const N = 50;
+  // 선은 제외 구간(45~49봉)에서 음수, 저가는 그보다 훨씬 위(=이탈 아님)
+  const data = Array.from({ length: N }, (_, i) => 1000 - 30 * i);
+  const lows = Array(N).fill(2000);
+  const bo = T.breakoutOf && T.breakoutOf({ data, from: 0 }, lows, N, true);
+  check('선 값이 음수인 구간에서 이탈로 오판하지 않는다', bo === null,
+    bo ? `at=${bo.at} 선 ${data[bo.at]} vs 저가 ${lows[bo.at]} → pct=${(bo.pct * 100).toFixed(2)}%` : '');
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

@@ -585,6 +585,13 @@ function trendLine(values, len, low) {
   if (fitEnd - 1 - x2 > TREND_MAX_EXTEND) return null;
 
   const slope = (y2 - y1) / (x2 - x1);
+  // 앞으로 연장한 선이 0 이하를 가리키면 그리지 않는다. 0 이하의 가격은 뜻이 없고,
+  // 정규 데이터셋이라 y축이 그 값까지 늘어나 눈금에 음수가 찍힌다 — 92% 급락 뒤
+  // 반등한 구간에서 지지선 오늘값이 -1,224 로 나왔다. 기울기가 단조라 그려지는
+  // 구간의 최솟값은 양 끝 중 하나다.
+  const last = y1 + slope * (len - 1 - x1);
+  if (Math.min(y1, last) <= 0) return null;
+
   const out = new Array(len).fill(null);
   for (let i = x1; i < len; i++) out[i] = y1 + slope * (i - x1);
   return { data: out, slope, from: x1, to: x2 };
@@ -600,6 +607,10 @@ function breakoutOf(line, extremes, len, low) {
     const v = extremes[i];
     if (y == null || v == null) continue;
     const gap = low ? y - v : v - y;
+    // 넘지 않았으면(닿기만 했으면) 돌파가 아니다 — 껍질은 원래 선에 닿는다.
+    // y <= 0 도 함께 막는다. 나누면 부호가 뒤집혀 이탈이 아닌 봉을 큰 이탈로
+    // 보고한다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%" 가 나왔다).
+    if (y <= 0 || gap <= 0) continue;
     if (gap / y < TREND_MIN_BREAK) continue;
     if (!best || gap > best.gap) best = { at: i, gap, pct: gap / y };
   }
