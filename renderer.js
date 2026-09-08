@@ -542,6 +542,11 @@ const TREND_MAX_EXTEND = 10;
 // 흔하다 — 실측에서 Apple 3M 저가가 지지선을 0.035%(11센트) 스쳤다. 실제 돌파는
 // 2.6% · 4.2% · 8.5% 로 나와서 0.5~2% 어디를 잡아도 결과가 같다.
 const TREND_MIN_BREAK = 0.01;
+// 피팅 창 끝에서 선과 실제값이 이만큼 넘게 벌어지면 채택하지 않는다. 이격을 창
+// 끝에서 재는 것이 핵심이다 — 그 지점은 제외 구간 앞이라 돌파가 값에 영향을 주지
+// 않으므로, 거리 기준을 되살려도 돌파가 걸러지지 않는다. 실측에서 실제 8개 선은
+// |이격| ≤ 6.50% 이고 급락 시나리오는 36% · 71% 라 10~30% 어디를 잡아도 같다.
+const TREND_MAX_DRIFT = 0.20;
 
 // 볼록 껍질(Andrew monotone chain). 점은 x 오름차순으로 들어온다.
 // 피팅 창 안의 모든 봉을 넣는다. 스윙 피벗만 넣으면 피벗이 아닌 봉이 선 아래로
@@ -592,6 +597,12 @@ function trendLine(values, len, low) {
   const last = y1 + slope * (len - 1 - x1);
   if (Math.min(y1, last) <= 0) return null;
 
+  // 피팅 창의 마지막 실제 점에서 선이 얼마나 벌어졌는지 본다. 창 끝에서 재므로
+  // 제외 구간의 돌파는 이 값에 섞이지 않는다.
+  const [xEnd, vEnd] = pts[pts.length - 1];
+  if (!(vEnd > 0)) return null;
+  if (Math.abs((y1 + slope * (xEnd - x1) - vEnd) / vEnd) > TREND_MAX_DRIFT) return null;
+
   const out = new Array(len).fill(null);
   for (let i = x1; i < len; i++) out[i] = y1 + slope * (i - x1);
   return { data: out, slope, from: x1, to: x2 };
@@ -599,10 +610,10 @@ function trendLine(values, len, low) {
 
 // 빼둔 최근 봉이 선을 넘었는가. 가장 크게 벗어난 봉 하나를 돌려준다.
 // 저항은 고가가 선 위로, 지지는 저가가 선 아래로 나간 것이 돌파다.
-// 닿기만 한 봉(gap 0)은 돌파가 아니다 — 껍질은 원래 선에 닿는다.
+// 선분은 반드시 피팅 창 안에서 끝나므로(span >= 20) 제외 구간만 보면 된다.
 function breakoutOf(line, extremes, len, low) {
   let best = null;
-  for (let i = Math.max(line.from, len - TREND_LOOKBACK); i < len; i++) {
+  for (let i = len - TREND_LOOKBACK; i < len; i++) {
     const y = line.data[i];
     const v = extremes[i];
     if (y == null || v == null) continue;
@@ -611,8 +622,12 @@ function breakoutOf(line, extremes, len, low) {
     // y <= 0 도 함께 막는다. 나누면 부호가 뒤집혀 이탈이 아닌 봉을 큰 이탈로
     // 보고한다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%" 가 나왔다).
     if (y <= 0 || gap <= 0) continue;
-    if (gap / y < TREND_MIN_BREAK) continue;
-    if (!best || gap > best.gap) best = { at: i, gap, pct: gap / y };
+    // 배지에 찍는 값이 % 이고 두 선을 비교할 때도 % 이므로 봉 선택도 % 로 한다.
+    // 절대폭으로 고르면 기울기가 급할 때 더 큰 돌파를 놓친다 — 선 19,000 에서
+    // 1,200(6.32%) 이 선 11,800 에서 1,000(8.47%) 을 이겨 작은 값이 찍혔다.
+    const pct = gap / y;
+    if (pct < TREND_MIN_BREAK) continue;
+    if (!best || pct > best.pct) best = { at: i, gap, pct };
   }
   return best;
 }
@@ -808,7 +823,7 @@ function drawChart(arg) {
         fill: false,
         spanGaps: false,
       })),
-      // 지지·저항 추세선 (3M 에서만 전달된다).
+      // 지지·저항 추세선 (3M · 1Y 에서만 전달된다).
       // 점선 1px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
       // 정규 데이터셋이라 y축이 알아서 범위에 넣는다. 캔버스에 직접 그리면
       // 기울어진 선의 양 끝이 축 밖으로 나가 말없이 잘린다(시간외 선에서 겪음).

@@ -185,5 +185,45 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
     bo ? `at=${bo.at} 선 ${data[bo.at]} vs 저가 ${lows[bo.at]} → pct=${(bo.pct * 100).toFixed(2)}%` : '');
 }
 
+// --- 12. 피팅 창 끝에서 실제값과 크게 벌어진 선은 채택하지 않는다 ---------------
+// 0 을 넘더라도 현재가에서 한참 떨어진 선은 정보가 아니다. 이격을 피팅 창 끝에서
+// 재는 게 핵심이다 — 그 지점은 제외 구간 앞이라 돌파가 값에 영향을 주지 않는다.
+// 실측: 실제 8개 선은 |이격| ≤ 6.50%, 급락 시나리오는 36% · 71%.
+{
+  const cases = [[4000, '60%'], [2000, '80%']];
+  for (const [bottom, label] of cases) {
+    const N = 62;
+    const lows = [];
+    for (let i = 0; i < N; i++) {
+      lows.push(Math.round(i <= 50
+        ? 10000 - ((10000 - bottom) * i) / 50
+        : bottom + ((i - 50) * (10000 - bottom)) / 50 * 1.6));
+    }
+    const line = T.trendLine(lows, N, true);
+    const at = N - T.LOOKBACK - 1;
+    const drift = line ? (line.data[at] - lows[at]) / lows[at] : null;
+    check(`${label} 급락 구간의 지지선은 창끝 이격이 커서 채택하지 않는다`, line === null,
+      line ? `채택됨 (창끝 이격 ${(drift * 100).toFixed(2)}%, 오늘값 ${Math.round(line.data[N - 1])})` : '');
+  }
+}
+
+// --- 13. 돌파 봉은 절대폭이 아니라 비율로 고른다 --------------------------------
+// 배지에 찍는 값이 % 이고 두 선을 비교할 때도 % 를 쓰므로 봉 선택도 % 여야 한다.
+// 기울기가 급하면 선 값이 봉마다 달라 절대폭 최대와 비율 최대가 갈린다.
+{
+  const N = 50;
+  const highs = Array.from({ length: N }, (_, i) => 100000 - 1800 * i);
+  const line = T.trendLine(highs, N, false);
+  if (!line) { check('급한 저항선이 채택된다(선행 조건)', false, 'line=null'); }
+  else {
+    const h2 = highs.slice();
+    h2[45] = line.data[45] + 1200; // 선 19,000 → 절대폭 1,200 / 6.32%
+    h2[49] = line.data[49] + 1000; // 선 11,800 → 절대폭 1,000 / 8.47%
+    const bo = T.breakoutOf(line, h2, N, false);
+    check('절대폭이 작아도 비율이 큰 49봉을 고른다', !!bo && bo.at === 49,
+      bo ? `at=${bo.at} pct=${(bo.pct * 100).toFixed(2)}% (49봉은 8.47%)` : 'bo=null');
+  }
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);
