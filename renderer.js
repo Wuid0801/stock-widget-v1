@@ -303,7 +303,7 @@ function renderDetail() {
   const cur = item ? curOf(item.symbol) : 'KRW';
   document.getElementById('dprice').textContent = money(q && q.price, cur);
   // 원화가 아니면 어느 통화인지 이름 옆에 표시
-  document.getElementById('dnameText').textContent = item
+  document.getElementById('dname').textContent = item
     ? (cur === 'KRW' ? item.name : `${item.name} (${cur})`) : '—';
 
   // 업종은 네트워크를 타므로 종목이 바뀌면 일단 비우고 채워 넣는다.

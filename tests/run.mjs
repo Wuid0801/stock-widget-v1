@@ -13,10 +13,12 @@ import { resetConfig } from './_paths.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// 빠른 것부터. 앱을 띄우지 않는 rsi · trend 가 먼저 돌아 계산 회귀를 즉시 잡는다.
+// 빠른 것부터. 앱을 띄우지 않는 rsi · trend · dom-contract 가 먼저 돌아
+// 계산 회귀와 DOM 계약 위반을 즉시 잡는다.
 const ORDER = [
   'rsi.mjs',
   'trend.mjs',
+  'dom-contract.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',

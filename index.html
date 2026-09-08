@@ -470,8 +470,10 @@
     <div class="detail">
       <div class="dhead">
         <div>
-          <div class="dname" id="dname">
-            <span id="dnameText">—</span><span class="dsector" id="dsector"></span>
+          <!-- #dname 은 종목명만 담는다. 테스트 8개가 textContent 를 종목명과
+               직접 비교하므로 여기에 다른 것을 넣으면 안 된다(tests/dom-contract.mjs) -->
+          <div class="dname" id="dnameRow">
+            <span id="dname">—</span><span class="dsector" id="dsector"></span>
           </div>
           <div class="dprice" id="dprice">—</div>
         </div>
