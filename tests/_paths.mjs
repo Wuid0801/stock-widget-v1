@@ -35,12 +35,24 @@ const ELECTRON_BIN = path.join(
 fs.mkdirSync(SHOTS_DIR, { recursive: true });
 fs.mkdirSync(USER_DATA_DIR, { recursive: true });
 
+// 스위치가 앱 경로보다 앞에 와야 한다. `electron <앱경로> --user-data-dir=X` 로
+// 두면 스위치가 앱에 전달되는 인자로 취급되어 Electron 이 무시한다 — 실제로 그렇게
+// 두었다가 앱이 실제 프로필(kr-stock-widget)에 585바이트를 쓰는 것을 확인했다.
 // 설치본을 직접 띄우는 packaged.mjs 도 이 스위치를 써야 한다(tests/isolation.mjs).
-export const LAUNCH_ARGS = [APP_DIR, `--user-data-dir=${USER_DATA_DIR}`];
+export const LAUNCH_ARGS = [`--user-data-dir=${USER_DATA_DIR}`, APP_DIR];
+
+// --user-data-dir 만으로는 설정 파일이 안 옮겨간다. main.js 가 electron-store 의
+// cwd 를 app.getPath('appData') 기준으로 고정해 두었고(설치본이 기존 설정을 잃지
+// 않도록 일부러 그렇게 둔 것) appData 는 그 스위치의 영향을 받지 않는다. 실제로
+// 스위치만 준 채 돌렸더니 실제 프로필에 583바이트가 써졌다. 설정 경로는 이
+// 환경변수로 따로 돌린다.
+export const CFG_ENV = 'KR_STOCK_WIDGET_CONFIG_DIR';
+export const LAUNCH_ENV = { ...process.env, [CFG_ENV]: USER_DATA_DIR };
 
 export const launchApp = () => electron.launch({
   executablePath: ELECTRON_BIN,
   args: LAUNCH_ARGS,
+  env: LAUNCH_ENV,
   timeout: 40000,
 });
 

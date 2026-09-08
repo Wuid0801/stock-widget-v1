@@ -18,7 +18,13 @@ const DEFAULT_WATCHLIST = [
 const store = new Store({
   // electron-store 는 기본적으로 app.getName() 기준 폴더에 저장한다.
   // productName 을 붙이면 저장 위치가 바뀌어 기존 설정이 통째로 사라지므로 경로를 고정한다.
-  cwd: path.join(app.getPath('appData'), 'kr-stock-widget'),
+  //
+  // 환경변수는 테스트만 쓴다. 검증 스위트는 매번 설정을 비우고 관심종목을 넣다
+  // 지우는데, 그 대상이 이 경로라 npm test 한 번에 실제 설정이 날아갔다.
+  // --user-data-dir 로는 못 막는다 — 그 스위치는 userData 만 바꾸고 여기 쓰는
+  // appData 는 그대로다(tests/isolation.mjs 가 이 우회로를 검사한다).
+  cwd: process.env.KR_STOCK_WIDGET_CONFIG_DIR
+    || path.join(app.getPath('appData'), 'kr-stock-widget'),
   defaults: {
     bounds: { width: 340, height: 520 },
     watchlist: DEFAULT_WATCHLIST,
