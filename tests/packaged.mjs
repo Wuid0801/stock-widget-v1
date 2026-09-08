@@ -1,6 +1,6 @@
 // ③ 패키징된(asar) 앱이 실제로 동작하는지 검증.
 // dist/ 가 없으면 건너뛴다 — 먼저 `npm run dist` 를 실행해야 의미가 있다.
-import { APP_DIR, CFG_PATH, SHOTS_DIR } from './_paths.mjs';
+import { APP_DIR, CFG_PATH, SHOTS_DIR, USER_DATA_DIR } from './_paths.mjs';
 import { _electron as electron } from 'playwright-core';
 import path from 'node:path'; import fs from 'node:fs';
 
@@ -20,7 +20,10 @@ check('asar 로 묶임', fs.existsSync(path.join(OUT, 'win-unpacked', 'resources
 check('설치 파일 생성됨', fs.readdirSync(OUT).some((f) => f.endsWith('.exe') && f.includes('Setup')));
 
 fs.writeFileSync(CFG_PATH, '{}');
-const app = await electron.launch({ executablePath: EXE, args: [], timeout: 60000 });
+// 설치본은 productName('관심종목 위젯') 프로필에 쓴다. 스위치를 안 주면 실제
+// 사용자 설정을 띄우게 되고, 바로 위에서 쓴 CFG_PATH 와도 다른 파일이 된다.
+const app = await electron.launch({
+  executablePath: EXE, args: [`--user-data-dir=${USER_DATA_DIR}`], timeout: 60000 });
 const page = await app.firstWindow();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
