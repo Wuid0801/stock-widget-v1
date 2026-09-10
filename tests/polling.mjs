@@ -1,13 +1,16 @@
 // ① 장 상태에 따른 폴링 간격 검증.
 //
 // 실제 장 시간에 의존하면 밤이나 주말에 돌릴 때 실패하므로,
-// main.js 의 장 상태 판정을 양쪽으로 강제해 두 경로를 모두 확인한다(검증 후 원복).
-import { APP_DIR, CFG_PATH, launchApp, waitReady } from './_paths.mjs';
-import path from 'node:path'; import fs from 'node:fs';
+// 장 상태를 양쪽으로 강제해 두 경로를 모두 확인한다.
+//
+// 예전에는 main.js 를 디스크에서 치환하고 finally 에서 되돌렸다. 프로세스가
+// 중간에 죽으면 사용자의 소스가 패치된 채로 남고, 판정 코드가 조금만 바뀌어도
+// 치환 대상 문자열을 못 찾아 스위트 전체가 죽었다 — 실제로 시간외 커밋
+// (eb8bbfd) 이후로 계속 그 상태였다. 이제 환경변수로 강제한다.
+import { CFG_PATH, SESSION_ENV, launchApp, waitReady } from './_paths.mjs';
+import fs from 'node:fs';
 
-const MAIN = path.join(APP_DIR, 'main.js');
 const CFG = CFG_PATH;
-const NEEDLE = "open: d.marketStatus === 'OPEN'";
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -27,14 +30,10 @@ async function timeToNextRefresh(page, maxMs) {
   return null; // maxMs 안에 갱신 없음
 }
 
-const orig = fs.readFileSync(MAIN, 'utf8');
-if (!orig.includes(NEEDLE)) { console.log('FAIL: 장 상태 판정 지점을 찾지 못함'); process.exit(1); }
-
-async function runWith(marketOpenLiteral, label, fn) {
-  fs.writeFileSync(MAIN, orig.replace(NEEDLE, `open: ${marketOpenLiteral}`));
+async function runWith(session, label, fn) {
   console.log(`\n=== ${label} ===`);
   fs.writeFileSync(CFG, '{}');
-  const app = await launchApp();
+  const app = await launchApp({ [SESSION_ENV]: session });
   const page = await app.firstWindow();
   const errs = []; page.on('pageerror', (e) => errs.push(e.message));
   await waitReady(page); await page.waitForTimeout(1500);
@@ -48,7 +47,7 @@ async function runWith(marketOpenLiteral, label, fn) {
 
 try {
   // --- 장중: 30초 간격 ---
-  await runWith('true', '장중 강제', async (page, errs) => {
+  await runWith('regular', '장중 강제', async (page, errs) => {
     const h = await head(page);
     console.log('헤더:', h.text, `(class=${h.cls})`);
     check('장중 배지 = 실시간', h.cls === 'live', h.cls);
@@ -60,7 +59,7 @@ try {
   });
 
   // --- 장 마감: 간격 확대 ---
-  await runWith('false', '장 마감 강제', async (page, errs) => {
+  await runWith('closed', '장 마감 강제', async (page, errs) => {
     const h = await head(page);
     console.log('헤더:', h.text, `(class=${h.cls})`);
     check('장마감 배지로 표시', h.cls === 'closed', h.cls);
@@ -73,10 +72,7 @@ try {
     check('장마감 콘솔 에러 없음', errs.length === 0, errs.slice(0, 2).join(' / '));
   });
 } finally {
-  fs.writeFileSync(MAIN, orig);
-  console.log('\n  (main.js 원복)');
+  fs.writeFileSync(CFG, '{}');
 }
-check('main.js 원복 확인', fs.readFileSync(MAIN, 'utf8') === orig);
 
-fs.writeFileSync(CFG, '{}');
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

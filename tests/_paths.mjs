@@ -49,10 +49,16 @@ export const LAUNCH_ARGS = [`--user-data-dir=${USER_DATA_DIR}`, APP_DIR];
 export const CFG_ENV = 'KR_STOCK_WIDGET_CONFIG_DIR';
 export const LAUNCH_ENV = { ...process.env, [CFG_ENV]: USER_DATA_DIR };
 
-export const launchApp = () => electron.launch({
+// 상류 실패와 장 상태를 만들어내는 훅. 예전에는 스위트가 main.js 를 디스크에서
+// 치환해 이 동작을 흉내 냈는데, 프로세스가 죽으면 소스가 패치된 채로 남았다.
+export const FAIL_URLS_ENV = 'KR_STOCK_WIDGET_FAIL_URLS';
+export const SESSION_ENV = 'KR_STOCK_WIDGET_FORCE_SESSION';
+
+// extraEnv 로 위 훅을 얹는다. 인자가 없으면 지금까지와 동작이 같다.
+export const launchApp = (extraEnv = {}) => electron.launch({
   executablePath: ELECTRON_BIN,
   args: LAUNCH_ARGS,
-  env: LAUNCH_ENV,
+  env: { ...LAUNCH_ENV, ...extraEnv },
   timeout: 40000,
 });
 

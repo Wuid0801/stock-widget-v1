@@ -77,7 +77,7 @@ await page.screenshot({ path: path.join(SHOTS, 'foreign-mixed.png') });
 
 // --- 실시간 조회가 미국 종목 때문에 깨지지 않는지 ---
 const badge = await page.evaluate(() => document.querySelector('#updated span').className);
-check('혼용 상태에서도 국내 시세 소스 정상', ['live', 'closed'].includes(badge), badge);
+check('혼용 상태에서도 국내 시세 소스 정상', ['live', 'over', 'closed'].includes(badge), badge);
 
 check('콘솔 에러 없음', errs.length === 0, errs.slice(0, 2).join(' / '));
 

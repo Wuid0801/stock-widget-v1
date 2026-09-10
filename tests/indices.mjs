@@ -1,9 +1,8 @@
-import { APP_DIR, CFG_PATH, SHOTS_DIR, launchApp, waitReady } from './_paths.mjs';
+import { APP_DIR, CFG_PATH, SHOTS_DIR, FAIL_URLS_ENV, launchApp, waitReady } from './_paths.mjs';
 // A. 코스피/코스닥 지수 표시 검증
 import { _electron as electron } from 'playwright-core';
 import path from 'node:path'; import fs from 'node:fs';
 const APP = APP_DIR;
-const MAIN=path.join(APP,'main.js');
 const CFG = CFG_PATH;
 const SHOTS = SHOTS_DIR;
 const H={'User-Agent':'Mozilla/5.0','Referer':'https://m.stock.naver.com/'};
@@ -65,13 +64,14 @@ await page.click('#dock'); await page.waitForTimeout(1200);
 check('A 콘솔 에러 없음', errs.length===0, errs.slice(0,2).join(' / '));
 await app.close(); await new Promise(r=>setTimeout(r,1200));
 
-// 지수 조회 실패 시 조용히 숨기고 나머지는 정상 동작해야 함
+// 지수 조회 실패 시 조용히 숨기고 나머지는 정상 동작해야 함.
+// 예전에는 main.js 를 디스크에서 치환해 URL 을 깨뜨렸는데, 프로세스가 중간에
+// 죽으면 사용자의 소스가 패치된 채로 남는다. 이제 환경변수로 그 요청만 막는다.
 console.log('\n--- 지수 API 실패 강제 ---');
-const orig=fs.readFileSync(MAIN,'utf8');
-fs.writeFileSync(MAIN, orig.replace('/index/KOSPI,KOSDAQ','/index/__NOPE__'));
 try {
   fs.writeFileSync(CFG,'{}');
-  app=await launch(); page=await app.firstWindow();
+  app=await launchApp({ [FAIL_URLS_ENV]: '/api/realtime/domestic/index' });
+  page=await app.firstWindow();
   const e2=[]; page.on('pageerror',e=>e2.push(e.message));
   await ready(page); await page.waitForTimeout(1500);
   const u2=await ix();
@@ -80,8 +80,7 @@ try {
   check('지수 실패해도 차트 정상', await page.evaluate(()=>{const c=Chart.getChart(document.getElementById('chart'));return c?c.data.datasets[0].data.length:0;})>0);
   check('지수 실패 시 콘솔 에러 없음', e2.length===0, e2.slice(0,2).join(' / '));
   await app.close();
-} finally { fs.writeFileSync(MAIN, orig); console.log('  (main.js 원복)'); }
-check('main.js 원복 확인', fs.readFileSync(MAIN,'utf8')===orig);
+} finally { fs.writeFileSync(CFG,'{}'); }
 
 fs.writeFileSync(CFG,'{}');
 console.log(`\n${fails===0?'PASS':'FAIL'}: 실패 ${fails}건`);

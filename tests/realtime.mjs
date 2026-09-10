@@ -1,10 +1,9 @@
-import { APP_DIR, CFG_PATH, SHOTS_DIR, launchApp, waitReady } from './_paths.mjs';
+import { APP_DIR, CFG_PATH, SHOTS_DIR, FAIL_URLS_ENV, launchApp, waitReady } from './_paths.mjs';
 // 실시간 시세 적용 + Naver 실패 시 Yahoo 폴백 검증
 import { _electron as electron } from 'playwright-core';
 import path from 'node:path'; import fs from 'node:fs';
 
 const APP = APP_DIR;
-const MAIN=path.join(APP,'main.js');
 const CFG = CFG_PATH;
 const H={'User-Agent':'Mozilla/5.0','Referer':'https://m.stock.naver.com/'};
 const launch = launchApp;
@@ -16,8 +15,10 @@ const num = (s) => Number(String(s).replace(/[^\d.-]/g,''));
 const ui = (page) => page.evaluate(() => {
   const c = Chart.getChart(document.getElementById('chart'));
   return {
-    // 장중이면 '실시간', 장 마감이면 '장마감' — 둘 다 네이버 실시간 소스를 쓰고 있다는 뜻
+    // 실시간 / 시간외 / 장마감은 모두 네이버 실시간 소스를 쓰고 있다는 뜻이고,
+    // 20분지연만 Yahoo 폴백이다. ('시간외'는 eb8bbfd 에서 추가됐다)
     badge: document.querySelector('#updated .live') ? '실시간'
+         : document.querySelector('#updated .over') ? '시간외'
          : document.querySelector('#updated .closed') ? '장마감'
          : document.querySelector('#updated .delay') ? '20분지연' : '(없음)',
     updated: document.getElementById('updated').textContent,
@@ -42,7 +43,7 @@ const a = await ui(page);
 console.log('헤더:', a.updated, '| 상세:', a.name, a.price);
 
 // 장중이면 '실시간', 장 마감이면 '장마감'. 어느 쪽이든 Yahoo 폴백이 아니어야 한다.
-check('네이버 실시간 소스 사용 중 (지연 아님)', a.badge === '실시간' || a.badge === '장마감', a.badge);
+check('네이버 실시간 소스 사용 중 (지연 아님)', ['실시간','시간외','장마감'].includes(a.badge), a.badge);
 
 // 같은 시각의 Naver/Yahoo 값을 직접 받아 대조
 const nv = await fetch('https://polling.finance.naver.com/api/realtime/domestic/stock/005930',{headers:H}).then(r=>r.json());
@@ -73,12 +74,14 @@ await app.close(); await new Promise(r=>setTimeout(r,1200));
 
 // ============ B. 폴백: Naver 차단 시 Yahoo ============
 console.log('\n=== B. Naver 실패 시 Yahoo 폴백 ===');
-const orig = fs.readFileSync(MAIN,'utf8');
-fs.writeFileSync(MAIN, orig.replace('polling.finance.naver.com', 'polling.finance.naver.invalid'));
-console.log('  (main.js의 실시간 호스트를 존재하지 않는 도메인으로 임시 교체)');
+// 예전에는 main.js 를 디스크에서 치환해 호스트를 깨뜨렸는데, 프로세스가 중간에
+// 죽으면 사용자의 소스가 패치된 채로 남는다. 이제 환경변수로 그 요청만 막는다.
+// 지수 조회(/index/...)는 살려둬야 하므로 종목 시세 경로만 지정한다.
+console.log('  (실시간 시세 요청만 차단 — 지수 조회는 그대로 둔다)');
 try {
   fs.writeFileSync(CFG,'{}');
-  app = await launch(); page = await app.firstWindow();
+  app = await launchApp({ [FAIL_URLS_ENV]: '/api/realtime/domestic/stock' });
+  page = await app.firstWindow();
   const errs2=[]; page.on('pageerror',e=>errs2.push(e.message));
   await ready(page); await page.waitForTimeout(1500);
   const b = await ui(page);
@@ -96,10 +99,7 @@ try {
   check('B 구간 콘솔 에러 없음', errs2.length===0, errs2.slice(0,2).join(' / '));
   await app.close();
 } finally {
-  fs.writeFileSync(MAIN, orig);   // 반드시 원복
-  console.log('  (main.js 원복 완료)');
+  fs.writeFileSync(CFG,'{}');
 }
-check('main.js 원복 확인', fs.readFileSync(MAIN,'utf8') === orig);
 
-fs.writeFileSync(CFG,'{}');
 console.log(`\n${fails===0?'PASS':'FAIL'}: 실패 ${fails}건`);

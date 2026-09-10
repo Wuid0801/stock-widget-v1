@@ -6,6 +6,24 @@ const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification } = re
 const path = require('path');
 const Store = require('electron-store');
 
+// --- 테스트 훅 (환경변수가 없으면 전부 무동작) ---------------------------------
+// 검증 스위트가 상류 실패와 장 상태를 만들어내야 하는데, 예전에는 그걸 하려고
+// main.js 를 디스크에서 치환하고 finally 에서 되돌렸다. 프로세스가 중간에 죽으면
+// 사용자의 main.js 가 패치된 채로 남는다. 그래서 환경변수로 바꿨다.
+// tests/isolation.mjs 가 스위트들이 소스를 다시 건드리지 않는지 검사한다.
+
+// 쉼표로 나열한 조각 중 하나라도 URL 에 들어 있으면 그 요청을 실패시킨다.
+const FAIL_URLS = (process.env.KR_STOCK_WIDGET_FAIL_URLS || '').split(',').filter(Boolean);
+const netFetch = FAIL_URLS.length
+  ? (url, opt) => (FAIL_URLS.some((s) => String(url).includes(s))
+    ? Promise.reject(new Error('테스트에서 차단한 요청'))
+    : fetch(url, opt))
+  : fetch;
+
+// 'regular' | 'pre' | 'after' | 'closed' 로 장 상태를 고정한다.
+// 실제 장 시간에 기대면 밤·주말에는 폴링 간격 검증을 돌릴 수 없다.
+const FORCE_SESSION = process.env.KR_STOCK_WIDGET_FORCE_SESSION || '';
+
 // 초기 관심종목. 이후에는 store 값이 우선이므로 UI에서 추가/삭제만 붙이면 된다.
 const DEFAULT_WATCHLIST = [
   { symbol: '005930.KS', name: '삼성전자' },
@@ -187,7 +205,7 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
 
   const url = `https://polling.finance.naver.com/api/realtime/domestic/stock/${codes.join(',')}`;
   try {
-    const res = await fetch(url, {
+    const res = await netFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -216,6 +234,9 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
         }
       }
 
+      // 시간외 판정까지 끝난 뒤에 덮어써야 강제한 값이 되살아나지 않는다.
+      if (FORCE_SESSION) session = FORCE_SESSION;
+
       // 심볼 접미사(.KS/.KQ)가 어긋나도 되도록 종목코드로만 넘긴다
       quotes[d.itemCode] = {
         price, change, prevClose: price - change,
@@ -235,7 +256,7 @@ ipcMain.handle('quote:indices', async () => {
   const url = 'https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ';
   const num = (v) => Number(String(v ?? '').replace(/,/g, ''));
   try {
-    const res = await fetch(url, {
+    const res = await netFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -259,7 +280,7 @@ ipcMain.handle('quote:indices', async () => {
 ipcMain.handle('fx:usdkrw', async () => {
   const url = 'https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?range=1d&interval=1d';
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
     const rate = (await res.json())?.chart?.result?.[0]?.meta?.regularMarketPrice;
@@ -277,7 +298,7 @@ ipcMain.handle('yf:sector', async (_e, symbol) => {
   const url = 'https://query1.finance.yahoo.com/v1/finance/search'
     + `?q=${encodeURIComponent(symbol)}&quotesCount=1&newsCount=0`;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
     const hit = (await res.json())?.quotes?.[0];
@@ -297,7 +318,7 @@ ipcMain.handle('yf:search', async (_e, query) => {
   const url = 'https://m.stock.naver.com/front-api/search/autoComplete'
     + `?query=${encodeURIComponent(q)}&target=stock`;
   try {
-    const res = await fetch(url, {
+    const res = await netFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -334,7 +355,7 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
     + `?range=${range}&interval=${interval}`;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
     const json = await res.json();

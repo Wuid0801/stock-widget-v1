@@ -82,5 +82,16 @@ check('packaged.mjs 도 설정 경로 환경변수를 넘긴다', pkg.includes('
 check('packaged.mjs 가 낡은 빌드를 걸러낸다', pkg.includes(CFG_ENV),
   pkg.includes(CFG_ENV) ? '' : `${CFG_ENV} 를 asar 에서 확인하는 코드가 없음`);
 
+// 어떤 스위트도 앱 소스를 고쳐 쓰면 안 된다. polling.mjs 가 장 상태를 강제하려고
+// main.js 를 디스크에서 치환하고 finally 에서 되돌렸는데, 프로세스가 중간에 죽으면
+// 사용자의 main.js 가 패치된 채로 남는다. 세션 강제는 환경변수로 한다.
+for (const f of fs.readdirSync(path.join(APP_DIR, 'tests')).filter((n) => n.endsWith('.mjs'))) {
+  const src = fs.readFileSync(path.join(APP_DIR, 'tests', f), 'utf8');
+  const writesSource = /writeFileSync\(\s*MAIN\b/.test(src)
+    || /writeFileSync\([^)]*\b(main|renderer|index)\.(js|html)/.test(src);
+  check(`${f} 가 앱 소스를 고쳐 쓰지 않는다`, !writesSource,
+    writesSource ? /writeFileSync\([^)]*\)/.exec(src)?.[0] : '');
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

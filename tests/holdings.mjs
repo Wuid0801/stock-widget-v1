@@ -38,13 +38,22 @@ const setHold = async (n, qty, avg) => {
 check('입력 전에는 보유 줄 숨김', (await hold()).hidden);
 await openPanel();
 const ui = await page.evaluate(() => ({
-  sections: [...document.querySelectorAll('#alertList .sect')].map((e) => e.textContent.trim().split(' ')[0]),
+  // 섹션 제목만 뽑는다. 안에 설명(.sechint)·토글·세그먼트 버튼이 같이 들어 있어
+  // textContent 를 통째로 쓰면 "보유 종목 수량 · 평단가" 처럼 딸려 나온다.
+  sections: [...document.querySelectorAll('#alertList .sect')].map((e) => {
+    const c = e.cloneNode(true);
+    c.querySelectorAll('.sechint, .seg, .toggle').forEach((x) => x.remove());
+    return c.textContent.replace(/\s+/g, ' ').trim();
+  }),
   alertRows: document.querySelectorAll('#alertRows .arow').length,
   holdRows: document.querySelectorAll('#holdRows .arow').length,
   ph: [...document.querySelectorAll('#holdRows .arow:nth-child(1) input')].map((e) => e.placeholder),
 }));
 console.log('설정 패널:', JSON.stringify(ui));
-check('설정 패널에 두 섹션', ui.sections.length === 2, ui.sections.join(','));
+// 개수를 고정하지 않는다. 테마·이동평균선 섹션이 나중에 붙으면서 2개 기대가
+// 깨졌고, 이 스위트가 확인해야 하는 것은 자기가 쓰는 두 섹션의 존재다.
+check('설정 패널에 목표가 알림·보유 종목 섹션',
+  ui.sections.includes('목표가 알림') && ui.sections.includes('보유 종목'), ui.sections.join(' / '));
 check('보유 입력행이 관심종목 수만큼', ui.holdRows === 5, `${ui.holdRows}행`);
 check('수량/평단가 입력칸', ui.ph.join(',') === '수량,평단가', ui.ph.join(','));
 await page.screenshot({ path: path.join(SHOTS, 'holdings-panel.png') });
@@ -59,7 +68,9 @@ console.log('보유 줄:', h.text, `(현재가 ${h.price})`);
 check('보유 줄 표시', !h.hidden);
 const expPl = 10 * h.price - 10 * 200000;
 const expPct = (expPl / (10 * 200000)) * 100;
-const parts = h.text.match(/([\d,]+)주 평단 ([\d,]+) 평가 ([\d,]+) ([+-][\d,]+) \(([+-][\d.]+)%\)/);
+// 칸 사이 간격은 flex 로 주고 마크업에는 공백이 없다. innerText 에 공백이
+// 없는 것이 정상이므로 구분 공백을 강제하지 않는다.
+const parts = h.text.match(/([\d,]+)주\s*평단\s*([\d,]+)\s*평가\s*([\d,]+)\s*([+-][\d,]+)\s*\(([+-][\d.]+)%\)/);
 check('형식이 "수량 · 평단 · 평가 · 손익(%)"', !!parts, h.text);
 if (parts) {
   check('평가금액 = 수량 x 현재가', num(parts[3]) === 10 * h.price, `${num(parts[3])} vs ${10 * h.price}`);
