@@ -13,6 +13,17 @@ if (!fs.existsSync(EXE)) {
   process.exit(0);
 }
 
+// 빌드가 설정 경로 환경변수를 모르면 띄우는 순간 실제 사용자 설정에 쓴다.
+// (2026-08-07 자 빌드를 띄웠다가 %APPDATA%/kr-stock-widget 에 513바이트가 써졌다)
+// asar 은 원본을 그대로 담으므로 바이트에서 바로 찾을 수 있다.
+const ASAR = path.join(OUT, 'win-unpacked', 'resources', 'app.asar');
+if (!fs.existsSync(ASAR) || !fs.readFileSync(ASAR).includes('KR_STOCK_WIDGET_CONFIG_DIR')) {
+  console.log('SKIP: dist/ 빌드가 설정 경로 격리를 모릅니다(빌드가 낡음).');
+  console.log('      그대로 띄우면 실제 설정을 건드리므로 건너뜁니다. `npm run dist` 로 다시 빌드하세요.');
+  console.log('\nPASS: 실패 0건');
+  process.exit(0);
+}
+
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 

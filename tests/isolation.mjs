@@ -76,5 +76,11 @@ check('packaged.mjs 도 --user-data-dir 를 넘긴다', pkg.includes('--user-dat
 check('packaged.mjs 도 설정 경로 환경변수를 넘긴다', pkg.includes('LAUNCH_ENV'),
   pkg.includes('LAUNCH_ENV') ? '' : (pkg.includes('env:') ? 'env 는 있으나 LAUNCH_ENV 가 아님' : '(env 없음)'));
 
+// 환경변수를 넘겨도 dist/ 빌드가 그것을 모르면 소용이 없다. 실제로 2026-08-07 자
+// 빌드를 띄웠더니 실제 프로필에 513바이트가 써졌다. 빌드가 낡았으면 띄우지 않고
+// 건너뛰어야 한다 — dist/ 가 없을 때 이미 그렇게 하고 있다.
+check('packaged.mjs 가 낡은 빌드를 걸러낸다', pkg.includes(CFG_ENV),
+  pkg.includes(CFG_ENV) ? '' : `${CFG_ENV} 를 asar 에서 확인하는 코드가 없음`);
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);
