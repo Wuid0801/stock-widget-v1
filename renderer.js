@@ -619,25 +619,33 @@ function trendLine(values, len, low) {
 // 저항은 고가가 선 위로, 지지는 저가가 선 아래로 나간 것이 돌파다.
 // 선분은 반드시 피팅 창 안에서 끝나므로(span >= 20) 제외 구간만 보면 된다.
 function breakoutOf(line, extremes, len, low) {
-  let best = null;
-  for (let i = len - TREND_LOOKBACK; i < len; i++) {
+  // 선에서 얼마나 벗어났는지. y <= 0 이면 나눌 때 부호가 뒤집혀 이탈이 아닌 봉을
+  // 큰 이탈로 보고하므로 아예 뺀다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%").
+  const excess = (i) => {
     const y = line.data[i];
     const v = extremes[i];
-    if (y == null || v == null) continue;
+    if (y == null || v == null || y <= 0) return null;
     const gap = low ? y - v : v - y;
-    // 넘지 않았으면(닿기만 했으면) 돌파가 아니다 — 껍질은 원래 선에 닿는다.
-    // y <= 0 도 함께 막는다. 나누면 부호가 뒤집혀 이탈이 아닌 봉을 큰 이탈로
-    // 보고한다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%" 가 나왔다).
-    if (y <= 0 || gap <= 0) continue;
-    // 배지에 찍는 값이 % 이고 두 선을 비교할 때도 % 이므로 봉 선택도 % 로 한다.
-    // 절대폭으로 고르면 기울기가 급할 때 더 큰 돌파를 놓친다 — 선 19,000 에서
-    // 1,200(6.32%) 이 선 11,800 에서 1,000(8.47%) 을 이겨 작은 값이 찍혔다.
-    const pct = gap / y;
-    if (pct < TREND_MIN_BREAK) continue;
-    if (!best || pct > best.pct) best = { at: i, gap, pct };
+    return { gap, pct: gap / y };
+  };
+
+  // 뚫은 날 = 창 안에서 문턱을 처음 넘은 봉. 이탈이 가장 큰 봉을 고르면 안 된다 —
+  // 저항선은 내려가고 주가는 오르니 초과폭이 날마다 커져서 늘 최근 봉이 뽑힌다.
+  // SK하이닉스 실측에서 09-07 에 뚫었는데 배지가 09-10 을 가리켰다.
+  // 닿기만 한 봉은 돌파가 아니다 — 껍질은 원래 선에 닿는다.
+  let at = null;
+  for (let i = len - TREND_LOOKBACK; i < len; i++) {
+    const e = excess(i);
+    if (e && e.gap > 0 && e.pct >= TREND_MIN_BREAK) { at = i; break; }
   }
-  return best;
+  if (at == null) return null;
+
+  // 폭은 마지막 봉 기준. "지금 선에서 얼마나 떨어져 있나" 가 알고 싶은 값이고
+  // 뚫은 날의 폭은 이미 지난 숫자다. 되밀렸으면 음수로 나온다.
+  const now = excess(len - 1) || excess(at);
+  return { at, gap: now.gap, pct: now.pct };
 }
+
 
 // 두 추세선이 만나는 봉 인덱스. 기울기가 같으면 평행이라 만나지 않는다.
 // 인덱스는 소수로 나오고, 마지막 봉보다 뒤여야(수렴 중이어야) 의미가 있다.

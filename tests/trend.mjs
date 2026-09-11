@@ -207,9 +207,11 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
   }
 }
 
-// --- 13. 돌파 봉은 절대폭이 아니라 비율로 고른다 --------------------------------
-// 배지에 찍는 값이 % 이고 두 선을 비교할 때도 % 를 쓰므로 봉 선택도 % 여야 한다.
-// 기울기가 급하면 선 값이 봉마다 달라 절대폭 최대와 비율 최대가 갈린다.
+// --- 13. 날짜는 처음 넘은 봉, 폭은 마지막 봉 기준 --------------------------------
+// 배지가 "저항 돌파 +N% · M일 전" 이라 M 은 뚫은 날이어야 한다. 예전에는 이탈이
+// 가장 큰 봉을 골랐는데, 저항선은 내려가고 주가는 오르니 초과폭이 날마다 커져서
+// 늘 최근 봉이 뽑혔다 — SK하이닉스 실측에서 09-07 에 뚫었는데 09-10 을 가리켰다.
+// 폭은 반대로 마지막 봉 기준이어야 "지금 얼마나 위에 있나" 가 된다.
 {
   const N = 50;
   const highs = Array.from({ length: N }, (_, i) => 100000 - 1800 * i);
@@ -217,12 +219,27 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
   if (!line) { check('급한 저항선이 채택된다(선행 조건)', false, 'line=null'); }
   else {
     const h2 = highs.slice();
-    h2[45] = line.data[45] + 1200; // 선 19,000 → 절대폭 1,200 / 6.32%
-    h2[49] = line.data[49] + 1000; // 선 11,800 → 절대폭 1,000 / 8.47%
+    h2[45] = line.data[45] + 1200; // 선 19,000 → 6.32% (여기서 처음 뚫었다)
+    h2[49] = line.data[49] + 1000; // 선 11,800 → 8.47% (이탈은 여기가 더 크다)
     const bo = T.breakoutOf(line, h2, N, false);
-    check('절대폭이 작아도 비율이 큰 49봉을 고른다', !!bo && bo.at === 49,
-      bo ? `at=${bo.at} pct=${(bo.pct * 100).toFixed(2)}% (49봉은 8.47%)` : 'bo=null');
+    check('날짜는 처음 넘은 45봉이다', !!bo && bo.at === 45,
+      bo ? `at=${bo.at}` : 'bo=null');
+    check('폭은 마지막 봉 기준 8.47% 다', !!bo && Math.abs(bo.pct - 1000 / line.data[49]) < 1e-9,
+      bo ? `${(bo.pct * 100).toFixed(2)}%` : '');
   }
+}
+
+// --- 14. 뚫은 뒤 되밀려도 뚫은 날은 그대로 짚는다 --------------------------------
+{
+  const N = 50;
+  const highs = Array.from({ length: N }, (_, i) => 100000 - 1800 * i);
+  const line = T.trendLine(highs, N, false);
+  const h2 = highs.slice();
+  h2[45] = line.data[45] + 1200;  // 뚫음
+  h2[49] = line.data[49] - 500;   // 마지막 봉은 선 아래로 되밀림
+  const bo = T.breakoutOf(line, h2, N, false);
+  check('되밀려도 날짜는 45봉', !!bo && bo.at === 45, bo ? `at=${bo.at}` : 'bo=null');
+  check('되밀린 폭은 음수로 나온다', !!bo && bo.pct < 0, bo ? `${(bo.pct * 100).toFixed(2)}%` : '');
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
