@@ -324,6 +324,13 @@ function renderDetail() {
     chgEl.textContent = '';
   }
 
+  // 시간외(장후)에는 정규장 종가 대비 이동폭을 한 줄 더 붙인다. 위 두 줄은 전일
+  // 종가 기준이라(네이버가 주는 기준) 시간외에서 얼마나 움직였는지는 안 보인다.
+  // main.js 가 장후에만 fromClose 를 채운다.
+  const closeEl = document.getElementById('dclose');
+  closeEl.hidden = !(q && q.fromClose != null);
+  closeEl.textContent = q && q.fromClose != null ? `종가 ${signedMoney(q.fromClose, cur)}` : '';
+
   renderHolding(item && item.symbol, q && q.price);
   renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur);
 
@@ -993,6 +1000,9 @@ async function loadQuote(item, live) {
     live: !!live,
     open: !!(live && live.open),
     session: (live && live.session) || null, // 'regular' | 'pre' | 'after' | 'closed'
+    // 시간외(장후) 정규장 종가 대비 이동폭. 장후가 아니면 main 이 null 을 준다.
+    // 0 도 뜻이 있는 값이라(움직이지 않음) || 로 뭉개면 안 된다.
+    fromClose: live && live.fromClose != null ? live.fromClose : null,
     currency: r.currency,
     week52High: r.week52High,
     week52Low: r.week52Low,

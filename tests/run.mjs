@@ -40,6 +40,7 @@ const ORDER = [
   'week52.mjs',
   'indices.mjs',
   'realtime.mjs',
+  'after-hours.mjs',
   'alerts.mjs',
   'dock.mjs',
   'compact-search.mjs',

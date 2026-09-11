@@ -195,6 +195,19 @@ ipcMain.on('win:minimize', () => {
 // 실시간 현재가. Yahoo 한국 시세는 20분 지연이므로 현재가/등락만 이쪽으로 덮어쓴다.
 // 여러 종목을 한 번에 조회할 수 있어 요청 1건으로 끝난다.
 // 실패하면 { ok:false } 를 주고, 렌더러는 Yahoo 값(지연)을 그대로 쓴다.
+// 시간외(장후)에 정규장 종가 대비 얼마나 움직였는지. 네이버가 주는 시간외 등락
+// (compareToPreviousClosePrice)은 '전일 종가' 기준이라 시간외에서의 이동폭은
+// 따로 구해야 한다 — SK하이닉스 실측에서 네이버는 -7,000 인데 정규장 종가
+// 1,853,000 대비로는 -4,000 이었다.
+//
+// 장전 시간외(pre)는 내지 않는다. 그때의 '종가'는 곧 전일 종가라 바로 위에 있는
+// 전일 대비와 같은 숫자가 되어 줄만 늘어난다.
+function overFromClose(regularClose, price, session) {
+  if (session !== 'after') return null;
+  if (!Number.isFinite(regularClose) || !Number.isFinite(price)) return null;
+  return price - regularClose;
+}
+
 ipcMain.handle('quote:realtime', async (_e, symbols) => {
   // 네이버 실시간은 국내 전용. 해외 종목은 걸러내고 Yahoo 값을 그대로 쓰게 둔다.
   // 종목코드 형태를 확인해 URL 경로에 이상한 값이 끼어들지 않게 한다.
@@ -217,6 +230,9 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
       let price = Number(d.closePriceRaw);
       let change = Number(d.compareToPreviousClosePriceRaw); // 하락이면 이미 음수
       if (!Number.isFinite(price) || !Number.isFinite(change)) continue;
+
+      // 시간외 가격으로 덮이기 전의 정규장 종가. 종가 대비 이동폭을 내는 데 쓴다.
+      const regularClose = price;
 
       // 'regular' 정규장 · 'pre' 장전 시간외 · 'after' 장후·시간외 단일가 · 'closed' 전부 종료.
       let session = d.marketStatus === 'OPEN' ? 'regular' : 'closed';
@@ -242,6 +258,7 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
         price, change, prevClose: price - change,
         open: session === 'regular',
         session,
+        fromClose: overFromClose(regularClose, price, session),
       };
     }
     if (!Object.keys(quotes).length) return { ok: false, error: '빈 응답' };

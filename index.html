@@ -381,7 +381,12 @@
   .dsector { font-size: 9px; color: var(--faint); }
   .dsector:not(:empty)::before { content: ' · '; }
   .dprice { font-size: 19px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
-  .dchg { margin-left: auto; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+  .dchgbox { margin-left: auto; text-align: right; }
+  .dchg { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+  /* 시간외 정규장 종가 대비. 차트의 시간외 기준선·헤더 배지와 같은 색이라
+     "이건 시간외 이야기"가 색으로 읽힌다. 등락 색(빨강/파랑)은 위 두 줄이
+     이미 쓰고 있어 기준이 섞인다. */
+  .dclose { font-size: 10px; color: var(--over-line); font-variant-numeric: tabular-nums; }
 
   /* 타임프레임이 5개라 좁은 폭에서는 넘칠 수 있다. 넘치면 다음 줄로 내려보낸다. */
   .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; row-gap: 5px; margin-top: 7px; }
@@ -477,7 +482,12 @@
           </div>
           <div class="dprice" id="dprice">—</div>
         </div>
-        <div class="dchg" id="dchg"></div>
+        <div class="dchgbox">
+          <div class="dchg" id="dchg"></div>
+          <!-- 시간외(장후)에만. 위 두 줄은 전일 종가 기준이라 시간외에서 움직인
+               폭은 여기서 따로 말한다 -->
+          <div class="dclose" id="dclose" hidden></div>
+        </div>
       </div>
 
       <div class="meta">
