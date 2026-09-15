@@ -5,6 +5,15 @@
 const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
+const { normalizeQuote, confirmedRegularClose, overFromClose,
+  dailyRegularClose } = require('./quote-session.cjs');
+
+// Only confirmed same-day regular closes. An after-market startup has none of
+// its own, so it asks the daily chart once; retries are spaced by CLOSE_RETRY
+// because the close only lands there once the 20-minute delay has passed.
+const regularCloseCache = new Map();
+const regularCloseTried = new Map();
+const CLOSE_RETRY = 300000;
 
 // --- 테스트 훅 (환경변수가 없으면 전부 무동작) ---------------------------------
 // 검증 스위트가 상류 실패와 장 상태를 만들어내야 하는데, 예전에는 그걸 하려고
@@ -195,73 +204,95 @@ ipcMain.on('win:minimize', () => {
 // 실시간 현재가. Yahoo 한국 시세는 20분 지연이므로 현재가/등락만 이쪽으로 덮어쓴다.
 // 여러 종목을 한 번에 조회할 수 있어 요청 1건으로 끝난다.
 // 실패하면 { ok:false } 를 주고, 렌더러는 Yahoo 값(지연)을 그대로 쓴다.
-// 시간외(장후)에 정규장 종가 대비 얼마나 움직였는지. 네이버가 주는 시간외 등락
-// (compareToPreviousClosePrice)은 '전일 종가' 기준이라 시간외에서의 이동폭은
-// 따로 구해야 한다 — SK하이닉스 실측에서 네이버는 -7,000 인데 정규장 종가
-// 1,853,000 대비로는 -4,000 이었다.
-//
-// 장전 시간외(pre)는 내지 않는다. 그때의 '종가'는 곧 전일 종가라 바로 위에 있는
-// 전일 대비와 같은 숫자가 되어 줄만 늘어난다.
-function overFromClose(regularClose, price, session) {
-  if (session !== 'after') return null;
-  if (!Number.isFinite(regularClose) || !Number.isFinite(price)) return null;
-  return price - regularClose;
-}
-
+// 세션·가격 선택은 quote-session.cjs 에서 독립적으로 검증한다.
 ipcMain.handle('quote:realtime', async (_e, symbols) => {
   // 네이버 실시간은 국내 전용. 해외 종목은 걸러내고 Yahoo 값을 그대로 쓰게 둔다.
   // 종목코드 형태를 확인해 URL 경로에 이상한 값이 끼어들지 않게 한다.
-  const codes = (symbols || [])
+  const valid = (symbols || [])
     .filter((s) => /^[A-Za-z0-9]{1,10}\.(KS|KQ)$/.test(String(s)))
-    .map((s) => String(s).split('.')[0]);
+    .map(String);
+  const codes = valid.map((s) => s.split('.')[0]);
+  const symbolOf = new Map(valid.map((s) => [s.split('.')[0], s]));
   if (!codes.length) return { ok: true, quotes: {} };
 
-  const url = `https://polling.finance.naver.com/api/realtime/domestic/stock/${codes.join(',')}`;
+  const headers = { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' };
+  const read = async (url) => {
+    const res = await netFetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  };
   try {
-    const res = await netFetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
-    });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-
-    const json = await res.json();
-    const num = (v) => Number(String(v ?? '').replace(/,/g, ''));
+    // Explicit venue endpoints; the KRX top-level quote now includes afterMarket.
+    const results = await Promise.allSettled([
+      read(`https://polling.finance.naver.com/api/realtime/domestic/stock/${codes.join(',')}`),
+      read(`https://polling.finance.naver.com/api/realtime/domestic/NXT/stock/${codes.join(',')}`),
+    ]);
+    const rows = results.map((r) => r.status === 'fulfilled' && Array.isArray(r.value?.datas)
+      ? r.value.datas : []);
+    const baseMap = new Map(rows[0].map((d) => [d.itemCode, d]));
+    const nxtMap = new Map(rows[1].map((d) => [d.itemCode, d]));
+    const partial = results.some((r) => r.status === 'rejected'
+      || !Array.isArray(r.value?.datas));
     const quotes = {};
-    for (const d of json.datas || []) {
-      let price = Number(d.closePriceRaw);
-      let change = Number(d.compareToPreviousClosePriceRaw); // 하락이면 이미 음수
-      if (!Number.isFinite(price) || !Number.isFinite(change)) continue;
+    const now = Date.now();
+    for (const code of new Set(codes)) {
+      const d = baseMap.get(code) || { itemCode: code };
+      const captured = confirmedRegularClose(d);
+      if (captured) regularCloseCache.set(code, captured);
+      const quote = normalizeQuote(d, {
+        now, nxt: nxtMap.get(code), regularClose: regularCloseCache.get(code),
+      });
+      if (!quote) continue;
 
-      // 시간외 가격으로 덮이기 전의 정규장 종가. 종가 대비 이동폭을 내는 데 쓴다.
-      const regularClose = price;
-
-      // 'regular' 정규장 · 'pre' 장전 시간외 · 'after' 장후·시간외 단일가 · 'closed' 전부 종료.
-      let session = d.marketStatus === 'OPEN' ? 'regular' : 'closed';
-
-      // 정규장이 끝나도 시간외가 열려 있으면 그쪽이 지금 가격이다.
-      // 응답에 이미 들어있어 추가 요청은 없다. overPrice 계열은 Raw 필드가 없어 콤마를 걷어낸다.
-      const over = d.overMarketPriceInfo;
-      if (session !== 'regular' && over && over.overMarketStatus === 'OPEN') {
-        const p = num(over.overPrice);
-        const c = num(over.compareToPreviousClosePrice);
-        if (Number.isFinite(p) && p > 0 && Number.isFinite(c)) {
-          price = p;
-          change = c; // 전일 종가 대비 (네이버가 주는 기준 그대로)
-          session = over.tradingSessionType === 'BEFORE_MARKET' ? 'pre' : 'after';
-        }
+      // No dedicated regular-close field is available after the KRX price starts
+      // moving again. Hide fromClose on a cold startup instead of treating a
+      // generic 15:30 chart candle as a verified close on special trading days.
+      // If one venue failed, do not claim all trading is over based on the other.
+      if (partial && quote.isTrading !== true) {
+        quote.isTrading = null;
+        quote.session = 'unknown';
       }
-
-      // 시간외 판정까지 끝난 뒤에 덮어써야 강제한 값이 되살아나지 않는다.
-      if (FORCE_SESSION) session = FORCE_SESSION;
-
-      // 심볼 접미사(.KS/.KQ)가 어긋나도 되도록 종목코드로만 넘긴다
-      quotes[d.itemCode] = {
-        price, change, prevClose: price - change,
-        open: session === 'regular',
-        session,
-        fromClose: overFromClose(regularClose, price, session),
-      };
+      // Test-only override. It never fabricates a regular close or price.
+      if (['regular', 'pre', 'after', 'closed'].includes(FORCE_SESSION)) {
+        quote.session = FORCE_SESSION;
+        quote.priceSession = FORCE_SESSION === 'closed' ? quote.priceSession : FORCE_SESSION;
+        quote.isTrading = FORCE_SESSION !== 'closed';
+        quote.open = FORCE_SESSION === 'regular';
+        quote.fromClose = overFromClose(quote.regularClose, quote.price, quote.priceSession);
+      }
+      quotes[code] = quote;
     }
-    if (!Object.keys(quotes).length) return { ok: false, error: '빈 응답' };
+
+    // After-market with no close of its own: read it back from the daily chart.
+    // One request per symbol per day, not per poll - the value never changes
+    // once the session is over, and a failure only hides the difference line.
+    const missing = [...new Set(codes)].filter((code) => {
+      const q = quotes[code];
+      if (!q || q.priceSession !== 'after' || q.regularClose != null) return false;
+      const last = regularCloseTried.get(code);
+      return last == null || now - last >= CLOSE_RETRY;
+    });
+    await Promise.all(missing.map(async (code) => {
+      regularCloseTried.set(code, now);
+      try {
+        const res = await netFetch('https://query1.finance.yahoo.com/v8/finance/chart/'
+          + `${encodeURIComponent(symbolOf.get(code))}?range=5d&interval=1d`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return;
+        const meta = (await res.json())?.chart?.result?.[0]?.meta;
+        const close = dailyRegularClose(
+          { price: meta?.regularMarketPrice, timeMs: meta?.regularMarketTime * 1000 },
+          baseMap.get(code)?.stockExchangeType?.endTime);
+        if (!close) return;
+        regularCloseCache.set(code, close);
+        // Patch the two fields instead of rebuilding: the session decision and
+        // any override above it stay exactly as they were.
+        const q = quotes[code];
+        q.regularClose = close.price;
+        q.fromClose = overFromClose(close.price, q.price, q.priceSession);
+      } catch { /* 일봉을 못 받으면 종가 대비 줄만 빠진다 */ }
+    }));
+    if (!Object.keys(quotes).length) return { ok: false, error: '빈 응답 또는 시세 조회 실패' };
     return { ok: true, quotes };
   } catch (err) {
     return { ok: false, error: err.message || '실시간 조회 실패' };

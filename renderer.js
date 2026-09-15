@@ -47,12 +47,12 @@ let chart = null;
 let busy = false;
 let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해도 마지막 것만 반영
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
-// 거래 시간(정규장 또는 시간외) 여부. 폴링 간격과 목표가 알림 판정에 쓴다.
+// 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
 let marketOpen = true;
-// 표시용 세션 구분. 'regular' 정규장 · 'over' 시간외 · 'closed' 전부 종료
-let sessionKind = 'regular';
-const SESSION_TEXT = { regular: '실시간', over: '시간외', closed: '장마감' };
-const SESSION_CLASS = { regular: 'live', over: 'over', closed: 'closed' };
+const SESSION_TEXT = {
+  regular: '정규장', pre: '프리마켓', after: '애프터마켓', closed: '장마감', unknown: '확인중',
+};
+const SESSION_CLASS = { regular: 'live', pre: 'over', after: 'over', closed: 'closed', unknown: 'delay' };
 let pollTimer = null;
 
 const POLL_OPEN = 30000;   // 장중 30초
@@ -296,7 +296,61 @@ async function loadSector(item) {
 }
 
 // --- 상세 + 차트 ---------------------------------------------------------------
+// isTrading 이 없는 이전 응답도 세션/open 으로 판정한다.
+function quoteSession(q) {
+  if (!q || q.error) return 'unknown';
+  if (Object.prototype.hasOwnProperty.call(SESSION_TEXT, q.session)) return q.session;
+  if (q.open === true) return 'regular';
+  if (q.open === false) return 'closed';
+  return 'unknown';
+}
+
+function tradingState(q) {
+  if (!q || q.error) return null;
+  if (q.isTrading !== undefined) return typeof q.isTrading === 'boolean' ? q.isTrading : null;
+  const session = quoteSession(q);
+  if (session === 'unknown') return null;
+  return session !== 'closed';
+}
+
+function isDomestic(symbol) {
+  return /^[A-Za-z0-9]{1,10}\.(KS|KQ)$/i.test(symbol) || /^\d{6}$/.test(symbol);
+}
+
+function pollingIsOpen(symbols, liveMap) {
+  const domestic = symbols.filter(isDomestic);
+  // 해외만 있거나 국내 응답이 하나라도 비었으면 짧은 간격으로 재확인한다.
+  return !domestic.length || domestic.some((symbol) =>
+    tradingState(liveMap[symbol] || liveMap[symbol.split('.')[0]]) !== false);
+}
+
+function priceSessionOf(q) {
+  return q && (q.priceSession || q.session) || 'unknown';
+}
+
+function renderUpdated() {
+  const q = quotes[state.selected];
+  const session = quoteSession(q);
+  const el = document.getElementById('updated');
+  const fetched = q && q.fetchedAt != null ? new Date(q.fetchedAt) : null;
+  const validFetched = fetched && Number.isFinite(fetched.getTime());
+  const p = (n) => String(n).padStart(2, '0');
+  const time = validFetched
+    ? `${p(fetched.getHours())}:${p(fetched.getMinutes())}:${p(fetched.getSeconds())}` : '';
+  const delayed = q && !q.error && q.price != null && q.live === false;
+  el.innerHTML = `<span class="${q && q.live ? SESSION_CLASS[session] : 'delay'}">`
+    + `${delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
+  const source = q && !q.error && q.price != null
+    ? `${q.live ? '실시간' : '20분지연'} · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
+    : '확인 불가';
+  el.title = `소스: ${source}${q && q.market ? ` · ${q.market}` : ''}`
+    + `\n세션: ${SESSION_TEXT[session]}`
+    + `\n조회 완료: ${validFetched ? fetched.toISOString() : '확인 불가'}`
+    + `\n시세 시각: ${q && q.tradedAt || '확인 불가'}`;
+}
+
 function renderDetail() {
+  renderUpdated();
   const item = state.watchlist.find((i) => i.symbol === state.selected);
   const q = item && quotes[item.symbol];
 
@@ -326,10 +380,10 @@ function renderDetail() {
 
   // 시간외(장후)에는 정규장 종가 대비 이동폭을 한 줄 더 붙인다. 위 두 줄은 전일
   // 종가 기준이라(네이버가 주는 기준) 시간외에서 얼마나 움직였는지는 안 보인다.
-  // main.js 가 장후에만 fromClose 를 채운다.
+  // main.js 가 장후 가격과 검증된 당일 종가가 있을 때만 채운다 (종료 후에도 유지).
   const closeEl = document.getElementById('dclose');
   closeEl.hidden = !(q && q.fromClose != null);
-  closeEl.textContent = q && q.fromClose != null ? `종가 ${signedMoney(q.fromClose, cur)}` : '';
+  closeEl.textContent = q && q.fromClose != null ? `종가대비 ${signedMoney(q.fromClose, cur)}` : '';
 
   renderHolding(item && item.symbol, q && q.price);
   renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur);
@@ -982,7 +1036,7 @@ async function loadQuote(item, live) {
   // 실시간이 없으면(폴백) 일봉의 가격을 그대로 쓰므로 짧게만 캐시한다.
   const r = await dailyFor(item.symbol, live ? DAILY_TTL : 60000);
   if (!r || r.error) {
-    quotes[item.symbol] = { error: r ? r.error : '조회 실패' };
+    quotes[item.symbol] = { error: r ? r.error : '조회 실패', fetchedAt: Date.now() };
     return;
   }
 
@@ -1007,8 +1061,15 @@ async function loadQuote(item, live) {
     rsi: calcRSI(closes),
     live: !!live,
     open: !!(live && live.open),
-    session: (live && live.session) || null, // 'regular' | 'pre' | 'after' | 'closed'
-    // 시간외(장후) 정규장 종가 대비 이동폭. 장후가 아니면 main 이 null 을 준다.
+    session: live ? quoteSession(live) : 'unknown',
+    priceSession: priceSessionOf(live),
+    isTrading: tradingState(live),
+    regularClose: live && live.regularClose != null ? live.regularClose : null,
+    market: live && live.market || null,
+    source: live && live.source || (live ? 'Naver' : 'Yahoo'),
+    tradedAt: live && live.tradedAt || null,
+    fetchedAt: Date.now(),
+    // 장후 가격의 검증된 당일 정규장 종가 대비 이동폭. 종료 후에도 유지한다.
     // 0 도 뜻이 있는 값이라(움직이지 않음) || 로 뭉개면 안 된다.
     fromClose: live && live.fromClose != null ? live.fromClose : null,
     currency: r.currency,
@@ -1047,20 +1108,26 @@ function maFor(symbol, times, period) {
 
 // 실시간 시세 조회 (실패해도 조용히 빈 값 → Yahoo 지연 시세로 동작)
 async function fetchLive(symbols) {
-  const r = await api.realtimeQuotes(symbols);
-  isLive = r.ok;
-  if (r.ok) {
-    // 실시간 응답에 장 상태가 들어있다. 못 받았으면(폴백) 장중으로 보고 평소 간격을 유지한다.
-    // 시간외에도 가격이 움직이므로 폴링을 늦추지 않는다.
-    const list = Object.values(r.quotes);
-    if (list.length) {
-      const kinds = new Set(list.map((q) => q.session));
-      sessionKind = kinds.has('regular') ? 'regular'
-        : (kinds.has('after') || kinds.has('pre')) ? 'over' : 'closed';
-      marketOpen = sessionKind !== 'closed';
+  // 실패/빈 응답이 직전의 장마감 상태를 남겨 폴링을 늦추지 않게 한다.
+  isLive = false;
+  marketOpen = true;
+  try {
+    const r = await api.realtimeQuotes(symbols);
+    if (!r || !r.ok || !r.quotes) return {};
+    isLive = true;
+    const requested = new Set(symbols);
+    const all = [...new Set([...state.watchlist.map((i) => i.symbol), ...symbols])];
+    const combined = {};
+    for (const symbol of all) {
+      combined[symbol] = requested.has(symbol)
+        ? r.quotes[symbol] || r.quotes[symbol.split('.')[0]] : quotes[symbol];
     }
+    marketOpen = pollingIsOpen(all, combined);
+    return r.quotes;
+  } catch (e) {
+    console.error('실시간 시세 조회 실패', e);
+    return {};
   }
-  return r.ok ? r.quotes : {};
 }
 
 // 차트 응답 캐시. 종목·타임프레임을 오갈 때마다 같은 걸 다시 받으면
@@ -1118,7 +1185,7 @@ async function loadChart() {
 
   // Yahoo 1D 봉은 20분 전에서 끊긴다. 장중 실시간이면 현재가를 끝점으로 이어붙여
   // 차트 끝과 위에 표시된 현재가가 어긋나 보이지 않게 한다.
-  if (state.timeframe === '1D' && q && q.live && q.open) {
+  if (state.timeframe === '1D' && q && q.live && q.open && q.session === 'regular') {
     closes.push(q.price);
     times.push(Date.now());
   }
@@ -1181,14 +1248,15 @@ async function loadChart() {
   // 일봉 차트에서는 마지막에서 두 번째 점일 뿐이라 기준선이 될 이유가 없다.
   const hLines = [];
   if (held && held.avg > 0) hLines.push({ value: held.avg, label: '평단', varName: '--avg-line' });
-  if (state.timeframe === '1D' && q && q.prevClose != null) {
-    hLines.push({ value: q.prevClose, label: '전일', varName: '--prev-line' });
-
-    // 시간외에는 차트(정규장 종가)와 헤더 현재가가 벌어진다. 그 현재가를 선으로 짚어준다.
-    // 봉으로 이어붙이지 않는 이유는 시계열이 없고(현재가 한 점), x축이 카테고리라
-    // 10분 간격·30분 공백이 5분봉과 같은 폭으로 그려져 시간이 왜곡되기 때문이다.
-    if ((q.session === 'after' || q.session === 'pre') && q.price != null) {
-      hLines.push({ value: q.price, label: '시간외', varName: '--over-line' });
+  if (state.timeframe === '1D' && q) {
+    if (q.prevClose != null) {
+      hLines.push({ value: q.prevClose, label: '전일', varName: '--prev-line' });
+    }
+    // 시간외 가격은 별도 기준선이다. 종료 후에도 마지막 가격의 출처를 유지한다.
+    // 시간외 한 점을 정규장 5분봉에 붙이면 시간 간격이 왜곡된다.
+    const origin = priceSessionOf(q);
+    if ((origin === 'after' || origin === 'pre') && q.price != null) {
+      hLines.push({ value: q.price, label: origin === 'after' ? '애프터' : '프리', varName: '--over-line' });
     }
   }
 
@@ -1196,7 +1264,7 @@ async function loadChart() {
   // 다시 그리면 차트가 통째로 재생성돼 마우스를 올려둔 범례 값도 같이 지워진다.
   const sig = `${item.symbol}|${state.timeframe}|${closes.length}`
     + `|${closes[closes.length - 1]}|${up}|${mas.map((m) => m.p).join()}`
-    + `|${hLines.map((l) => l.value).join()}`;
+    + `|${hLines.map((l) => `${l.label}:${l.value}`).join()}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
 
@@ -1228,13 +1296,7 @@ async function refreshAll() {
     await renderFolio();
     await loadChart();
 
-    // 시세가 실시간인지 20분 지연인지 숨기지 않고 표시한다
-    const t = new Date();
-    const p = (n) => String(n).padStart(2, '0');
-    document.getElementById('updated').innerHTML =
-      `<span class="${!isLive ? 'delay' : SESSION_CLASS[sessionKind]}">`
-      + `${!isLive ? '20분지연' : SESSION_TEXT[sessionKind]}</span> `
-      + `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
+    renderUpdated();
   } finally {
     busy = false;
   }
@@ -1646,6 +1708,9 @@ function checkAlerts(prevPrices) {
     const q = quotes[item.symbol];
     const prev = prevPrices[item.symbol];
     if (!t || !q || q.error || prev == null) continue;
+    // 세션 정보가 전혀 없는 기존 가격 전용 테스트/호출은 그대로 지원한다.
+    const hasSession = q.isTrading !== undefined || q.session !== undefined || q.open !== undefined;
+    if (isDomestic(item.symbol) && hasSession && tradingState(q) !== true) continue;
 
     if (t.up != null && prev < t.up && q.price >= t.up) {
       api.notify({ title: `${item.name} 상한 도달`, body: `${fmt(q.price)}원 (목표 ${fmt(t.up)}원)` });
@@ -1670,6 +1735,20 @@ function renderTabs() {
       await loadChart();
     };
     box.appendChild(b);
+  }
+}
+
+// 갱신이 예외로 끝나도 다음 조회를 예약한다 (첫 조회도 같은 경로).
+async function pollTick() {
+  try {
+    await refreshAll();
+  } catch (e) {
+    isLive = false;
+    marketOpen = true;
+    console.error('시세 갱신 실패', e);
+  } finally {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(pollTick, marketOpen ? POLL_OPEN : POLL_CLOSED);
   }
 }
 
@@ -1738,11 +1817,5 @@ function renderTabs() {
 
   // 장 마감 후에는 값이 바뀌지 않으므로 폴링 간격을 늘린다 (밤새 켜둬도 요청이 거의 없음).
   // 완전히 멈추면 개장을 감지하지 못하므로 5분마다 한 번은 확인한다.
-  await refreshAll();
-  const tick = async () => {
-    await refreshAll();
-    clearTimeout(pollTimer);
-    pollTimer = setTimeout(tick, marketOpen ? POLL_OPEN : POLL_CLOSED);
-  };
-  pollTimer = setTimeout(tick, marketOpen ? POLL_OPEN : POLL_CLOSED);
+  await pollTick();
 })();

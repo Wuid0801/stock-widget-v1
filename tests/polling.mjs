@@ -76,3 +76,4 @@ try {
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
+process.exitCode = fails === 0 ? 0 : 1;

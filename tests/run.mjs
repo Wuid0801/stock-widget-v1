@@ -29,6 +29,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // 계산 회귀와 DOM 계약 위반을 즉시 잡는다.
 const ORDER = [
   'isolation.mjs',
+  'quote-session.mjs',
+  'session-ui.mjs',
   'rsi.mjs',
   'trend.mjs',
   'dom-contract.mjs',
