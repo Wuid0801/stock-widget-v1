@@ -41,5 +41,43 @@ function sma(closes, period) {
   return out;
 }
 
+// 단기선이 장기선을 뚫은 지점. 위로 뚫으면 골든, 아래로 뚫으면 데드.
+function crossings(short, long) {
+  const out = [];
+  for (let i = 1; i < short.length; i++) {
+    const s0 = short[i - 1]; const l0 = long[i - 1];
+    const s1 = short[i]; const l1 = long[i];
+    if (s0 == null || l0 == null || s1 == null || l1 == null) continue;
+    if (s0 <= l0 && s1 > l1) out.push({ i, y: s1, golden: true });
+    else if (s0 >= l0 && s1 < l1) out.push({ i, y: s1, golden: false });
+  }
+  return out;
+}
+
+// 마지막 봉의 교차는 말하지 않는다. loadQuote 가 마지막 일봉 종가를 현재가로
+// 덮어쓰므로(closes[closes.length - 1] = price) 그 봉의 이평선은 30초 폴링마다
+// 움직인다. 종가로 확정되기 전이라 장중에 생겼다 사라질 수 있고, 무효가 되면
+// 다음 날 다시 "오늘"로 뜬다 — 삼성전자 2026-09-22 장중 실측에서 5/20 골든이
+// 마지막 봉(당일)에 잡혔다. 추세선이 최근 봉을 빼고 선을 만드는 것
+// (TREND_LOOKBACK)과 같은 이유다.
+// 대가는 하루 늦음이다: 당일 교차는 다음 거래일에 "1일 전"으로 처음 뜬다.
+function confirmedCrosses(crosses, len) {
+  return crosses.filter((c) => c.i < len - 1);
+}
+
+// 봉 시각과 지금 사이의 달력 일수. 봉 시각은 장 시작 시각이라(KRX 일봉은
+// 09:00 KST) 밀리초 차이를 반올림하면 12시간을 넘기는 21:00 에 하루가 더
+// 세어졌다 — 그날 뚫은 것이 밤에 "1일 전"이 됐다. 날짜끼리 비교한다.
+function midnightOf(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+function daysAgo(ms, now = Date.now()) {
+  return Math.round((midnightOf(now) - midnightOf(ms)) / 86400000);
+}
+
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
-if (typeof module !== 'undefined') module.exports = { calcRSI, sma };
+if (typeof module !== 'undefined') {
+  module.exports = { calcRSI, sma, crossings, confirmedCrosses, midnightOf, daysAgo };
+}

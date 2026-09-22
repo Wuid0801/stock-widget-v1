@@ -1,5 +1,5 @@
-// 골든/데드크로스 배지 회귀 가드 — 앱을 띄우지 않고 renderer.js 의 교차 계산만
-// 떼어내 검증한다(trend.mjs · rsi.mjs 와 같은 방식).
+// 골든/데드크로스 배지 회귀 가드 — 앱을 띄우지 않고 indicators.js 의 교차 계산을
+// 검증한다(trend.mjs · rsi.mjs 와 같은 방식).
 //
 // 핵심 성질은 둘이다.
 //
@@ -11,25 +11,7 @@
 //
 // 2. 날짜는 달력 일수로 센다. 봉 시각은 장 시작(KRX 일봉은 09:00 KST)이므로
 //    밀리초 차이를 반올림하면 21:00 을 넘는 순간 하루가 더 세어졌다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { APP_DIR } from './_paths.mjs';
-
-// renderer.js 의 이 두 주석이 잘라내기 경계다. 옮기면 여기도 같이 고쳐야 한다.
-const START = '// 단기선이 장기선을 뚫은 지점';
-const END = '// --- 추세선 ---';
-
-const src = fs.readFileSync(path.join(APP_DIR, 'renderer.js'), 'utf8');
-const a = src.indexOf(START);
-const b = src.indexOf(END);
-if (a < 0 || b < 0) { console.log('FAIL: renderer.js 에서 교차 블록을 찾지 못함'); process.exit(1); }
-
-const X = new Function(`${src.slice(a, b)}
-  return {
-    crossings,
-    confirmedCrosses: typeof confirmedCrosses === 'function' ? confirmedCrosses : null,
-    daysAgo: typeof daysAgo === 'function' ? daysAgo : null,
-  };`)();
+import * as X from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -50,8 +32,8 @@ const KST = 'Asia/Seoul';
 const d = (iso, hhmm = '09:00') => new Date(`${iso}T${hhmm}:00+09:00`).getTime();
 
 // --- 0. 준비 확인 ---------------------------------------------------------------
-check('confirmedCrosses 가 renderer.js 에 있다', X.confirmedCrosses != null);
-check('daysAgo 가 renderer.js 에 있다', X.daysAgo != null);
+check('confirmedCrosses 를 indicators.js 가 내보낸다', X.confirmedCrosses != null);
+check('daysAgo 를 indicators.js 가 내보낸다', X.daysAgo != null);
 if (!X.confirmedCrosses || !X.daysAgo) {
   console.log('\n필요한 함수가 없어 이후 검사를 건너뜁니다.');
   process.exit(1);
