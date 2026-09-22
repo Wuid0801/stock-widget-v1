@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import * as indicators from '../indicators.js';
 
 const source = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
-const prelude = source.slice(0, source.indexOf('// --- RSI(14)'));
+const prelude = source.slice(0, source.indexOf('// 과열도 5단계'));
 function realFunction(name) {
   const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
   assert.notEqual(start, -1, `renderer function ${name} exists`);
@@ -34,6 +35,9 @@ function harness(extra = []) {
     setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; },
     clearTimeout: () => {},
   });
+  // 계산 함수는 통째로 넣는다 — 이름을 하나씩 나열하면 새 함수를 부를 때마다
+  // ReferenceError 가 나고 목록을 손으로 늘려야 한다.
+  Object.assign(c, indicators);
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'pollingIsOpen', 'priceSessionOf',
     'renderUpdated', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
@@ -112,7 +116,7 @@ await test('fetch failures/empty/partial results clear stale closure; partial sy
 });
 
 await test('loadQuote carries metadata, zero close delta, timestamp, and delayed fallback', async () => {
-  const { c, run } = harness(['loadQuote', 'calcRSI']);
+  const { c, run } = harness(['loadQuote']);
   c.dailyFor = async () => ({price:99,closes:[90,100,99],times:[1,2,3],currency:'KRW'});
   const live = {price:102,prevClose:100,change:2,open:false,session:'closed',priceSession:'after',
     isTrading:false,regularClose:102,fromClose:0,market:'NXT',source:'Naver',tradedAt:'2026-09-10T09:29:00Z'};

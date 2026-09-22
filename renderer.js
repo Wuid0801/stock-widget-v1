@@ -58,28 +58,6 @@ let pollTimer = null;
 const POLL_OPEN = 30000;   // 장중 30초
 const POLL_CLOSED = 300000; // 장 마감 후 5분 (개장 감지용 최소 확인)
 
-// --- RSI(14), Wilder smoothing -----------------------------------------------
-function calcRSI(closes, period = 14) {
-  if (!closes || closes.length < period + 1) return null;
-
-  let gain = 0, loss = 0;
-  for (let i = 1; i <= period; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d >= 0) gain += d; else loss -= d;
-  }
-  gain /= period;
-  loss /= period;
-
-  for (let i = period + 1; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    gain = (gain * (period - 1) + Math.max(d, 0)) / period;
-    loss = (loss * (period - 1) + Math.max(-d, 0)) / period;
-  }
-
-  if (loss === 0) return gain === 0 ? 50 : 100;
-  return 100 - 100 / (1 + gain / loss);
-}
-
 // 과열도 5단계
 function levelOf(rsi) {
   if (rsi == null) return { label: '—', color: cssVar('--dot-off') };
@@ -1180,18 +1158,6 @@ async function loadQuote(item, live) {
     // 이미 받아둔 1년치를 그대로 재활용해 추가 요청 없이 앞구간까지 채운다.
     daily: { times: r.times, closes },
   };
-}
-
-// 단순이동평균. 구간이 모자라는 앞부분은 null (Chart.js가 알아서 비워 둔다)
-function sma(closes, period) {
-  const out = new Array(closes.length).fill(null);
-  let sum = 0;
-  for (let i = 0; i < closes.length; i++) {
-    sum += closes[i];
-    if (i >= period) sum -= closes[i - period];
-    if (i >= period - 1) out[i] = sum / period;
-  }
-  return out;
 }
 
 // 차트 시각(times)에 맞춰 일봉 이동평균을 끌어온다. 일봉이 아닌 타임프레임은 대상 아님.

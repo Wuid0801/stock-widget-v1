@@ -580,6 +580,8 @@
   </div>
 
   <script src="./node_modules/chart.js/dist/chart.umd.js"></script>
+  <!-- 순수 계산. renderer.js 가 전역으로 쓰므로 반드시 먼저 싣는다 -->
+  <script src="./indicators.js"></script>
   <script src="./renderer.js"></script>
 </body>
 </html>

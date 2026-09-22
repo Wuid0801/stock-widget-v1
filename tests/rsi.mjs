@@ -1,17 +1,10 @@
-// RSI(14) 회귀 가드 — 앱을 띄우지 않고 renderer.js 의 calcRSI 만 떼어내 검증한다.
+// RSI(14) 회귀 가드 — 앱을 띄우지 않고 indicators.js 의 calcRSI 를 검증한다.
 //
 // 아래 기대값은 Wilder 의 표준 예제 종가로 계산한 결과이며,
 // 널리 쓰이는 technicalindicators 라이브러리의 RSI 와 소수 2자리까지
 // 전부 일치함을 확인했다(Wilder 예제 + 실제 국내 5종목 일봉, 총 1166개 값).
 // 여기서는 외부 의존성 없이 그 결과를 고정해 두어 구현이 바뀌면 잡히게 한다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { APP_DIR } from './_paths.mjs';
-
-const src = fs.readFileSync(path.join(APP_DIR, 'renderer.js'), 'utf8');
-const body = src.slice(src.indexOf('function calcRSI'), src.indexOf('// 과열도 5단계'));
-if (!body) { console.log('FAIL: renderer.js 에서 calcRSI 를 찾지 못함'); process.exit(1); }
-const calcRSI = new Function(`${body}; return calcRSI;`)();
+import { calcRSI } from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
