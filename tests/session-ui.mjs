@@ -187,8 +187,7 @@ await test('selected detail updates header, independent of aggregate; quote and 
 });
 
 await test('1D appends only active regular; pre/after lines retain price origin after close', async () => {
-  // loadChart calls candleOf on every render once it reaches 1M, so pull the real one in.
-  const { c, run } = harness(['loadChart', 'candleOf']);
+  const { c, run } = harness(['loadChart']);
   const draws = [];
   const bars = {ok:true,closes:[98,100],times:[1,2],volumes:[10,20],highs:[99,101],lows:[97,99]};
   Object.assign(c, {
@@ -235,7 +234,7 @@ await test('1D appends only active regular; pre/after lines retain price origin 
 // 값들보다 뒤처진다. 상세 캔들은 네이버 실시간이므로, 맞춰주지 않으면 한 화면이
 // 서로 다른 순간을 가리킨다. 지나간 봉은 건드리면 안 된다.
 await test('daily chart syncs the last bar to the live candle, older bars untouched', async () => {
-  const { c, run } = harness(['loadChart', 'candleOf']);
+  const { c, run } = harness(['loadChart']);
   const draws = [];
   const today = Date.parse('2026-09-10T00:00:00Z'); // 09:00 KST, NOW 와 같은 날
   const bars = { ok: true, closes: [98, 100], times: [today - 86400000, today],

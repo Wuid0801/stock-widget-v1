@@ -1,5 +1,5 @@
-// 현재가 옆 "오늘 캔들" 회귀 가드 — 앱을 띄우지 않고 renderer.js 의 캔들 계산만
-// 떼어내 검증한다(trend.mjs · cross.mjs 와 같은 방식).
+// 현재가 옆 "오늘 캔들" 회귀 가드 — 앱을 띄우지 않고 indicators.js 의 캔들 계산을
+// 검증한다(trend.mjs · cross.mjs 와 같은 방식).
 //
 // 두 가지를 고정한다.
 //
@@ -9,31 +9,14 @@
 //
 // 2. 몸통은 최소 1px 이고 주어진 높이 안에 들어온다. 도지(시가 = 종가)는 높이 0 이라
 //    그냥 그리면 사라지고, 종가가 저가와 같으면 몸통이 아래로 삐져나간다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { APP_DIR } from './_paths.mjs';
-
-// renderer.js 의 이 두 주석이 잘라내기 경계다. 옮기면 여기도 같이 고쳐야 한다.
-const START = '// --- 오늘 캔들';
-const END = '// --- 리스트';
-
-const src = fs.readFileSync(path.join(APP_DIR, 'renderer.js'), 'utf8');
-const a = src.indexOf(START);
-const b = src.indexOf(END);
-if (a < 0 || b < 0) { console.log('FAIL: renderer.js 에서 캔들 블록을 찾지 못함'); process.exit(1); }
-
-const C = new Function(`${src.slice(a, b)}
-  return {
-    candleOf: typeof candleOf === 'function' ? candleOf : null,
-    candleGeom: typeof candleGeom === 'function' ? candleGeom : null,
-  };`)();
+import * as C from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 const near = (v, want, eps = 0.01) => Math.abs(v - want) < eps;
 
-check('candleOf 가 renderer.js 에 있다', C.candleOf != null);
-check('candleGeom 가 renderer.js 에 있다', C.candleGeom != null);
+check('candleOf 를 indicators.js 가 내보낸다', C.candleOf != null);
+check('candleGeom 을 indicators.js 가 내보낸다', C.candleGeom != null);
 if (!C.candleOf || !C.candleGeom) {
   console.log('\n필요한 함수가 없어 이후 검사를 건너뜁니다.');
   process.exit(1);

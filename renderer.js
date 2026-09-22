@@ -112,38 +112,6 @@ function labelFor(ms, timeframe) {
 const CANDLE_W = 9;
 const CANDLE_H = 22;
 
-// 시·고·저는 정규장 값이고, 종가는 세션이 고른다. 시간외 가격을 종가로 쓰면
-// 정규장 캔들의 꼬리가 시간외까지 늘어난다 — 정규장 밖에서는 확정된 정규장
-// 종가를 쓰고, 아직 못 받았으면 현재가로 버틴다.
-// 마지막에 고가·저가를 시가·종가로 조인다. 네이버 고저가 현재가보다 한 틱 늦게
-// 오는 순간이 있어, 그대로 두면 몸통이 제 꼬리를 뚫고 나간다.
-function candleOf(q) {
-  const c = q && q.candle;
-  if (!c || !Number.isFinite(c.open) || c.open <= 0) return null;
-
-  const close = q.priceSession === 'regular' || q.regularClose == null
-    ? q.price
-    : q.regularClose;
-  if (!Number.isFinite(close) || close <= 0) return null;
-
-  const open = c.open;
-  const high = Math.max(Number.isFinite(c.high) ? c.high : -Infinity, open, close);
-  const low = Math.min(Number.isFinite(c.low) && c.low > 0 ? c.low : Infinity, open, close);
-  return { open, high, low, close, dir: close > open ? 'up' : close < open ? 'down' : 'flat' };
-}
-
-// 저가~고가를 높이 h 에 채운다. 몸통은 최소 1px — 도지(시가 = 종가)는 높이가
-// 0 이라 그냥 그리면 아무것도 안 보인다. 종가가 저가와 같으면 그 1px 이 아래로
-// 삐져나가므로 안쪽으로 당긴다.
-function candleGeom(c, h) {
-  const span = c.high - c.low;
-  if (!(span > 0)) return { flat: true, bodyTop: (h - 1) / 2, bodyH: 1 }; // 하루 한 가격
-  const y = (v) => ((c.high - v) / span) * h;
-  const top = y(Math.max(c.open, c.close));
-  const bodyH = Math.max(1, y(Math.min(c.open, c.close)) - top);
-  return { flat: false, bodyTop: Math.min(top, h - bodyH), bodyH };
-}
-
 // 꼬리는 가운데 세로선, 몸통은 사각형. 고가 = 저가면 꼬리가 점이라 그리지 않고
 // 몸통 1px 만 남긴다. 색은 한국 관례 — 시가보다 오르면 빨강.
 function candleSvg(c) {
