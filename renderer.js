@@ -631,7 +631,8 @@ function renderCrossBadge(crosses, times) {
 
   const days = daysAgo(times[last.i]);
   el.hidden = false;
-  el.textContent = `${last.pair} ${last.golden ? '골든' : '데드'} · ${days <= 0 ? '오늘' : `${days}일 전`}`;
+  // 확정 봉만 보므로 가장 가까운 교차도 최소 1일 전이다 — "오늘"은 나오지 않는다.
+  el.textContent = `${last.pair} ${last.golden ? '골든' : '데드'} · ${days}일 전`;
   el.classList.toggle('up', last.golden);
   el.classList.toggle('down', !last.golden);
 }
@@ -663,8 +664,14 @@ function confirmedCrosses(crosses, len) {
 // 봉 시각과 지금 사이의 달력 일수. 봉 시각은 장 시작 시각이라(KRX 일봉은
 // 09:00 KST) 밀리초 차이를 반올림하면 12시간을 넘기는 21:00 에 하루가 더
 // 세어졌다 — 그날 뚫은 것이 밤에 "1일 전"이 됐다. 날짜끼리 비교한다.
-const midnightOf = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
-const daysAgo = (ms, now = Date.now()) => Math.round((midnightOf(now) - midnightOf(ms)) / 86400000);
+function midnightOf(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+function daysAgo(ms, now = Date.now()) {
+  return Math.round((midnightOf(now) - midnightOf(ms)) / 86400000);
+}
 
 // --- 추세선 ---------------------------------------------------------------------
 // 저점끼리 이으면 지지선, 고점끼리 이으면 저항선. 3M · 1Y 에서만 그린다 —
@@ -769,8 +776,13 @@ function breakoutOf(line, extremes, len, low) {
   // 저항선은 내려가고 주가는 오르니 초과폭이 날마다 커져서 늘 최근 봉이 뽑힌다.
   // SK하이닉스 실측에서 09-07 에 뚫었는데 배지가 09-10 을 가리켰다.
   // 닿기만 한 봉은 돌파가 아니다 — 껍질은 원래 선에 닿는다.
+  //
+  // 마지막 봉은 판정에서 뺀다. 그 봉의 고가·저가는 장중에 실시간 값으로 계속
+  // 덮이므로, 넣으면 배지가 장중에 떴다 사라지고 다음 날 또 뜬다(크로스 배지와
+  // 같은 이유). 폭은 그대로 마지막 봉에서 재는데, 그건 "지금 얼마나 벗어나
+  // 있나" 라는 현재 상태지 사건이 아니다.
   let at = null;
-  for (let i = len - TREND_LOOKBACK; i < len; i++) {
+  for (let i = len - TREND_LOOKBACK; i < len - 1; i++) {
     const e = excess(i);
     if (e && e.gap > 0 && e.pct >= TREND_MIN_BREAK) { at = i; break; }
   }
@@ -814,7 +826,7 @@ function renderTrendBadges(trends, len, times = []) {
     brk.hidden = false;
     brk.classList.toggle('sup', isSup);
     brk.textContent = `${isSup ? '지지 이탈' : '저항 돌파'} ${fmtPct(hit.broke.pct * 100)}`
-      + ` · ${days <= 0 ? '오늘' : `${days}일 전`}`;
+      + ` · ${days}일 전`; // 크로스 배지와 같이 확정 봉만 보므로 "오늘"은 없다
     return;
   }
 
@@ -1319,6 +1331,20 @@ async function loadChart() {
   const volumes = pad(r.volumes, 0);
   const highs = pad(r.highs, (i) => closes[i]);
   const lows = pad(r.lows, (i) => closes[i]);
+
+  // 야후 국내 시세는 20분 지연이라 오늘 봉이 화면의 다른 값들보다 뒤처진다 —
+  // 상세 캔들(네이버 실시간)과 같은 값으로 마지막 봉을 맞춘다. 맞추지 않으면
+  // 한 화면이 서로 다른 순간을 가리킨다(2026-09-22 삼성전자 저가 274,500 vs
+  // 274,000). 덕분에 일봉 차트 끝점도 헤더 현재가와 어긋나지 않는다.
+  // 마지막 봉이 오늘이 아니면(장 전 · 휴장) 건드리지 않는다 — 지나간 봉에
+  // 오늘 값을 쓰면 없던 고가·저가가 생긴다.
+  const todayBar = daily ? candleOf(q) : null;
+  if (todayBar && daysAgo(times[times.length - 1]) === 0) {
+    const i = closes.length - 1;
+    closes[i] = todayBar.close;
+    highs[i] = todayBar.high;
+    lows[i] = todayBar.low;
+  }
 
   // 추세선은 3M · 1Y 에서만. 검사를 통과 못 한 쪽은 빠지므로
   // 지지선만, 저항선만, 또는 둘 다 없는 상태가 정상이다.

@@ -72,15 +72,30 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
 {
   const N = 50;
   const highs = decline(N);
-  highs[N - 1] = 16000;
+  highs[N - 2] = 16000; // 확정된 봉에서 뚫었다 (선 15,200 → +5.26%)
+  highs[N - 1] = 16100; // 오늘도 선 위에 있다 (선 15,100 → +6.62%)
   const line = T.trendLine(highs, N, false);
   const bo = line && T.breakoutOf && T.breakoutOf(line, highs, N, false);
 
-  check('저항 돌파가 마지막 봉에서 잡힌다', !!bo && bo.at === N - 1,
+  check('저항 돌파가 뚫은 확정 봉에서 잡힌다', !!bo && bo.at === N - 2,
     bo ? `at=${bo.at}` : `bo=${bo}`);
-  check('돌파 폭이 900원 · 약 6% 로 계산된다',
-    !!bo && Math.round(bo.gap) === 900 && Math.abs(bo.pct - 900 / 15100) < 1e-9,
+  check('돌파 폭은 마지막 봉 기준 1,000원 · 약 6.6% 다',
+    !!bo && Math.round(bo.gap) === 1000 && Math.abs(bo.pct - 1000 / 15100) < 1e-9,
     bo ? `gap=${bo.gap} pct=${bo.pct}` : '');
+}
+
+// --- 3b. 마지막 봉에서만 뚫은 것은 아직 돌파가 아니다 ---------------------------
+// 마지막 봉은 장중에 고가·저가가 계속 움직인다(실시간 값으로 덮어쓴다). 그 봉으로
+// 돌파를 판정하면 배지가 장중에 떴다 사라지고, 무효가 되면 다음 날 또 뜬다 —
+// 크로스 배지에서 같은 이유로 확정 봉만 보기로 했다.
+{
+  const N = 50;
+  const highs = decline(N);
+  highs[N - 1] = 16000; // 오늘만 선 위로 (+5.96%)
+  const line = T.trendLine(highs, N, false);
+  const bo = line && T.breakoutOf && T.breakoutOf(line, highs, N, false);
+  check('오늘 봉만 뚫었으면 돌파로 보고하지 않는다', !!line && bo === null,
+    bo ? `at=${bo.at} pct=${(bo.pct * 100).toFixed(2)}%` : (line ? '' : 'line=null'));
 }
 
 // --- 4. 뚫지 않았으면 돌파가 아니다 ---------------------------------------------
@@ -97,13 +112,13 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
 {
   const N = 50;
   const lows = decline(N);
-  lows[N - 1] = 14000; // 하락 지지선(오늘값 15,100) 아래로 이탈
+  lows[N - 2] = 14000; // 하락 지지선(그 봉 값 15,200) 아래로 이탈
   const line = T.trendLine(lows, N, true);
   const bo = line && T.breakoutOf && T.breakoutOf(line, lows, N, true);
 
   check('지지선 이탈이 잡히고 선은 저가에 맞춰지지 않는다',
-    !!line && !!bo && bo.at === N - 1 && line.data[N - 1] > lows[N - 1],
-    line ? `선 ${line.data[N - 1]} vs 저가 ${lows[N - 1]}` : 'line=null');
+    !!line && !!bo && bo.at === N - 2 && line.data[N - 2] > lows[N - 2],
+    line ? `선 ${line.data[N - 2]} vs 저가 ${lows[N - 2]}` : 'line=null');
 }
 
 // --- 6. 최근까지 유효하지 않은 선분은 채택하지 않는다 ---------------------------
@@ -144,7 +159,7 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
 {
   const N = 50;
   const highs = decline(N);
-  highs[N - 1] = 15115; // 선 15,100 대비 +0.10%
+  highs[N - 2] = 15215; // 선 15,200 대비 +0.10% (확정 봉이라 판정 대상이다)
   const line = T.trendLine(highs, N, false);
   const bo = line && T.breakoutOf && T.breakoutOf(line, highs, N, false);
   check('선을 0.1% 스친 것은 돌파가 아니다', !!line && bo === null,
