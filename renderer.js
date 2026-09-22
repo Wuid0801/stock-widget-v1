@@ -564,7 +564,7 @@ function renderCrossBadge(crosses, times) {
   const last = crosses[crosses.length - 1];
   if (!last) { el.hidden = true; return; }
 
-  const days = Math.round((Date.now() - times[last.i]) / 86400000);
+  const days = daysAgo(times[last.i]);
   el.hidden = false;
   el.textContent = `${last.pair} ${last.golden ? '골든' : '데드'} · ${days <= 0 ? '오늘' : `${days}일 전`}`;
   el.classList.toggle('up', last.golden);
@@ -583,6 +583,23 @@ function crossings(short, long) {
   }
   return out;
 }
+
+// 마지막 봉의 교차는 말하지 않는다. loadQuote 가 마지막 일봉 종가를 현재가로
+// 덮어쓰므로(closes[closes.length - 1] = price) 그 봉의 이평선은 30초 폴링마다
+// 움직인다. 종가로 확정되기 전이라 장중에 생겼다 사라질 수 있고, 무효가 되면
+// 다음 날 다시 "오늘"로 뜬다 — 삼성전자 2026-09-22 장중 실측에서 5/20 골든이
+// 마지막 봉(당일)에 잡혔다. 추세선이 최근 봉을 빼고 선을 만드는 것
+// (TREND_LOOKBACK)과 같은 이유다.
+// 대가는 하루 늦음이다: 당일 교차는 다음 거래일에 "1일 전"으로 처음 뜬다.
+function confirmedCrosses(crosses, len) {
+  return crosses.filter((c) => c.i < len - 1);
+}
+
+// 봉 시각과 지금 사이의 달력 일수. 봉 시각은 장 시작 시각이라(KRX 일봉은
+// 09:00 KST) 밀리초 차이를 반올림하면 12시간을 넘기는 21:00 에 하루가 더
+// 세어졌다 — 그날 뚫은 것이 밤에 "1일 전"이 됐다. 날짜끼리 비교한다.
+const midnightOf = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const daysAgo = (ms, now = Date.now()) => Math.round((midnightOf(now) - midnightOf(ms)) / 86400000);
 
 // --- 추세선 ---------------------------------------------------------------------
 // 저점끼리 이으면 지지선, 고점끼리 이으면 저항선. 3M · 1Y 에서만 그린다 —
@@ -728,7 +745,7 @@ function renderTrendBadges(trends, len, times = []) {
   if (hit) {
     const isSup = hit.varName === '--sup-line';
     // 크로스 배지와 같은 방식으로 실제 달력 일수를 쓴다.
-    const days = Math.round((Date.now() - times[hit.broke.at]) / 86400000);
+    const days = daysAgo(times[hit.broke.at]);
     brk.hidden = false;
     brk.classList.toggle('sup', isSup);
     brk.textContent = `${isSup ? '지지 이탈' : '저항 돌파'} ${fmtPct(hit.broke.pct * 100)}`
@@ -1209,13 +1226,16 @@ async function loadChart() {
   // 골든/데드크로스. 양쪽 이평선이 실제로 그려지는 조합만 본다
   // (설정 칩에서 5·20·60 을 다 켜둬야 두 쌍 모두 나온다).
   const byPeriod = new Map(mas.map((m) => [m.p, m.data]));
-  const crosses = [];
+  const found = [];
   for (const [s, l] of CROSS_PAIRS) {
     const a = byPeriod.get(s); const b = byPeriod.get(l);
     if (!a || !b) continue;
-    for (const c of crossings(a, b)) crosses.push({ ...c, pair: `${s}/${l}` });
+    for (const c of crossings(a, b)) found.push({ ...c, pair: `${s}/${l}` });
   }
-  crosses.sort((x, y) => x.i - y.i);
+  found.sort((x, y) => x.i - y.i);
+  // 배지와 차트 표식(▲▼)이 같은 목록을 쓴다 — 확정 전 교차를 한쪽만 숨기면
+  // 배지는 옛 교차를 말하는데 차트에는 오늘 표식이 찍혀 서로 어긋난다.
+  const crosses = confirmedCrosses(found, times.length);
   renderCrossBadge(crosses, times);
 
   // 1D 는 현재가를 끝에 이어붙였으므로 봉 단위 배열들보다 한 칸 길다 → 마지막 칸을 채운다

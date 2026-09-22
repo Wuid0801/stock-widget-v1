@@ -33,6 +33,7 @@ const ORDER = [
   'session-ui.mjs',
   'rsi.mjs',
   'trend.mjs',
+  'cross.mjs',
   'dom-contract.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',

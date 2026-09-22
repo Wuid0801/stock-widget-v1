@@ -179,7 +179,8 @@ await test('selected detail updates header, independent of aggregate; quote and 
 });
 
 await test('1D appends only active regular; pre/after lines retain price origin after close', async () => {
-  const { c, run } = harness(['loadChart']);
+  // loadChart calls confirmedCrosses on every render, so pull the real one in.
+  const { c, run } = harness(['loadChart', 'confirmedCrosses']);
   const draws = [];
   const bars = {ok:true,closes:[98,100],times:[1,2],volumes:[10,20],highs:[99,101],lows:[97,99]};
   Object.assign(c, {
