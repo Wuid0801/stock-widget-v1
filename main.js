@@ -412,15 +412,17 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
 
     // close 배열에는 실제로 null이 섞여 나온다 → timestamp와 짝을 맞춰 제거
     const rawCloses = result.indicators?.quote?.[0]?.close || [];
-    // 거래량·고가·저가는 close 와 같은 객체에 이미 들어있다 (추가 요청 없음)
+    // 거래량·시가·고가·저가는 close 와 같은 객체에 이미 들어있다 (추가 요청 없음)
     const q0 = result.indicators?.quote?.[0] || {};
     const rawVolumes = q0.volume || [];
+    const rawOpens = q0.open || [];
     const rawHighs = q0.high || [];
     const rawLows = q0.low || [];
     const stamps = result.timestamp || [];
     const closes = [];
     const times = [];
     const volumes = [];
+    const opens = [];
     const highs = [];
     const lows = [];
     for (let i = 0; i < rawCloses.length; i++) {
@@ -428,7 +430,8 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       closes.push(rawCloses[i]);
       times.push(stamps[i] * 1000);
       volumes.push(rawVolumes[i] ?? 0);
-      // 고가/저가가 비면 종가로 대체해 밴드 폭이 0 이 되게 한다
+      // 시가/고가/저가가 비면 종가로 대체해 밴드 폭이 0 이 되게 한다
+      opens.push(rawOpens[i] ?? rawCloses[i]);
       highs.push(rawHighs[i] ?? rawCloses[i]);
       lows.push(rawLows[i] ?? rawCloses[i]);
     }
@@ -445,6 +448,7 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       closes,
       times,
       volumes,
+      opens,
       highs,
       lows,
     };

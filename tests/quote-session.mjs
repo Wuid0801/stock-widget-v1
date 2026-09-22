@@ -247,4 +247,22 @@ await test('IPC both venues failed requests Yahoo fallback', async () => {
   failed = new Set(['KRX', 'NXT']);
   assert.equal((await handler(null, ['005930.KS'])).ok, false);
 });
+
+// The day candle must describe the integrated (KRX + NXT) session, the way a
+// broker's chart does. The top-level open/high/low are KRX only, and on a day
+// when NXT opened first the two disagree: this fixture opens at 248,000 on KRX
+// but 245,500 integrated - a large body with no upper shadow versus a small one
+// with a long shadow. Confirmed live on 2026-09-22 (283,000 KRX, 279,000 both).
+await test('day candle uses the integrated session, not KRX alone', () => {
+  const q = normalizeQuote(paused.datas[0], { now });
+  assert.deepEqual(q.candle, { open: 245500, high: 252000, low: 245000 });
+});
+await test('day candle falls back to KRX when no integrated block is given', () => {
+  const q = normalizeQuote(row({ integratedPriceInfo: null }), { now });
+  assert.equal(q.candle.open, 248000);
+});
+await test('day candle is null when the open is missing', () => {
+  const q = normalizeQuote(row({ integratedPriceInfo: null, openPriceRaw: null, openPrice: null }), { now });
+  assert.equal(q.candle, null);
+});
 console.log(`\nPASS: ${count} deterministic session cases`);

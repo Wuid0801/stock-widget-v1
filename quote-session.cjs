@@ -55,6 +55,25 @@ function candidate(data, kind, now) {
   };
 }
 
+// Today's open/high/low for the price candle, from the INTEGRATED session.
+// The top-level fields cover KRX alone, but NXT opens an hour earlier, so on a
+// day when it trades first the two disagree - Samsung on 2026-09-22 opened at
+// 283,000 on KRX and 279,000 integrated, which is the difference between a
+// large body with no upper shadow and a small one with a long shadow. Brokers
+// chart the integrated session, so integratedPriceInfo wins where it exists;
+// it carries no ...Raw variants, and numberOrNull strips the thousands commas.
+// The over-market object is never a source here: it has a price, not a range.
+function dayCandle(data) {
+  const p = data?.integratedPriceInfo || data;
+  const open = numberOrNull(p?.openPriceRaw ?? p?.openPrice);
+  if (open == null || open <= 0) return null;
+  return {
+    open,
+    high: numberOrNull(p?.highPriceRaw ?? p?.highPrice),
+    low: numberOrNull(p?.lowPriceRaw ?? p?.lowPrice),
+  };
+}
+
 function overFromClose(regularClose, price, priceSession) {
   if (priceSession !== 'after') return null;
   if (!Number.isFinite(regularClose) || regularClose <= 0 || !Number.isFinite(price)) return null;
@@ -131,6 +150,7 @@ function normalizeQuote(data, { now = Date.now(), regularClose = null, nxt = nul
     open: isTrading === true && session === 'regular',
     session, priceSession: selected.priceSession, isTrading,
     regularClose: close?.price ?? null,
+    candle: dayCandle(data),
     fromClose: overFromClose(close?.price, selected.price, selected.priceSession),
     market: selected.market,
     source: selected.source, tradedAt: selected.tradedAt,

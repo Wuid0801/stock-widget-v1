@@ -146,7 +146,7 @@ await test('selected detail updates header, independent of aggregate; quote and 
   Object.assign(c, {
     curOf: () => 'KRW', money: (v) => v == null ? '—' : String(v),
     sectors: new Map([['005930.KS',''],['000660.KS','']]),
-    renderHolding: () => {}, renderW52: () => {},
+    renderHolding: () => {}, renderW52: () => {}, candleTag: () => '',
     levelOf: () => ({label:'—',color:'#000000'}), cssVar: () => '#000000',
   });
   run(`quotes['005930.KS'] = {price:102, live:true, session:'closed', priceSession:'after',

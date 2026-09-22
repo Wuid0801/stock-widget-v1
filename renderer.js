@@ -125,6 +125,70 @@ function labelFor(ms, timeframe) {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}`;
 }
 
+// --- 오늘 캔들 -----------------------------------------------------------------
+// 선택한 종목의 현재가 오른쪽에 오늘 하루를 캔들로 그린다. 옆의 등락은 전일 종가
+// 대비라 "올랐지만 시가보다는 밀렸다" 같은 것이 숫자만으로는 보이지 않는다 —
+// 삼성전자 2026-09-22 는 +0.91% 인데 283,000 에 열려 276,500 으로 밀린 음봉이었다.
+
+// 현재가(19px · line-height 1.15)와 같은 높이로 맞춘다.
+const CANDLE_W = 9;
+const CANDLE_H = 22;
+
+// 시·고·저는 정규장 값이고, 종가는 세션이 고른다. 시간외 가격을 종가로 쓰면
+// 정규장 캔들의 꼬리가 시간외까지 늘어난다 — 정규장 밖에서는 확정된 정규장
+// 종가를 쓰고, 아직 못 받았으면 현재가로 버틴다.
+// 마지막에 고가·저가를 시가·종가로 조인다. 네이버 고저가 현재가보다 한 틱 늦게
+// 오는 순간이 있어, 그대로 두면 몸통이 제 꼬리를 뚫고 나간다.
+function candleOf(q) {
+  const c = q && q.candle;
+  if (!c || !Number.isFinite(c.open) || c.open <= 0) return null;
+
+  const close = q.priceSession === 'regular' || q.regularClose == null
+    ? q.price
+    : q.regularClose;
+  if (!Number.isFinite(close) || close <= 0) return null;
+
+  const open = c.open;
+  const high = Math.max(Number.isFinite(c.high) ? c.high : -Infinity, open, close);
+  const low = Math.min(Number.isFinite(c.low) && c.low > 0 ? c.low : Infinity, open, close);
+  return { open, high, low, close, dir: close > open ? 'up' : close < open ? 'down' : 'flat' };
+}
+
+// 저가~고가를 높이 h 에 채운다. 몸통은 최소 1px — 도지(시가 = 종가)는 높이가
+// 0 이라 그냥 그리면 아무것도 안 보인다. 종가가 저가와 같으면 그 1px 이 아래로
+// 삐져나가므로 안쪽으로 당긴다.
+function candleGeom(c, h) {
+  const span = c.high - c.low;
+  if (!(span > 0)) return { flat: true, bodyTop: (h - 1) / 2, bodyH: 1 }; // 하루 한 가격
+  const y = (v) => ((c.high - v) / span) * h;
+  const top = y(Math.max(c.open, c.close));
+  const bodyH = Math.max(1, y(Math.min(c.open, c.close)) - top);
+  return { flat: false, bodyTop: Math.min(top, h - bodyH), bodyH };
+}
+
+// 꼬리는 가운데 세로선, 몸통은 사각형. 고가 = 저가면 꼬리가 점이라 그리지 않고
+// 몸통 1px 만 남긴다. 색은 한국 관례 — 시가보다 오르면 빨강.
+function candleSvg(c) {
+  const g = candleGeom(c, CANDLE_H);
+  const color = c.dir === 'up' ? UP : c.dir === 'down' ? DOWN : cssVar('--flat');
+  const mid = CANDLE_W / 2;
+  const wick = g.flat ? ''
+    : `<line x1="${mid}" y1="0" x2="${mid}" y2="${CANDLE_H}" stroke="${color}"/>`;
+  return `<svg width="${CANDLE_W}" height="${CANDLE_H}" viewBox="0 0 ${CANDLE_W} ${CANDLE_H}">`
+    + `${wick}<rect x="0" y="${g.bodyTop.toFixed(2)}" width="${CANDLE_W}"`
+    + ` height="${g.bodyH.toFixed(2)}" fill="${color}"/></svg>`;
+}
+
+// 시가를 못 받은 종목(야후가 안 주는 경우)은 빈 문자열이다. 옆 칸이 없을 뿐
+// 현재가 위치는 그대로다.
+function candleTag(q, cur) {
+  const c = candleOf(q);
+  if (!c) return '';
+  const t = `시 ${money(c.open, cur)} · 고 ${money(c.high, cur)}`
+    + ` · 저 ${money(c.low, cur)} · 종 ${money(c.close, cur)}`;
+  return `<span title="${esc(t)}">${candleSvg(c)}</span>`;
+}
+
 // --- 리스트 -------------------------------------------------------------------
 // 관심종목은 store에서 오므로, 추가/삭제 UI를 붙일 때는
 // state.watchlist를 수정하고 save() + renderList()만 호출하면 된다.
@@ -356,6 +420,7 @@ function renderDetail() {
 
   const cur = item ? curOf(item.symbol) : 'KRW';
   document.getElementById('dprice').textContent = money(q && q.price, cur);
+  document.getElementById('dcandle').innerHTML = candleTag(q, cur);
   // 원화가 아니면 어느 통화인지 이름 옆에 표시
   document.getElementById('dname').textContent = item
     ? (cur === 'KRW' ? item.name : `${item.name} (${cur})`) : '—';
@@ -1036,11 +1101,15 @@ async function dailyFor(symbol, ttl) {
   const r = await api.fetchChart({ symbol, ...DAILY });
   if (!r.ok) return cached || { error: r.error };
 
+  const last = r.closes.length - 1;
   dailyCache[symbol] = {
     at: Date.now(),
     price: r.price,
     closes: r.closes,
     times: r.times,
+    // 목록의 오늘 캔들용 폴백(해외 종목·네이버 실패). 마지막 봉만 쓰므로
+    // 시·고·저 배열 전체를 들고 있지 않는다 — 5년치면 종목당 세 배다.
+    candle: { open: r.opens?.[last], high: r.highs?.[last], low: r.lows?.[last] },
     currency: r.currency,
     week52High: r.week52High,
     week52Low: r.week52Low,
@@ -1082,6 +1151,9 @@ async function loadQuote(item, live) {
     priceSession: priceSessionOf(live),
     isTrading: tradingState(live),
     regularClose: live && live.regularClose != null ? live.regularClose : null,
+    // 오늘 캔들. 실시간이 정규장 시·고·저를 함께 주면 그것을 쓰고(30초마다 최신),
+    // 없으면 일봉 마지막 봉에서 가져온다 — 가격과 같은 폴백 순서다.
+    candle: (live && live.candle) || r.candle || null,
     market: live && live.market || null,
     source: live && live.source || (live ? 'Naver' : 'Yahoo'),
     tradedAt: live && live.tradedAt || null,

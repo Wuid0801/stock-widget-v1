@@ -381,6 +381,9 @@
   .dsector { font-size: 9px; color: var(--faint); }
   .dsector:not(:empty)::before { content: ' · '; }
   .dprice { font-size: 19px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  /* 현재가와 오늘 캔들을 한 줄로. 캔들 높이(22px)를 현재가 줄 높이에 맞춰 뒀다 */
+  .dpricerow { display: flex; align-items: center; gap: 7px; }
+  .dcandle { flex: 0 0 auto; display: flex; }
   .dchgbox { margin-left: auto; text-align: right; }
   .dchg { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
   /* 시간외 정규장 종가 대비. 차트의 시간외 기준선·헤더 배지와 같은 색이라
@@ -480,7 +483,11 @@
           <div class="dname" id="dnameRow">
             <span id="dname">—</span><span class="dsector" id="dsector"></span>
           </div>
-          <div class="dprice" id="dprice">—</div>
+          <!-- 현재가 오른쪽에 오늘 캔들 (시가를 못 받으면 비어 있다) -->
+          <div class="dpricerow">
+            <div class="dprice" id="dprice">—</div>
+            <span class="dcandle" id="dcandle"></span>
+          </div>
         </div>
         <div class="dchgbox">
           <div class="dchg" id="dchg"></div>
