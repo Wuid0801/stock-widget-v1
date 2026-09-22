@@ -26,7 +26,7 @@
 
 - 계산 함수를 테스트가 **import 해서** 쓰게 한다. 주석 경계와 이름 목록을 없앤다.
 - 동작은 바뀌지 않는다. 기존 단언을 그대로 두고 전부 통과해야 한다.
-- `renderer.js` 가 약 300줄 줄어든다(현재 1,913줄).
+- `renderer.js` 가 약 235줄 줄어든다(현재 1,913줄).
 
 ## 비목표
 
@@ -92,7 +92,7 @@ if (typeof module !== 'undefined') module.exports = { calcRSI, sma, /* ... */ };
 상수도 함께: `TREND_TF` · `TREND_MIN_SPAN` · `TREND_LOOKBACK` · `TREND_MAX_EXTEND` ·
 `TREND_MIN_BREAK` · `TREND_MAX_DRIFT`.
 
-주석이 로직보다 긴 파일이라 실제 이동량은 약 300줄입니다. **주석은 전부 따라갑니다** —
+주석이 로직보다 긴 파일이라 실제 이동량은 약 235줄입니다(블록 여섯을 실제로 세어 확인). **주석은 전부 따라갑니다** —
 이 저장소에서 주석은 왜 그 숫자인지를 담은 실측 기록입니다.
 
 ### `renderer.js` 에 남는 것
