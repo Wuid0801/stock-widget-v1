@@ -889,6 +889,9 @@ function drawChart(arg) {
               if (p) lines.push(money(p.parsed.y, cur));
 
               const i = p ? p.dataIndex : -1;
+              // 캔들은 시가 대비로 색이 갈리므로 시가가 없으면 몸통의 근거가 안 보인다.
+              if (candles && opens[i] != null) lines.push(`시 ${money(opens[i], cur)}`);
+
               const hi = highs[i]; const lo = lows[i];
               if (hi != null && lo != null && hi !== lo) {
                 lines.push(`고저 ${money(lo, cur)} ~ ${money(hi, cur)}`);
