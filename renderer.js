@@ -688,7 +688,7 @@ function drawChart(arg) {
   lastChart = arg;
   const {
     closes, times, up, mas = [], cur = 'KRW',
-    volumes = [], highs = [], lows = [], hLines = [], crosses = [], trends = [],
+    volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [],
   } = arg;
   const color = up ? UP : DOWN;
   hoverIdx = null;
@@ -1096,6 +1096,7 @@ async function loadChart() {
     return a;
   };
   const volumes = pad(r.volumes, 0);
+  const opens = pad(r.opens, (i) => closes[i]);
   const highs = pad(r.highs, (i) => closes[i]);
   const lows = pad(r.lows, (i) => closes[i]);
 
@@ -1109,6 +1110,7 @@ async function loadChart() {
   if (todayBar && daysAgo(times[times.length - 1]) === 0) {
     const i = closes.length - 1;
     closes[i] = todayBar.close;
+    opens[i] = todayBar.open;
     highs[i] = todayBar.high;
     lows[i] = todayBar.low;
   }
@@ -1155,7 +1157,7 @@ async function loadChart() {
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, highs, lows, crosses, hLines, trends,
+    volumes, opens, highs, lows, crosses, hLines, trends,
   });
 }
 

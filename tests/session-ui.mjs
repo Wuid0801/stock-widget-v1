@@ -248,11 +248,12 @@ await test('daily chart syncs the last bar to the live candle, older bars untouc
   run('let lastDrawSig = null;');
   run(`state.timeframe = '3M';
     quotes['005930.KS'] = { price: 105, live: true, session: 'regular', priceSession: 'regular',
-      candle: { open: 99, high: 106, low: 95 } };`);
+      candle: { open: 101, high: 106, low: 95 } };`);
   await c.loadChart();
   assert.deepEqual(draws.at(-1).closes, [98, 105], 'last close becomes the live price');
   assert.deepEqual(draws.at(-1).highs, [99, 106], 'last high becomes the live high');
   assert.deepEqual(draws.at(-1).lows, [96, 95], 'last low becomes the live low');
+  assert.deepEqual(draws.at(-1).opens, [97, 101], 'opens reach drawChart, last one synced');
 
   // 마지막 봉이 오늘이 아니면(장 전 · 휴장) 그대로 둔다.
   bars.times = [today - 2 * 86400000, today - 86400000];
