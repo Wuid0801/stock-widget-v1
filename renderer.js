@@ -1,4 +1,4 @@
-// renderer.js — UI 렌더링, RSI(14) 계산, Chart.js 그리기, 30초 폴링.
+// renderer.js — UI 렌더링, Chart.js 그리기, 30초 폴링.
 // 네트워크는 전부 window.api.fetchChart(preload → 메인 프로세스)를 통해서만 나간다.
 
 const UP = '#e24b4a';   // 상승 = 빨강 (한국 관례)
