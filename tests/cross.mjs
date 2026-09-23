@@ -16,7 +16,7 @@ import * as X from '../indicators.js';
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 
-// 단순이동평균. renderer.js 의 sma 와 같은 식 — 여기서는 입력을 만드는 도구다.
+// 단순이동평균. indicators.js 의 sma 와 같은 식 — 여기서는 입력을 만드는 도구다.
 const sma = (closes, p) => {
   const out = new Array(closes.length).fill(null);
   let s = 0;
