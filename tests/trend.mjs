@@ -1,31 +1,20 @@
-// 지지·저항 추세선 회귀 가드 — 앱을 띄우지 않고 renderer.js 의 추세선 계산만
-// 떼어내 검증한다(rsi.mjs 와 같은 방식).
+// 지지·저항 추세선 회귀 가드 — 앱을 띄우지 않고 indicators.js 의 추세선 계산을
+// 검증한다(rsi.mjs 와 같은 방식).
 //
 // 핵심 성질은 하나다: 추세선은 최근 TREND_LOOKBACK 봉을 빼고 만든다.
 // 그래야 그 봉들이 선을 뚫을 수 있고, 뚫렸다는 사실을 말할 수 있다.
 // 마지막 봉까지 껍질에 넣으면 껍질이 늘 마지막 봉을 감싸므로 선은 정의상
 // 절대 뚫리지 않는다 — 돌파가 일어나도 선이 오늘 고가에 다시 맞춰질 뿐이다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { APP_DIR } from './_paths.mjs';
+import * as I from '../indicators.js';
 
-// renderer.js 의 이 두 주석이 잘라내기 경계다. 옮기면 여기도 같이 고쳐야 한다.
-const START = 'const TREND_TF';
-const END = '// 두 추세선이 만나는 봉 인덱스';
-
-const src = fs.readFileSync(path.join(APP_DIR, 'renderer.js'), 'utf8');
-const a = src.indexOf(START);
-const b = src.indexOf(END);
-if (a < 0 || b < 0) { console.log('FAIL: renderer.js 에서 추세선 블록을 찾지 못함'); process.exit(1); }
-
-const T = new Function(`${src.slice(a, b)}
-  return {
-    hull, trendLine,
-    breakoutOf: typeof breakoutOf === 'function' ? breakoutOf : null,
-    LOOKBACK: typeof TREND_LOOKBACK !== 'undefined' ? TREND_LOOKBACK : null,
-    MIN_SPAN: typeof TREND_MIN_SPAN !== 'undefined' ? TREND_MIN_SPAN : null,
-    MAX_EXTEND: typeof TREND_MAX_EXTEND !== 'undefined' ? TREND_MAX_EXTEND : null,
-  };`)();
+// 스위트는 T.LOOKBACK 같은 짧은 이름을 쓴다. 호출부를 건드리지 않으려고
+// 모듈을 그대로 펼치고 상수 별칭만 얹는다.
+const T = {
+  ...I,
+  LOOKBACK: I.TREND_LOOKBACK,
+  MIN_SPAN: I.TREND_MIN_SPAN,
+  MAX_EXTEND: I.TREND_MAX_EXTEND,
+};
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
