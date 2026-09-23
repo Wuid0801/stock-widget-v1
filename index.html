@@ -428,6 +428,8 @@
   }
   .tf button:hover { color: var(--text-3); }
   .tf button.on { background: var(--tf-on-bg); color: var(--tf-on-fg); }
+  .tf button:disabled { opacity: .38; cursor: default; }
+  .tf button:disabled:hover { color: var(--dim); }
 
   /* 52주 저점~고점 막대. 현재가 위치를 점으로 표시 */
   .w52 { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 9px; color: var(--mute); }

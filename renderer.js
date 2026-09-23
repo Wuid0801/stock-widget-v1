@@ -1251,6 +1251,7 @@ const save = () => api.setState({
   theme: state.theme,
   opacity: state.opacity,
   maPeriods: state.maPeriods,
+  chartMode: state.chartMode,
 });
 
 async function select(symbol) {
@@ -1663,6 +1664,24 @@ function checkAlerts(prevPrices) {
 function renderTabs() {
   const box = document.getElementById('tf');
   box.innerHTML = '';
+  // 라인 / 캔들 토글. 1M · 3M 밖에서는 흐리게 — 이동평균 칩이 구간에 안 맞을 때
+  // 흐려지고 title 로 이유를 말하는 것과 같은 방식이다.
+  const fits = CANDLE_TF.has(state.timeframe);
+  const t = document.createElement('button');
+  t.type = 'button';
+  t.textContent = '캔들';
+  t.disabled = !fits;
+  t.className = fits && state.chartMode === 'candle' ? 'on' : '';
+  t.title = fits
+    ? '라인 / 캔들 전환'
+    : `${state.timeframe} 는 라인으로 그립니다 — 캔들은 1M · 3M 에서만`;
+  t.onclick = async () => {
+    state.chartMode = state.chartMode === 'candle' ? 'line' : 'candle';
+    save();
+    renderTabs();
+    await loadChart();
+  };
+  box.appendChild(t);
   for (const key of Object.keys(TF)) {
     const b = document.createElement('button');
     b.textContent = key;
@@ -1742,6 +1761,8 @@ async function pollTick() {
   state.maPeriods = Array.isArray(state.maPeriods)
     ? state.maPeriods.filter((p) => MA_PERIODS.includes(p)).sort((a, b) => a - b)
     : [5, 20, 60];
+  // 저장값에 없거나 모르는 값이면 캔들로 시작한다
+  state.chartMode = state.chartMode === 'line' ? 'line' : 'candle';
   applyTheme(state.theme);
   applyOpacity(state.opacity);
   renderMaChips();
