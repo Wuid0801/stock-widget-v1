@@ -1671,7 +1671,15 @@ function renderTabs() {
   t.type = 'button';
   t.textContent = '캔들';
   t.disabled = !fits;
-  t.className = fits && state.chartMode === 'candle' ? 'on' : '';
+  // 주의: 이 버튼에는 bare 'on' 클래스를 절대 주지 않는다. tests/restore.mjs,
+  // tests/period.mjs, tests/chart-integrity.mjs 는 모두
+  // `[...document.querySelectorAll('#tf button')].find(b => b.classList.contains('on'))`
+  // 로 "현재 선택된 타임프레임" 버튼을 찾는다. 토글이 타임프레임 버튼들보다 DOM
+  // 순서상 앞에 있으면서 'on' 을 받으면 그 find() 가 토글을 집어버려 세 스위트가
+  // 깨지거나(1M·3M 비교 실패) 조용히 커버리지를 잃는다(restore 는 전후 값이 같아
+  // 통과만 유지). 그래서 토글 전용 클래스(mode / mode-on)를 따로 쓴다 —
+  // "#tf button.on" 은 타임프레임 버튼만을 뜻해야 하므로 여기 합치지 말 것.
+  t.className = `mode${fits && state.chartMode === 'candle' ? ' mode-on' : ''}`;
   t.title = fits
     ? '라인 / 캔들 전환'
     : `${state.timeframe} 는 라인으로 그립니다 — 캔들은 1M · 3M 에서만`;
