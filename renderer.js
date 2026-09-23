@@ -626,6 +626,54 @@ function renderTrendBadges(trends, len, times = []) {
   el.textContent = `수렴 ${bars}거래일${weeks >= 2 ? ` · 약 ${weeks}주` : ''}`;
 }
 
+// 캔들. 몸통은 시가~종가, 꼬리는 저가~고가. 색은 시가 대비다 — 전일 종가 대비인
+// 헤더 등락률과 다를 수 있고, 그 차이가 캔들을 보는 이유다.
+//
+// beforeDatasetsDraw 라 이동평균선·추세선 **아래**에 깔린다. crossMarkPlugin 이
+// afterDatasetsDraw(위)인 것과 반대다 — 표식은 덮어야 보이고 캔들은 덮으면 선을
+// 가린다.
+//
+// y축 범위는 투명하게 남겨 둔 고가~저가 밴드 데이터셋이 잡아 준다. 캔버스에만
+// 그리면 꼬리 끝이 축 밖으로 나가 말없이 잘린다(추세선 주석의 그 문제다).
+const candlePlugin = {
+  id: 'candle',
+  beforeDatasetsDraw(c, _args, opts) {
+    const { opens = [], highs = [], lows = [], closes = [] } = opts || {};
+    if (!opens.length) return;
+
+    const sx = c.scales.x; const sy = c.scales.y;
+    const area = c.chartArea;
+    const ctx = c.ctx;
+    const w = candleWidth(sx.width / Math.max(1, opens.length));
+    const flat = cssVar('--flat');
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(area.left, area.top, area.width, area.height);
+    ctx.clip(); // 축 눈금 위로 삐져나가지 않게
+
+    for (let i = 0; i < opens.length; i++) {
+      const o = opens[i]; const h = highs[i]; const l = lows[i]; const cl = closes[i];
+      if (o == null || h == null || l == null || cl == null) continue;
+
+      const color = cl > o ? UP : cl < o ? DOWN : flat;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+
+      // 꼬리는 1px 세로선. +0.5 는 캔버스 격자에 맞춰 흐려지지 않게 하는 것이다.
+      const cx = Math.round(sx.getPixelForValue(i));
+      ctx.beginPath();
+      ctx.moveTo(cx + 0.5, sy.getPixelForValue(h));
+      ctx.lineTo(cx + 0.5, sy.getPixelForValue(l));
+      ctx.stroke();
+
+      const b = candleBody(sy.getPixelForValue(o), sy.getPixelForValue(cl));
+      ctx.fillRect(cx - Math.floor(w / 2), b.top, w, b.h);
+    }
+    ctx.restore();
+  },
+};
+
 // 교차 지점 표식. 골든은 선 아래에 ▲, 데드는 선 위에 ▼.
 // 평단가 점선과 마찬가지로 축을 건드리지 않도록 캔버스에 직접 그린다.
 const crossMarkPlugin = {
@@ -691,6 +739,8 @@ function drawChart(arg) {
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [],
   } = arg;
   const color = up ? UP : DOWN;
+  // 시가가 없으면(야후가 안 주는 종목) 캔들을 그릴 수 없다.
+  const candles = candleMode(state.timeframe, state.chartMode) && opens.length > 0;
   hoverIdx = null;
   renderMaLegend(); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
   if (chart) chart.destroy();
@@ -701,7 +751,7 @@ function drawChart(arg) {
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
-    plugins: [hLinePlugin, crossMarkPlugin, crosshairPlugin],
+    plugins: [candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin],
     data: {
       labels: times.map((t) => labelFor(t, state.timeframe)),
       datasets: [{
@@ -709,13 +759,14 @@ function drawChart(arg) {
         data: closes,
         yAxisID: 'y',
         order: 2, // 거래량 막대(0)·고저 밴드(1)보다 뒤에 그려서 위로 올라온다
-        borderColor: color,
+        borderColor: candles ? 'transparent' : color,
         borderWidth: 2,
         pointRadius: 0,
         pointHitRadius: 8,
         tension: 0.15,
         fill: true,
         backgroundColor: (ctx) => {
+          if (candles) return 'transparent'; // 캔들 위에 채움이 겹치면 몸통이 흐려진다
           const area = ctx.chart.chartArea;
           if (!area) return 'transparent';
           // 채움이 진하면 그 안에 들어간 이동평균선이 묻힌다.
@@ -739,7 +790,7 @@ function drawChart(arg) {
         pointHitRadius: 0,
         tension: 0.15,
         fill: '+1',
-        backgroundColor: hexA(color, 0.16),
+        backgroundColor: candles ? 'transparent' : hexA(color, 0.16),
       }, {
         label: '',
         data: lows,
@@ -817,6 +868,7 @@ function drawChart(arg) {
         legend: { display: false },
         hLine: { lines: hLines },
         crossMark: { list: crosses },
+        candle: candles ? { opens, highs, lows, closes } : {},
         tooltip: {
           // 이동평균 값은 툴팁이 아니라 위쪽 범례에 띄운다.
           // 툴팁은 켠 이평선 수만큼 세로로 늘어나서, 9개면 197px 까지 커져
