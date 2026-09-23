@@ -598,6 +598,7 @@ build/icon.svg        앱 아이콘 원본 (수정하면 다음 빌드에 자동
 build/make-icon.cjs   icon.svg → icon.ico (16~256px 멀티사이즈)
 build/after-pack.cjs  패키징 후 exe 아이콘·버전 정보 삽입
 tests/                검증 스위트 (npm test)
+.github/workflows/    CI — 앱을 띄우지 않는 스위트만 푸시마다
 ```
 
 ### 보안 구조
@@ -638,6 +639,16 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 `quote-session` · `session-ui`는 저장된 응답과 고정 시계로 네트워크 없이 검증합니다.
 나머지 UI 스위트는 실제 앱을 Electron 으로 띄우고 실제 API를 호출합니다. 테스트 전용 설정과 창을 공유하므로 순차 실행합니다.
 장 시간에 의존하지 않도록, 장중/장마감처럼 외부 상태에 좌우되는 경로는 해당 값을 강제한 뒤 원복합니다.
+
+### CI
+
+푸시와 PR 마다 **앱을 띄우지 않는 일곱 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `trend` · `quote-session` · `session-ui` · `dom-contract`.
+
+이 일곱은 Node 내장 모듈과 앱 파일(`indicators.js` · `quote-session.cjs` · `renderer.js` · `index.html`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 3초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다.
+
+Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
+
+> 워크플로는 `TZ: Asia/Seoul` 로 돕니다. `daysAgo` 가 **로컬 자정** 기준으로 달력 일수를 세는데, 러너 기본값인 UTC 로 두면 `cross` 의 "다음 날 00:01 에는 1일" 이 깨집니다. 앱은 보는 사람의 시간대를 쓰는 게 맞으므로 동작은 그대로 두고 CI 쪽을 고정했습니다.
 
 ## 알려진 제약
 

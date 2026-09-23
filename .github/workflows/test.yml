@@ -1,0 +1,34 @@
+# 앱을 띄우지 않는 스위트만 푸시마다 돌린다.
+#
+# 이 일곱은 Node 내장 모듈과 앱 파일(indicators.js · quote-session.cjs ·
+# renderer.js · index.html)만 쓴다. node_modules 가 필요 없어서 설치 단계가
+# 없고, 전부 합쳐 3초 안에 끝난다.
+#
+# Electron 을 띄우는 나머지 스무 개는 여기서 돌리지 않는다. 창을 열고 실제
+# 시세 API를 호출하므로 CI 에서 느리고, 장 상태와 상류 응답에 따라 결과가
+# 흔들린다. 그쪽은 로컬에서 `npm test` 로 돌린다.
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pure:
+    runs-on: ubuntu-latest
+    env:
+      # daysAgo 는 로컬 자정 기준으로 달력 일수를 센다. 러너 기본값인 UTC 로
+      # 두면 cross 스위트의 "다음 날 00:01 에는 1일" 이 깨진다(실측). 이 앱은
+      # KRX 일봉(09:00 KST)을 다루므로 서울 시각으로 고정한다.
+      TZ: Asia/Seoul
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 앱을 띄우지 않는 스위트
+        run: |
+          for f in rsi cross candle trend quote-session session-ui dom-contract; do
+            echo "--- $f"
+            node "tests/$f.mjs"
+          done

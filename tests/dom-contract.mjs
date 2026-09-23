@@ -8,11 +8,12 @@
 // #dnameText 로 옮겼는데, 그러자 textContent 가 "삼성전자Consumer Electronics"
 // 가 됐다(가운뎃점은 CSS ::before 라 textContent 에 없다). 업종은 네트워크를
 // 타므로 도착 시점에 따라 값이 달라져 그 8개가 flaky 하게 깨진다.
+// _paths.mjs 를 쓰지 않는다. 그 파일은 playwright-core 를 끌어오는데, 이 스위트는
+// index.html 을 읽기만 하므로 의존성이 필요 없다. 덕분에 CI 가 node_modules 없이
+// 이 스위트를 돌린다(.github/workflows/test.yml).
 import fs from 'node:fs';
-import path from 'node:path';
-import { APP_DIR } from './_paths.mjs';
 
-const html = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -32,6 +33,20 @@ if (nameTag && sectorTag) {
   check('#dname 이 #dsector 보다 먼저 나온다', sectorTag.index > nameTag.index);
   check('#dname 이 #dsector 를 감싸지 않는다 (사이에 닫는 태그가 있다)',
     between.includes('</span>'), between.replace(/\s+/g, ' ').slice(0, 80));
+}
+
+// --- 스크립트 로드 순서 --------------------------------------------------------
+// indicators.js 의 최상위 함수 선언이 전역이 되어야 renderer.js 가 이름으로 부른다.
+// 태그가 빠지거나 순서가 뒤집히면 앱이 뜰 때만 드러나고, 그때는 화면이 통째로
+// 죽는다 — 어떤 스위트도 이걸 보지 않아서 여기에 둔다.
+const indicatorsTag = html.indexOf('src="./indicators.js"');
+const rendererTag = html.indexOf('src="./renderer.js"');
+
+check('index.html 이 indicators.js 를 싣는다', indicatorsTag >= 0);
+check('index.html 이 renderer.js 를 싣는다', rendererTag >= 0);
+if (indicatorsTag >= 0 && rendererTag >= 0) {
+  check('indicators.js 가 renderer.js 보다 먼저 온다', indicatorsTag < rendererTag,
+    `indicators ${indicatorsTag} vs renderer ${rendererTag}`);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
