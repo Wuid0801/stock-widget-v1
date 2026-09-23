@@ -1,6 +1,6 @@
 # 앱을 띄우지 않는 스위트만 푸시마다 돌린다.
 #
-# 이 일곱은 Node 내장 모듈과 앱 파일(indicators.js · quote-session.cjs ·
+# 이 여덟은 Node 내장 모듈과 앱 파일(indicators.js · quote-session.cjs ·
 # renderer.js · index.html)만 쓴다. node_modules 가 필요 없어서 설치 단계가
 # 없고, 전부 합쳐 3초 안에 끝난다.
 #
