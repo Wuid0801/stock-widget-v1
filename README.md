@@ -590,9 +590,10 @@ quote[0]: open, high, low, close, volume
 ```
 main.js               Electron 메인 프로세스 — 창 생성/상태 저장, 외부 API 프록시(IPC)
 quote-session.cjs     KRX·NXT 가격 선택, 세션 판정, 확인된 정규장 종가 비교
+indicators.js         화면과 무관한 순수 계산 — RSI · 이동평균 · 크로스 · 캔들 · 추세선
 preload.js            contextBridge로 안전한 IPC만 노출
 index.html            마크업 + CSS
-renderer.js           UI 렌더링, RSI 계산, Chart.js, 30초 폴링
+renderer.js           UI 렌더링, Chart.js, 30초 폴링
 build/icon.svg        앱 아이콘 원본 (수정하면 다음 빌드에 자동 반영)
 build/make-icon.cjs   icon.svg → icon.ico (16~256px 멀티사이즈)
 build/after-pack.cjs  패키징 후 exe 아이콘·버전 정보 삽입
