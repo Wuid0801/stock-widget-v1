@@ -118,5 +118,53 @@ const live = (candle, price, extra = {}) => ({
   check('마감 후에도 정규장 가격이면 그것이 종가다', c.close === 280000);
 }
 
+// --- 9. 차트 캔들 기하 ----------------------------------------------------------
+// 화면의 미니 캔들(candleGeom)은 값 범위를 고정 높이에 맞추지만, 차트 캔들은
+// Chart.js 가 준 y픽셀을 그대로 쓴다. 그래서 계산이 다르다.
+{
+  check('간격의 70% 를 몸통 폭으로 쓴다 (3M: 4.3px 간격 → 3px)',
+    C.candleWidth(4.3) === 3, `${C.candleWidth(4.3)}px`);
+  check('1M 은 간격이 넓다 (12.7px → 9px)',
+    C.candleWidth(12.7) === 9, `${C.candleWidth(12.7)}px`);
+
+  check('아무리 좁아도 1px 은 남는다', C.candleWidth(0.5) === 1, `${C.candleWidth(0.5)}px`);
+  check('간격이 0 이어도 1px (0 나누기 방어)', C.candleWidth(0) === 1);
+  check('간격이 NaN 이어도 1px', C.candleWidth(NaN) === 1);
+  check('아무리 넓어도 12px 을 넘지 않는다 (봉 몇 개짜리 구간)',
+    C.candleWidth(100) === 12, `${C.candleWidth(100)}px`);
+}
+
+// --- 10. 몸통의 위치와 높이 -----------------------------------------------------
+// y픽셀은 값이 클수록 작다(위가 0). 시가·종가 어느 쪽이 위든 top 은 더 작은 값이다.
+{
+  const up = C.candleBody(120, 80); // 시가 아래, 종가 위 → 양봉
+  check('양봉은 종가 y 가 top', up.top === 80 && up.h === 40, JSON.stringify(up));
+
+  const down = C.candleBody(80, 120); // 음봉
+  check('음봉은 시가 y 가 top', down.top === 80 && down.h === 40, JSON.stringify(down));
+
+  const doji = C.candleBody(100, 100);
+  check('도지는 높이 1px 로 남는다 (사라지지 않는다)',
+    doji.top === 100 && doji.h === 1, JSON.stringify(doji));
+
+  const tiny = C.candleBody(100, 100.4);
+  check('0.4px 차이도 1px 로 올린다', tiny.h === 1, `${tiny.h}px`);
+}
+
+// --- 11. 캔들로 그리는 구간 -----------------------------------------------------
+{
+  check('3M 은 캔들', C.candleMode('3M', 'candle') === true);
+  check('1M 도 캔들', C.candleMode('1M', 'candle') === true);
+  check('1Y 는 봉이 1.2px 라 라인', C.candleMode('1Y', 'candle') === false);
+  check('1D 는 분봉이라 라인', C.candleMode('1D', 'candle') === false);
+  check('1W 도 분봉이라 라인', C.candleMode('1W', 'candle') === false);
+
+  check('line 을 고르면 3M 도 라인', C.candleMode('3M', 'line') === false);
+  // 저장값에 모르는 문자열이 들어 있어도 기본값(캔들)으로 본다
+  check('모르는 값은 캔들로 본다', C.candleMode('3M', undefined) === true);
+  check('CANDLE_TF 는 1M · 3M 둘뿐이다',
+    C.CANDLE_TF.size === 2 && C.CANDLE_TF.has('1M') && C.CANDLE_TF.has('3M'));
+}
+
 console.log(`\n${fails ? `${fails}개 실패` : '전부 통과'}`);
 process.exit(fails ? 1 : 0);

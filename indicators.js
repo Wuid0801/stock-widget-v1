@@ -109,6 +109,34 @@ function candleGeom(c, h) {
   return { flat: false, bodyTop: Math.min(top, h - bodyH), bodyH };
 }
 
+// --- 차트 캔들 -----------------------------------------------------------------
+// 위의 candleGeom 은 값 범위를 고정 높이(22px)에 맞춘다. 차트는 반대로 Chart.js 의
+// y축이 픽셀을 주므로, 여기서는 그 픽셀만 가지고 몸통을 만든다.
+
+// 캔들로 그리는 타임프레임. 창이 340px 라 차트 영역이 약 280px 인데, 1Y(243봉)는
+// 봉 하나가 1.2px 라 몸통도 꼬리도 구분되지 않는다. 1D(5분봉) · 1W(30분봉)은
+// 분봉이라 "일봉 캔들" 과 뜻이 다르다.
+const CANDLE_TF = new Set(['1M', '3M']);
+
+// 저장값이 'line' 일 때만 라인이다. 모르는 값이 들어 있으면 기본값(캔들)으로 본다.
+function candleMode(timeframe, chartMode) {
+  return chartMode !== 'line' && CANDLE_TF.has(timeframe);
+}
+
+// 몸통 폭. 간격을 다 쓰면 캔들끼리 붙어 경계가 사라지므로 70% 만 쓴다.
+// 3M(65봉)은 간격 4.3px → 3px, 1M(22봉)은 12.7px → 9px 이다. 위로는 12px 에서
+// 멈춘다 — 봉이 몇 개뿐인 구간에서 캔들이 막대그래프처럼 뚱뚱해지지 않게.
+function candleWidth(spacing) {
+  if (!(spacing > 0)) return 1;
+  return Math.max(1, Math.min(12, Math.round(spacing * 0.7)));
+}
+
+// 몸통의 위치와 높이. y픽셀은 값이 클수록 작으므로 top 은 둘 중 작은 쪽이다.
+// 시가 = 종가인 도지는 높이 0 이라 그냥 그리면 사라진다 → 최소 1px.
+function candleBody(yOpen, yClose) {
+  return { top: Math.min(yOpen, yClose), h: Math.max(1, Math.abs(yClose - yOpen)) };
+}
+
 // --- 추세선 ---------------------------------------------------------------------
 // 저점끼리 이으면 지지선, 고점끼리 이으면 저항선. 3M · 1Y 에서만 그린다 —
 // 1M(21봉)은 구간이 짧고, 1D/1W 는 분봉이라 "추세"라고 부를 구간이 아니다.
@@ -244,6 +272,7 @@ function meetAt(a, b) {
 if (typeof module !== 'undefined') {
   module.exports = {
     calcRSI, sma, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    CANDLE_TF, candleMode, candleWidth, candleBody,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
     hull, trendLine, breakoutOf, meetAt,
   };
