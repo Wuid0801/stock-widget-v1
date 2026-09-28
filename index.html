@@ -179,6 +179,9 @@
   .status { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; padding-left: 8px; }
   .bar #refresh span { display: inline-block; }
   .bar #refresh.spin span { animation: spin .8s linear infinite; }
+  /* 갱신 직후 5초는 쉰다(renderer.js REFRESH_REST) — 눌러도 반응이 없는 이유가 보이게 흐리게 */
+  .bar #refresh.rest:not(.spin) { opacity: .35; cursor: default; }
+  .bar #refresh.rest:not(.spin):hover { background: transparent; color: var(--dim); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .bar .title { font-size: 12px; font-weight: 700; letter-spacing: .2px; }
   .bar .updated {

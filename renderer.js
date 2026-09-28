@@ -45,6 +45,7 @@ const quotes = {}; // symbol -> { price, prevClose, rsi } | { error }
 let dragFrom = null; // 순서 변경 드래그 중인 행 인덱스
 let chart = null;
 let busy = false;
+let lastRefreshAt = 0; // 마지막 갱신이 끝난 시각 — ↻ 연타 제한에 쓴다
 let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해도 마지막 것만 반영
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
@@ -1253,6 +1254,7 @@ async function refreshAll() {
     renderUpdated();
   } finally {
     busy = false;
+    lastRefreshAt = Date.now(); // 실패로 끝나도 센다 — 실패할 때 더 두드리지 않게
   }
 }
 
@@ -1740,14 +1742,34 @@ async function pollTick() {
 // 상단 ↻ — 자동 갱신을 지금 한 번 돌리고, 다음 자동 갱신은 누른 시점부터 다시 센다.
 // 장 마감 후 5분 간격일 때 기다리지 않게 하려는 것이라 캐시(차트 5분 · 일봉 30분)는
 // 그대로 쓴다. 현재가와 오늘 봉은 매번 실시간으로 받는다.
-async function refreshNow() {
+//
+// 갱신이 끝난 뒤(자동 갱신 포함) 5초는 쉰다. 한 번에 네이버 요청이 3개(지수 · KRX ·
+// NXT) 나가고 캐시가 없어서, 연타하면 끝날 때마다 곧바로 다시 요청한다. 비공식 API 라
+// 한도를 모르고, 막히면 20분 지연 폴백으로 넘어가 일봉을 1분마다 다시 받게 된다.
+// 5초는 "방금 받은 값"을 사람이 다시 원할 일이 거의 없는 간격이다.
+const REFRESH_REST = 5000;
+let restTimer = null;
+
+// 쉬는 동안 아이콘을 흐리게 — 눌러도 반응이 없는 이유가 보이게 한다
+function restRefresh(ms) {
   const b = document.getElementById('refresh');
-  if (b.classList.contains('spin')) return; // 도는 동안 다시 누르면 무시
+  b.classList.add('rest');
+  clearTimeout(restTimer);
+  restTimer = setTimeout(() => b.classList.remove('rest'), ms);
+}
+
+async function refreshNow() {
+  if (busy) return; // 갱신이 도는 중(자동 갱신이면 곧 끝난다)
+  const wait = REFRESH_REST - (Date.now() - lastRefreshAt);
+  if (wait > 0) { restRefresh(wait); return; }
+
+  const b = document.getElementById('refresh');
   b.classList.add('spin');
   try {
     await pollTick();
   } finally {
     b.classList.remove('spin');
+    restRefresh(REFRESH_REST);
   }
 }
 
