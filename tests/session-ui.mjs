@@ -335,4 +335,32 @@ await test('real refresh failure releases busy and pollTick schedules recovery',
   assert.equal(timers[0].delay, 30000);
 });
 
+await test('addSymbol: repeated clicks while the lookup is pending add the symbol once', async () => {
+  const { c, run } = harness(['addSymbol']);
+  run(source.match(/^const adding = .*$/m)[0]);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  let fetches = 0;
+  Object.assign(c, {
+    hint() {}, save() {}, closeSearch() {}, renderList() {}, select: async () => {},
+    fetchLive: async () => { fetches++; await gate; return {}; },
+  });
+  run(`var lookupFails = false;
+    async function loadQuote(item) { quotes[item.symbol] = lookupFails ? { error: '없음' } : { price: 1 }; }`);
+  const kakao = { symbol: '035720.KS', name: '카카오' };
+  const clicks = [c.addSymbol(kakao), c.addSymbol(kakao), c.addSymbol(kakao)];
+  release();
+  await Promise.all(clicks);
+  assert.equal(run(`state.watchlist.filter((i) => i.symbol === '035720.KS').length`), 1);
+  assert.equal(fetches, 1);
+
+  // 조회에 실패한 종목도 잠기지 않는다 — 다시 누르면 다시 조회한다
+  const naver = { symbol: '035420.KS', name: 'NAVER' };
+  run('lookupFails = true;');
+  await c.addSymbol(naver);
+  run('lookupFails = false;');
+  await c.addSymbol(naver);
+  assert.equal(run(`state.watchlist.filter((i) => i.symbol === '035420.KS').length`), 1);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);

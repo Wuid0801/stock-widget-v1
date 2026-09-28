@@ -1349,24 +1349,32 @@ async function removeSymbol(symbol) {
   else clearChart();
 }
 
+// 목록에 넣는 건 조회가 끝난 뒤라, 그 사이 같은 결과를 또 누르면 목록 중복 검사를
+// 매번 통과해 같은 종목이 여러 줄 생긴다. 조회 중인 종목은 다시 눌러도 무시한다.
+const adding = new Set();
+
 async function addSymbol(item) {
-  if (state.watchlist.some((i) => i.symbol === item.symbol)) return;
+  if (adding.has(item.symbol) || state.watchlist.some((i) => i.symbol === item.symbol)) return;
+  adding.add(item.symbol);
+  try {
+    // 네이버에는 있어도 Yahoo에 없는 종목이 있다 → 먼저 조회해보고 되는 것만 추가
+    hint('추가하는 중…');
+    const liveMap = await fetchLive([item.symbol]);
+    await loadQuote(item, liveMap[item.symbol.split('.')[0]]);
+    if (quotes[item.symbol].error) {
+      hint(`${item.name}: Yahoo에서 조회되지 않습니다 (${quotes[item.symbol].error})`);
+      delete quotes[item.symbol];
+      return;
+    }
 
-  // 네이버에는 있어도 Yahoo에 없는 종목이 있다 → 먼저 조회해보고 되는 것만 추가
-  hint('추가하는 중…');
-  const liveMap = await fetchLive([item.symbol]);
-  await loadQuote(item, liveMap[item.symbol.split('.')[0]]);
-  if (quotes[item.symbol].error) {
-    hint(`${item.name}: Yahoo에서 조회되지 않습니다 (${quotes[item.symbol].error})`);
-    delete quotes[item.symbol];
-    return;
+    state.watchlist.push({ symbol: item.symbol, name: item.name });
+    save();
+    closeSearch();
+    renderList();
+    await select(item.symbol);
+  } finally {
+    adding.delete(item.symbol); // 실패해도 풀어야 다시 누를 수 있다
   }
-
-  state.watchlist.push({ symbol: item.symbol, name: item.name });
-  save();
-  closeSearch();
-  renderList();
-  await select(item.symbol);
 }
 
 // --- 키보드 ------------------------------------------------------------------------
