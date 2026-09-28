@@ -1022,11 +1022,16 @@ function maFor(symbol, times, period) {
   const d = quotes[symbol] && quotes[symbol].daily;
   if (!d || d.closes.length < period) return null;
 
+  // 시각이 아니라 날짜로 짝짓는다. 장중 오늘 봉의 시각은 마지막 체결 시각이라
+  // 일봉과 차트를 받은 순간마다 달라서(실측 1초 차), 정확히 맞추면 오늘 값이 빠진다.
+  // UTC 날짜를 쓰는 건 한국(00:00~06:30 UTC)·미국(13:30~21:00 UTC) 장이 모두 하루 안에
+  // 들어가서다 — 한국 날짜로 자르면 미국 장이 자정을 넘겨 오늘 봉이 이틀로 갈린다.
+  const dayOf = (t) => Math.floor(t / 86400000);
   const values = sma(d.closes, period);
-  const byTime = new Map();
-  for (let i = 0; i < d.times.length; i++) byTime.set(d.times[i], values[i]);
+  const byDay = new Map();
+  for (let i = 0; i < d.times.length; i++) byDay.set(dayOf(d.times[i]), values[i]);
 
-  const out = times.map((t) => (byTime.has(t) ? byTime.get(t) : null));
+  const out = times.map((t) => (byDay.has(dayOf(t)) ? byDay.get(dayOf(t)) : null));
   return out.some((v) => v != null) ? out : null;
 }
 

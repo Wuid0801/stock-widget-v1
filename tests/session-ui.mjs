@@ -363,4 +363,16 @@ await test('addSymbol: repeated clicks while the lookup is pending add the symbo
   assert.equal(run(`state.watchlist.filter((i) => i.symbol === '035420.KS').length`), 1);
 });
 
+await test('maFor keeps the in-progress bar when the chart was fetched a moment after the daily data', () => {
+  const { c, run } = harness(['maFor']);
+  const DAY = 86400000;
+  const d0 = Date.parse('2026-09-21T00:00:00Z');
+  // 장중 오늘 봉의 시각은 마지막 체결 시각이라 요청마다 초 단위로 다르다 (실측: 01:26:11 / 01:26:12)
+  run(`quotes['005930.KS'] = { daily: { closes: [10, 20, 30, 40],
+    times: [${d0}, ${d0 + DAY}, ${d0 + 2 * DAY}, ${d0 + 3 * DAY + 5171000}] } };`);
+  assert.deepEqual([...c.maFor('005930.KS', [d0 + 2 * DAY, d0 + 3 * DAY + 5172000], 2)], [25, 35]);
+  // 일봉에 없는 날은 여전히 비운다
+  assert.equal(c.maFor('005930.KS', [d0 + 9 * DAY], 2), null);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);
