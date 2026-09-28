@@ -1737,6 +1737,20 @@ async function pollTick() {
   }
 }
 
+// 상단 ↻ — 자동 갱신을 지금 한 번 돌리고, 다음 자동 갱신은 누른 시점부터 다시 센다.
+// 장 마감 후 5분 간격일 때 기다리지 않게 하려는 것이라 캐시(차트 5분 · 일봉 30분)는
+// 그대로 쓴다. 현재가와 오늘 봉은 매번 실시간으로 받는다.
+async function refreshNow() {
+  const b = document.getElementById('refresh');
+  if (b.classList.contains('spin')) return; // 도는 동안 다시 누르면 무시
+  b.classList.add('spin');
+  try {
+    await pollTick();
+  } finally {
+    b.classList.remove('spin');
+  }
+}
+
 // --- 시작 -----------------------------------------------------------------------
 (async function init() {
   document.getElementById('dock').onclick = () => {
@@ -1751,6 +1765,7 @@ async function pollTick() {
 
   document.getElementById('min').onclick = () => api.minimizeWindow();
   document.getElementById('close').onclick = () => api.closeWindow();
+  document.getElementById('refresh').onclick = refreshNow;
   document.getElementById('undoBtn').onclick = () => undoRemove();
 
   document.getElementById('add').onclick = () => (searchEl.hidden ? openSearch() : closeSearch());
