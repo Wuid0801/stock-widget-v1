@@ -27,6 +27,11 @@ const MA_THICK = new Set([20, 40, 80]);
 // 60/80 처럼 가까운 기간끼리는 횡보 구간에서 계속 교차해 신호 가치가 없어 넣지 않는다.
 const CROSS_PAIRS = [[5, 20], [20, 60]];
 let chartBars = 0; // 현재 차트의 봉 수. 0이면 이동평균을 안 그리는 타임프레임(1D/1W)
+// 끌어서 고른 확대 구간 { start, end } — 봉 시각(ms). 번호가 아니라 날짜로 기억해
+// 30초 갱신 · 다음 날 새 봉에도 같은 구간이 잡힌다. 3M · 1Y 에서만, 저장하지 않는다.
+// loadChart 의 서명이 읽으므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
+// 마커 앞)에 있어야 한다.
+let zoom = null;
 const maFits = (p) => chartBars > 0 && p <= chartBars * MA_SPAN;
 
 // RSI·이동평균 계산용 일봉 시리즈.
@@ -645,7 +650,11 @@ const candlePlugin = {
     const sx = c.scales.x; const sy = c.scales.y;
     const area = c.chartArea;
     const ctx = c.ctx;
-    const w = candleWidth(sx.width / Math.max(1, opens.length));
+    // 봉 간격 = 이웃한 두 봉의 픽셀 거리. 확대하면 전체 봉 수가 아니라 보이는 봉
+    // 수로 나눈 값이 되어야 해서 폭 ÷ 봉 수로는 안 된다. 구간 밖 봉은 아래 clip 이 자른다.
+    const step = opens.length > 1
+      ? Math.abs(sx.getPixelForValue(1) - sx.getPixelForValue(0)) : sx.width;
+    const w = candleWidth(step);
     const flat = cssVar('--flat');
 
     ctx.save();
@@ -732,6 +741,7 @@ function clearChart() {
   renderCrossBadge([], []);
   renderTrendBadges([], 0);
   document.getElementById('chartMode').hidden = true; // 차트가 없으면 전환할 것도 없다
+  document.getElementById('zoomReset').hidden = true; // 차트가 없으면 풀 확대도 없다
 }
 
 function drawChart(arg) {
@@ -744,15 +754,23 @@ function drawChart(arg) {
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
   // 넘기는 호출만 라인으로 그린다.
   const daily = TF[state.timeframe].interval === '1d';
-  const candles = candleMode(closes.length, daily, state.chartMode) && opens.length > 0;
-  renderChartMode(closes.length, daily); // 전환 아이콘도 같은 기준으로 보인다
+  // 확대 구간(3M · 1Y). 날짜로 기억해 둔 것을 지금 봉 번호로 바꾼다 — 구간이
+  // 사라졌으면(5봉 미만) 전체 보기로 돌아간다.
+  const zr = zoom && ZOOM_TF.has(state.timeframe) ? zoomRange(times, zoom.start, zoom.end) : null;
+  if (!zr) zoom = null;
+  const bars = zr ? zr.to - zr.from + 1 : closes.length; // 화면에 보이는 봉 수
+  const candles = candleMode(bars, daily, state.chartMode) && opens.length > 0;
+  renderChartMode(bars, daily); // 전환 아이콘도 같은 기준으로 보인다
+  document.getElementById('zoomReset').hidden = !zr;
   hoverIdx = null;
   renderMaLegend(); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
   if (chart) chart.destroy();
   bindChartLeave();
 
-  // 거래량 막대는 차트 아래 1/4 만 쓰도록 별도 y축을 최댓값의 4배로 잡는다
-  const maxVol = volumes.length ? Math.max(...volumes) : 0;
+  // 거래량 막대는 차트 아래 1/4 만 쓰도록 별도 y축을 최댓값의 4배로 잡는다.
+  // 확대 중에는 보이는 구간의 최댓값으로 — 전체 최댓값이면 막대가 납작해진다.
+  const shownVol = zr ? volumes.slice(zr.from, zr.to + 1) : volumes;
+  const maxVol = shownVol.length ? Math.max(...shownVol) : 0;
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
@@ -825,7 +843,9 @@ function drawChart(arg) {
       // 점선 1px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
       // 정규 데이터셋이라 y축이 알아서 범위에 넣는다. 캔버스에 직접 그리면
       // 기울어진 선의 양 끝이 축 밖으로 나가 말없이 잘린다(시간외 선에서 겪음).
-      ...trends.map((t) => ({
+      // 확대 중에는 숨긴다. "지금"을 말하는 선(최근 5봉을 빼고 만들어 오늘 값 · 돌파를
+      // 계산)이고, 과거 구간 가격에서 먼 선이 y축을 다시 벌려 확대 효과를 깎는다.
+      ...(zr ? [] : trends).map((t) => ({
         data: t.data,
         yAxisID: 'y',
         order: 3,
@@ -913,6 +933,11 @@ function drawChart(arg) {
       },
       scales: {
         x: {
+          // 확대 구간. y축은 Chart.js 가 이 구간 안의 점만으로 다시 잡는다 —
+          // DatasetController.getMinMax 가 다른 축의 사용자 범위(getUserBounds) 밖
+          // 점을 건너뛴다(4.5.1 에서 확인). 투명 고저 밴드가 꼬리까지 범위를 잡는다.
+          min: zr ? zr.from : undefined,
+          max: zr ? zr.to : undefined,
           grid: { display: false },
           ticks: { color: cssVar('--mute'), font: { size: 9 }, maxTicksLimit: 4, maxRotation: 0, autoSkip: true },
         },
@@ -1222,6 +1247,7 @@ async function loadChart() {
     + `|${closes[closes.length - 1]}|${up}|${mas.map((m) => m.p).join()}`
     + `|${hLines.map((l) => `${l.label}:${l.value}`).join()}`
     + `|${state.chartMode}`
+    + `|${zoom ? `${zoom.start}-${zoom.end}` : ''}` // 확대 · 되돌리기는 drawChart 로 바로 그리지만, 서명도 그린 것을 말하게 둔다
     + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
@@ -1275,6 +1301,7 @@ const save = () => api.setState({
 });
 
 async function select(symbol) {
+  if (symbol !== state.selected) zoom = null; // 다른 종목에 같은 날짜 구간은 뜻이 없다
   state.selected = symbol;
   save();
   renderList();
@@ -1426,6 +1453,7 @@ document.addEventListener('keydown', (e) => {
     const key = tabs[Number(e.key) - 1];
     if (key === state.timeframe) return;
     state.timeframe = key;
+    zoom = null; // 다른 기간의 날짜 구간은 뜻이 없다
     save();
     renderTabs();
     loadChart();
@@ -1702,6 +1730,13 @@ const MODE_ICON = {
     + ' stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg>',
 };
 
+// 전체 보기로. 이미 받은 데이터로 다시 그린다 — 네트워크 요청 없음(테마 변경과 같은 경로).
+function resetZoom() {
+  if (!zoom) return;
+  zoom = null;
+  if (lastChart) drawChart(lastChart);
+}
+
 function renderChartMode(bars, daily) {
   const b = document.getElementById('chartMode');
   const candle = state.chartMode === 'candle';
@@ -1719,6 +1754,7 @@ function renderTabs() {
     b.className = key === state.timeframe ? 'on' : '';
     b.onclick = async () => {
       state.timeframe = key;
+      zoom = null; // 다른 기간의 날짜 구간은 뜻이 없다
       save();
       renderTabs();
       await loadChart();
@@ -1842,6 +1878,7 @@ async function refreshNow() {
     save();
     await loadChart(); // 서명에 chartMode 가 있어 다시 그려지고, drawChart 가 아이콘도 바꾼다
   };
+  document.getElementById('zoomReset').onclick = resetZoom;
   renderTabs();
   renderList();
   renderDetail();

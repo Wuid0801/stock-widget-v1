@@ -455,14 +455,21 @@
   .chartbox { height: clamp(150px, 26vh, 300px); margin-top: 7px; position: relative; }
   /* 라인 / 캔들 전환. 기간 버튼과 헷갈리지 않게 차트 왼쪽 위에 아이콘으로 띄운다.
      첫 봉 위에 겹치므로 평소엔 흐리게, 마우스를 올리면 또렷하게. */
+  /* 차트 왼쪽 위 버튼 묶음 — 라인/캔들 전환과 확대 풀기. 하나가 숨으면 나머지가
+     빈자리 없이 왼쪽으로 붙는다(확대했어도 70봉을 넘으면 캔들 아이콘은 숨는다). */
+  .chartctl { position: absolute; top: 4px; left: 4px; z-index: 1; display: flex; gap: 3px; }
   #chartMode {
-    position: absolute; top: 4px; left: 4px; z-index: 1;
     display: flex; align-items: center; justify-content: center; width: 20px; height: 18px;
     padding: 0; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); cursor: pointer; opacity: .6;
   }
   #chartMode:hover { opacity: 1; color: var(--text-3); }
   #chartMode[hidden] { display: none; }
+  #zoomReset {
+    height: 18px; padding: 0 6px; border: 1px solid var(--field-border); border-radius: 4px;
+    background: var(--tooltip); color: var(--dim); font-size: 10px; cursor: pointer; opacity: .6;
+  }
+  #zoomReset:hover { opacity: 1; color: var(--text-3); }
   .err { margin-top: 5px; font-size: 10px; color: var(--err); min-height: 12px; }
 </style>
 </head>
@@ -543,7 +550,7 @@
         <span class="w52v" id="w52hi"></span>
       </div>
 
-      <div class="chartbox"><canvas id="chart"></canvas><button id="chartMode" type="button" hidden></button></div>
+      <div class="chartbox"><canvas id="chart"></canvas><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
       <div class="err" id="err"></div>
     </div>
 
