@@ -739,7 +739,8 @@ function drawChart(arg) {
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [],
   } = arg;
   const color = up ? UP : DOWN;
-  // 시가가 없으면(야후가 안 주는 종목) 캔들을 그릴 수 없다.
+  // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
+  // 넘기는 호출만 라인으로 그린다.
   const candles = candleMode(state.timeframe, state.chartMode) && opens.length > 0;
   hoverIdx = null;
   renderMaLegend(); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
