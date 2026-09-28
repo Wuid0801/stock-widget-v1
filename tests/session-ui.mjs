@@ -255,6 +255,13 @@ await test('daily chart syncs the last bar to the live candle, older bars untouc
   assert.deepEqual(draws.at(-1).lows, [96, 95], 'last low becomes the live low');
   assert.deepEqual(draws.at(-1).opens, [97, 101], 'opens reach drawChart, last one synced');
 
+  // Toggling chartMode alone must still redraw — nothing else about the
+  // fetched bars or quote changed, so the signature has to notice the mode.
+  const drawsBeforeToggle = draws.length;
+  run("state.chartMode = 'line';");
+  await c.loadChart();
+  assert.equal(draws.length, drawsBeforeToggle + 1, 'chartMode toggle redraws even with an otherwise identical signature');
+
   // 마지막 봉이 오늘이 아니면(장 전 · 휴장) 그대로 둔다.
   bars.times = [today - 2 * 86400000, today - 86400000];
   run('lastDrawSig = null;');

@@ -1204,9 +1204,15 @@ async function loadChart() {
 
   // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다.
   // 다시 그리면 차트가 통째로 재생성돼 마우스를 올려둔 범례 값도 같이 지워진다.
+  // 토글은 chartMode 만 바꾸므로 candleMode 결과(drawChart 가 캔들 여부를 정하는
+  // 것과 같은 식)도 서명에 넣어야 다시 그려진다. 종가가 같아도 두 폴링 사이 고가·
+  // 저가만 바뀌면 오늘 캔들의 몸통·꼬리가 옛 값으로 남으므로 마지막 봉의 시가·
+  // 고가·저가도 함께 본다.
   const sig = `${item.symbol}|${state.timeframe}|${closes.length}`
     + `|${closes[closes.length - 1]}|${up}|${mas.map((m) => m.p).join()}`
-    + `|${hLines.map((l) => `${l.label}:${l.value}`).join()}`;
+    + `|${hLines.map((l) => `${l.label}:${l.value}`).join()}`
+    + `|${candleMode(state.timeframe, state.chartMode)}`
+    + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
 
