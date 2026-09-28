@@ -715,6 +715,28 @@ const crossMarkPlugin = {
   },
 };
 
+// 끄는 중인 확대 구간 { a, b } — 봉 번호(누른 곳, 지금 마우스). 끌기 이벤트가 쓰고
+// 아래 zoomBoxPlugin 이 읽는다. 끄는 동안에는 chart.draw() 로 다시 그리기만 해서 가볍다.
+let zoomDrag = null;
+
+// 끄는 동안의 선택 상자. 양 끝 봉이 상자 안에 다 들어오게 반 칸씩 넓힌다.
+const zoomBoxPlugin = {
+  id: 'zoomBox',
+  afterDraw(c) {
+    if (!zoomDrag) return;
+    const sx = c.scales.x;
+    const area = c.chartArea;
+    const half = Math.abs(sx.getPixelForValue(1) - sx.getPixelForValue(0)) / 2;
+    const x1 = Math.max(area.left, sx.getPixelForValue(Math.min(zoomDrag.a, zoomDrag.b)) - half);
+    const x2 = Math.min(area.right, sx.getPixelForValue(Math.max(zoomDrag.a, zoomDrag.b)) + half);
+    const ctx = c.ctx;
+    ctx.save();
+    ctx.fillStyle = cssVar('--accent-bg');
+    ctx.fillRect(x1, area.top, Math.max(1, x2 - x1), area.height);
+    ctx.restore();
+  },
+};
+
 // 차트를 벗어나면 범례를 기간 숫자만 남은 상태로 되돌린다.
 // 캔버스는 다시 만들어지지 않으므로 한 번만 붙인다.
 let leaveBound = false;
@@ -774,7 +796,7 @@ function drawChart(arg) {
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
-    plugins: [candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin],
+    plugins: [candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
     data: {
       labels: times.map((t) => labelFor(t, state.timeframe)),
       datasets: [{
@@ -1738,6 +1760,48 @@ function resetZoom() {
   if (lastChart) drawChart(lastChart);
 }
 
+// 화면 x 좌표 → 봉 번호. 차트 밖으로 끌면 보이는 구간 끝에서 멈춘다.
+// category 축이라 getValueForPixel 이 봉 번호를 주고, sx.min / max 는 보이는 구간의 끝이다.
+function barAt(clientX) {
+  const sx = chart.scales.x;
+  const px = clientX - chart.canvas.getBoundingClientRect().left;
+  return Math.min(sx.max, Math.max(sx.min, Math.round(sx.getValueForPixel(px))));
+}
+
+// 누른 채 좌우로 끌면 상자가 따라오고, 놓으면 그 구간이 차트 전체로 펼쳐진다.
+// 마우스가 지나가거나 휠을 굴리는 것으로는 절대 확대하지 않는다 — 항상 떠 있는
+// 창이라 마우스가 차트 위를 자주 지나간다.
+// 이벤트는 캔버스 요소에 한 번만 붙인다. drawChart 는 같은 캔버스에 차트를 새로
+// 만들므로, 끄는 도중 30초 갱신이 와도 상자가 끊기지 않는다.
+function bindZoom() {
+  const cv = document.getElementById('chart');
+  cv.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !chart || !lastChart || !ZOOM_TF.has(state.timeframe)) return;
+    const i = barAt(e.clientX);
+    zoomDrag = { a: i, b: i };
+  });
+  // 차트 밖으로 나가도 따라가도록 window 에서 받는다
+  window.addEventListener('mousemove', (e) => {
+    if (!zoomDrag || !chart) return;
+    const i = barAt(e.clientX);
+    if (i === zoomDrag.b) return;
+    zoomDrag.b = i;
+    chart.draw();
+  });
+  window.addEventListener('mouseup', () => {
+    if (!zoomDrag) return;
+    const r = dragToRange(zoomDrag.a, zoomDrag.b);
+    zoomDrag = null;
+    if (!r || !lastChart) { // 5봉 미만 — 클릭이거나, 끌다가 도로 좁혀 취소한 것
+      if (chart) chart.draw(); // 상자만 지운다
+      return;
+    }
+    zoom = { start: lastChart.times[r.from], end: lastChart.times[r.to] };
+    drawChart(lastChart);
+  });
+  cv.addEventListener('dblclick', resetZoom);
+}
+
 function renderChartMode(bars, daily) {
   const b = document.getElementById('chartMode');
   const candle = state.chartMode === 'candle';
@@ -1880,6 +1944,7 @@ async function refreshNow() {
     await loadChart(); // 서명에 chartMode 가 있어 다시 그려지고, drawChart 가 아이콘도 바꾼다
   };
   document.getElementById('zoomReset').onclick = resetZoom;
+  bindZoom();
   renderTabs();
   renderList();
   renderDetail();
