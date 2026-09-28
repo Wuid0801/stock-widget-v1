@@ -152,18 +152,25 @@ const live = (candle, price, extra = {}) => ({
 }
 
 // --- 11. 캔들로 그리는 구간 -----------------------------------------------------
+// 기준은 기간 이름이 아니라 화면에 보이는 봉 수다. 확대하지 않은 화면에서는 예전
+// 기간 기준(1M · 3M 만 캔들)과 결과가 같아야 한다.
 {
-  check('3M 은 캔들', C.candleMode('3M', 'candle') === true);
-  check('1M 도 캔들', C.candleMode('1M', 'candle') === true);
-  check('1Y 는 봉이 1.2px 라 라인', C.candleMode('1Y', 'candle') === false);
-  check('1D 는 분봉이라 라인', C.candleMode('1D', 'candle') === false);
-  check('1W 도 분봉이라 라인', C.candleMode('1W', 'candle') === false);
+  check('3M(62봉) 은 캔들', C.candleMode(62, true, 'candle') === true);
+  check('1M(22봉) 도 캔들', C.candleMode(22, true, 'candle') === true);
+  check('1Y(243봉) 는 봉이 1.2px 라 라인', C.candleMode(243, true, 'candle') === false);
+  check('1D(5분봉 78개) 는 분봉이라 라인', C.candleMode(78, false, 'candle') === false);
+  // 1W 는 30분봉 약 65개로 70 안쪽이지만 분봉이라 라인이어야 한다 — daily 가 걸러야 한다
+  check('1W(30분봉 65개) 도 분봉이라 라인', C.candleMode(65, false, 'candle') === false);
 
-  check('line 을 고르면 3M 도 라인', C.candleMode('3M', 'line') === false);
+  // 1Y 를 확대해 좁히면 캔들이 된다
+  check('70봉까지는 캔들', C.candleMode(70, true, 'candle') === true);
+  check('71봉부터 라인', C.candleMode(71, true, 'candle') === false);
+  check('CANDLE_MAX_BARS 는 70', C.CANDLE_MAX_BARS === 70);
+  check('봉이 없으면 라인', C.candleMode(0, true, 'candle') === false);
+
+  check('line 을 고르면 3M 도 라인', C.candleMode(62, true, 'line') === false);
   // 저장값에 모르는 문자열이 들어 있어도 기본값(캔들)으로 본다
-  check('모르는 값은 캔들로 본다', C.candleMode('3M', undefined) === true);
-  check('CANDLE_TF 는 1M · 3M 둘뿐이다',
-    C.CANDLE_TF.size === 2 && C.CANDLE_TF.has('1M') && C.CANDLE_TF.has('3M'));
+  check('모르는 값은 캔들로 본다', C.candleMode(62, true, undefined) === true);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

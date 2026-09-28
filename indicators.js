@@ -113,14 +113,16 @@ function candleGeom(c, h) {
 // 위의 candleGeom 은 값 범위를 고정 높이(22px)에 맞춘다. 차트는 반대로 Chart.js 의
 // y축이 픽셀을 주므로, 여기서는 그 픽셀만 가지고 몸통을 만든다.
 
-// 캔들로 그리는 타임프레임. 창이 340px 라 차트 영역이 약 280px 인데, 1Y(243봉)는
-// 봉 하나가 1.2px 라 몸통도 꼬리도 구분되지 않는다. 1D(5분봉) · 1W(30분봉)은
-// 분봉이라 "일봉 캔들" 과 뜻이 다르다.
-const CANDLE_TF = new Set(['1M', '3M']);
+// 캔들로 그릴 수 있는 최대 봉 수. 창이 340px 라 차트 영역이 약 280px 이고, 3M 이
+// 62~66봉(간격 약 4.3px → 몸통 3px)이다. 그보다 촘촘하면 몸통과 꼬리가 구분되지
+// 않는다 — 1Y(243봉)는 봉 하나가 1.2px 다. 70 은 3M 을 넉넉히 덮는 값이다.
+const CANDLE_MAX_BARS = 70;
 
+// 캔들로 그릴지. 기간 이름이 아니라 화면에 보이는 봉 수로 정한다 — 1Y 도 확대해
+// 70봉 이하로 좁히면 캔들이 된다. 분봉(1D · 1W)은 "일봉 캔들" 과 뜻이 달라 늘 라인이다.
 // 저장값이 'line' 일 때만 라인이다. 모르는 값이 들어 있으면 기본값(캔들)으로 본다.
-function candleMode(timeframe, chartMode) {
-  return chartMode !== 'line' && CANDLE_TF.has(timeframe);
+function candleMode(bars, daily, chartMode) {
+  return chartMode !== 'line' && daily && bars > 0 && bars <= CANDLE_MAX_BARS;
 }
 
 // 몸통 폭. 간격을 다 쓰면 캔들끼리 붙어 경계가 사라지므로 70% 만 쓴다.
@@ -272,7 +274,7 @@ function meetAt(a, b) {
 if (typeof module !== 'undefined') {
   module.exports = {
     calcRSI, sma, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
-    CANDLE_TF, candleMode, candleWidth, candleBody,
+    CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
     hull, trendLine, breakoutOf, meetAt,
   };

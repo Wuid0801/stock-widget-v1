@@ -742,7 +742,9 @@ function drawChart(arg) {
   const color = up ? UP : DOWN;
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
   // 넘기는 호출만 라인으로 그린다.
-  const candles = candleMode(state.timeframe, state.chartMode) && opens.length > 0;
+  const daily = TF[state.timeframe].interval === '1d';
+  const candles = candleMode(closes.length, daily, state.chartMode) && opens.length > 0;
+  renderChartMode(closes.length, daily); // 전환 아이콘도 같은 기준으로 보인다
   hoverIdx = null;
   renderMaLegend(); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
   if (chart) chart.destroy();
@@ -1211,14 +1213,14 @@ async function loadChart() {
 
   // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다.
   // 다시 그리면 차트가 통째로 재생성돼 마우스를 올려둔 범례 값도 같이 지워진다.
-  // 토글은 chartMode 만 바꾸므로 candleMode 결과(drawChart 가 캔들 여부를 정하는
-  // 것과 같은 식)도 서명에 넣어야 다시 그려진다. 종가가 같아도 두 폴링 사이 고가·
+  // 토글은 chartMode 만 바꾸므로 chartMode 도 서명에 넣어야 다시 그려진다(캔들
+  // 여부는 drawChart 가 보이는 봉 수로 정한다). 종가가 같아도 두 폴링 사이 고가·
   // 저가만 바뀌면 오늘 캔들의 몸통·꼬리가 옛 값으로 남으므로 마지막 봉의 시가·
   // 고가·저가도 함께 본다.
   const sig = `${item.symbol}|${state.timeframe}|${closes.length}`
     + `|${closes[closes.length - 1]}|${up}|${mas.map((m) => m.p).join()}`
     + `|${hLines.map((l) => `${l.label}:${l.value}`).join()}`
-    + `|${candleMode(state.timeframe, state.chartMode)}`
+    + `|${state.chartMode}`
     + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
@@ -1687,8 +1689,8 @@ function checkAlerts(prevPrices) {
 }
 
 // 라인 / 캔들 전환 아이콘(차트 왼쪽 위). 그림은 지금 모드를, title 은 누르면 어떻게
-// 되는지를 말한다. 캔들을 그리지 않는 기간(1D · 1W · 1Y)에는 차트 위에 띄워 봐야
-// 방해라 숨긴다. 선은 반 픽셀에 두어 1px 로 또렷하게 찍히게 했다.
+// 되는지를 말한다. 캔들로 그릴 수 없는 화면(분봉이거나 보이는 봉이 70개 초과)에는
+// 차트 위에 띄워 봐야 방해라 숨긴다. 선은 반 픽셀에 두어 1px 로 또렷하게 찍히게 했다.
 const MODE_ICON = {
   candle: '<svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true">'
     + '<path d="M4.5 1v2M4.5 8v3M10.5 2v3M10.5 8v2" stroke="currentColor"/>'
@@ -1699,10 +1701,10 @@ const MODE_ICON = {
     + ' stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg>',
 };
 
-function renderChartMode() {
+function renderChartMode(bars, daily) {
   const b = document.getElementById('chartMode');
   const candle = state.chartMode === 'candle';
-  b.hidden = !CANDLE_TF.has(state.timeframe);
+  b.hidden = !candleMode(bars, daily, 'candle'); // 캔들로 그릴 수 있는 화면에서만
   b.innerHTML = MODE_ICON[candle ? 'candle' : 'line'];
   b.title = candle ? '라인으로 보기' : '캔들로 보기';
 }
@@ -1710,7 +1712,6 @@ function renderChartMode() {
 function renderTabs() {
   const box = document.getElementById('tf');
   box.innerHTML = '';
-  renderChartMode(); // 기간이 바뀌면 보일지 말지도 바뀐다
   for (const key of Object.keys(TF)) {
     const b = document.createElement('button');
     b.textContent = key;
@@ -1838,8 +1839,7 @@ async function refreshNow() {
   document.getElementById('chartMode').onclick = async () => {
     state.chartMode = state.chartMode === 'candle' ? 'line' : 'candle';
     save();
-    renderChartMode();
-    await loadChart();
+    await loadChart(); // 서명에 chartMode 가 있어 다시 그려지고, drawChart 가 아이콘도 바꾼다
   };
   renderTabs();
   renderList();
