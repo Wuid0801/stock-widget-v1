@@ -166,5 +166,5 @@ const live = (candle, price, extra = {}) => ({
     C.CANDLE_TF.size === 2 && C.CANDLE_TF.has('1M') && C.CANDLE_TF.has('3M'));
 }
 
-console.log(`\n${fails ? `${fails}개 실패` : '전부 통과'}`);
+console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails ? 1 : 0);

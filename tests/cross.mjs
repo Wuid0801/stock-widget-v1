@@ -131,5 +131,5 @@ if (!X.confirmedCrosses || !X.daysAgo) {
     X.daysAgo(d('2026-09-18'), d('2026-09-21', '10:00')) === 3);
 }
 
-console.log(`\n${fails ? `${fails}개 실패` : '전부 통과'}`);
+console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails ? 1 : 0);
