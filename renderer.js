@@ -470,7 +470,9 @@ let hoverIdx = null;
 function renderMaLegend() {
   const box = document.getElementById('maLegend');
   const mas = (lastChart && lastChart.mas) || [];
-  const trends = (lastChart && lastChart.trends) || [];
+  // 확대 중에는 추세선을 그리지 않으므로(drawChart) 범례에서도 뺀다. drawChart 가
+  // zoom 을 먼저 정리한 뒤 이 함수를 부르므로 zoom 이 있으면 확대된 화면이다.
+  const trends = (lastChart && !zoom && lastChart.trends) || [];
   box.hidden = mas.length === 0 && trends.length === 0;
   box.innerHTML = '';
 
@@ -721,9 +723,10 @@ const crossMarkPlugin = {
 let zoomDrag = null;
 
 // 끄는 동안의 선택 상자. 양 끝 봉이 상자 안에 다 들어오게 반 칸씩 넓힌다.
+// 툴팁보다 먼저 그려야 툴팁이 상자에 물들지 않는다 — afterDraw 가 아니라 afterDatasetsDraw.
 const zoomBoxPlugin = {
   id: 'zoomBox',
-  afterDraw(c) {
+  afterDatasetsDraw(c) {
     if (!zoomDrag) return;
     const sx = c.scales.x;
     const area = c.chartArea;
@@ -799,7 +802,9 @@ function drawChart(arg) {
     type: 'line',
     plugins: [candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
     data: {
-      labels: times.map((t) => labelFor(t, state.timeframe)),
+      // 1Y 를 확대하면 몇 주 · 몇 달만 보이므로 연/월 라벨로는 눈금이 같은 값으로
+      // 반복된다(26/03 · 26/03 · 26/04). 그때는 1M · 3M 과 같은 월/일로 쓴다.
+      labels: times.map((t) => labelFor(t, zr && state.timeframe === '1Y' ? '3M' : state.timeframe)),
       datasets: [{
         label: '',
         data: closes,
@@ -930,6 +935,16 @@ function drawChart(arg) {
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
           callbacks: {
+            // 1Y 는 축 라벨이 연/월(YY/MM)이라 제목에 일이 없으면 어느 날을 가리키는지
+            // 모른다 — 끌어서 구간을 고를 때 특히. 1Y 만 일까지 보인다.
+            title: (items) => {
+              const it = items[0];
+              if (!it) return '';
+              if (state.timeframe !== '1Y') return it.label;
+              const d = new Date(times[it.dataIndex]);
+              const p = (n) => String(n).padStart(2, '0');
+              return `${String(d.getFullYear()).slice(2)}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
+            },
             // 내용은 전부 beforeBody 로 올린다(본문은 비운다).
             beforeBody: (items) => {
               const lines = [];
@@ -1270,7 +1285,10 @@ async function loadChart() {
     + `|${closes[closes.length - 1]}|${up}|${mas.map((m) => m.p).join()}`
     + `|${hLines.map((l) => `${l.label}:${l.value}`).join()}`
     + `|${state.chartMode}`
-    + `|${zoom ? `${zoom.start}-${zoom.end}` : ''}` // 확대 · 되돌리기는 drawChart 로 바로 그리지만, 서명도 그린 것을 말하게 둔다
+    // 확대 · 되돌리기는 drawChart 로 바로 그린다. 서명에 확대 구간을 넣어 두면 그 뒤 첫
+    // 갱신에서 차트를 한 번 더 만들지만(hover 범례가 한 번 지워진다), 서명이 늘 화면 상태를
+    // 담아 토글 때처럼 "서명에 빠져 다시 안 그려지는" 일이 생기지 않는다.
+    + `|${zoom ? `${zoom.start}-${zoom.end}` : ''}`
     + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
@@ -1787,6 +1805,8 @@ function bindZoom() {
   // 차트 밖으로 나가도 따라가도록 window 에서 받는다
   window.addEventListener('mousemove', (e) => {
     if (!zoomDrag || !chart) return;
+    // 버튼이 이미 떨어졌는데 mouseup 을 못 받은 경우(Alt+Tab 등) — 끌기를 버린다
+    if (!(e.buttons & 1)) { zoomDrag = null; chart.draw(); return; }
     if (zoomDrag.key !== dragKey()) { zoomDrag = null; chart.draw(); return; }
     const i = barAt(e.clientX);
     if (i === zoomDrag.b) return;
