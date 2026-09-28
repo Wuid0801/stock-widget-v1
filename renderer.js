@@ -1684,35 +1684,31 @@ function checkAlerts(prevPrices) {
   }
 }
 
+// 라인 / 캔들 전환 아이콘(차트 왼쪽 위). 그림은 지금 모드를, title 은 누르면 어떻게
+// 되는지를 말한다. 캔들을 그리지 않는 기간(1D · 1W · 1Y)에는 차트 위에 띄워 봐야
+// 방해라 숨긴다. 선은 반 픽셀에 두어 1px 로 또렷하게 찍히게 했다.
+const MODE_ICON = {
+  candle: '<svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true">'
+    + '<path d="M4.5 1v2M4.5 8v3M10.5 2v3M10.5 8v2" stroke="currentColor"/>'
+    + '<rect x="3" y="3" width="3" height="5" fill="currentColor"/>'
+    + '<rect x="9" y="5" width="3" height="3" fill="currentColor"/></svg>',
+  line: '<svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true">'
+    + '<polyline points="1,9 5,4.5 8.5,7 13,2" fill="none" stroke="currentColor"'
+    + ' stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+};
+
+function renderChartMode() {
+  const b = document.getElementById('chartMode');
+  const candle = state.chartMode === 'candle';
+  b.hidden = !CANDLE_TF.has(state.timeframe);
+  b.innerHTML = MODE_ICON[candle ? 'candle' : 'line'];
+  b.title = candle ? '라인으로 보기' : '캔들로 보기';
+}
+
 function renderTabs() {
   const box = document.getElementById('tf');
   box.innerHTML = '';
-  // 라인 / 캔들 토글. 1M · 3M 밖에서는 흐리게 — 이동평균 칩이 구간에 안 맞을 때
-  // 흐려지고 title 로 이유를 말하는 것과 같은 방식이다.
-  const fits = CANDLE_TF.has(state.timeframe);
-  const t = document.createElement('button');
-  t.type = 'button';
-  t.textContent = '캔들';
-  t.disabled = !fits;
-  // 주의: 이 버튼에는 bare 'on' 클래스를 절대 주지 않는다. tests/restore.mjs,
-  // tests/period.mjs, tests/chart-integrity.mjs 는 모두
-  // `[...document.querySelectorAll('#tf button')].find(b => b.classList.contains('on'))`
-  // 로 "현재 선택된 타임프레임" 버튼을 찾는다. 토글이 타임프레임 버튼들보다 DOM
-  // 순서상 앞에 있으면서 'on' 을 받으면 그 find() 가 토글을 집어버려 세 스위트가
-  // 깨지거나(1M·3M 비교 실패) 조용히 커버리지를 잃는다(restore 는 전후 값이 같아
-  // 통과만 유지). 그래서 토글 전용 클래스(mode / mode-on)를 따로 쓴다 —
-  // "#tf button.on" 은 타임프레임 버튼만을 뜻해야 하므로 여기 합치지 말 것.
-  t.className = `mode${fits && state.chartMode === 'candle' ? ' mode-on' : ''}`;
-  t.title = fits
-    ? '라인 / 캔들 전환'
-    : `${state.timeframe} 는 라인으로 그립니다 — 캔들은 1M · 3M 에서만`;
-  t.onclick = async () => {
-    state.chartMode = state.chartMode === 'candle' ? 'line' : 'candle';
-    save();
-    renderTabs();
-    await loadChart();
-  };
-  box.appendChild(t);
+  renderChartMode(); // 기간이 바뀌면 보일지 말지도 바뀐다
   for (const key of Object.keys(TF)) {
     const b = document.createElement('button');
     b.textContent = key;
@@ -1802,6 +1798,12 @@ async function pollTick() {
     state.selected = (state.watchlist[0] && state.watchlist[0].symbol) || null;
   }
 
+  document.getElementById('chartMode').onclick = async () => {
+    state.chartMode = state.chartMode === 'candle' ? 'line' : 'candle';
+    save();
+    renderChartMode();
+    await loadChart();
+  };
   renderTabs();
   renderList();
   renderDetail();

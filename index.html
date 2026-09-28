@@ -428,13 +428,6 @@
   }
   .tf button:hover { color: var(--text-3); }
   .tf button.on { background: var(--tf-on-bg); color: var(--tf-on-fg); }
-  /* 캔들 토글의 활성 상태 — 타임프레임 버튼과 똑같이 보여야 하지만 클래스는
-     일부러 분리했다. "#tf button.on" 은 tests/restore.mjs, tests/period.mjs,
-     tests/chart-integrity.mjs 가 "현재 선택된 타임프레임"을 찾을 때 쓰는
-     선택자라서, 토글이 여기 섞이면 세 스위트가 깨지거나 커버리지를 잃는다. */
-  .tf button.mode-on { background: var(--tf-on-bg); color: var(--tf-on-fg); }
-  .tf button:disabled { opacity: .38; cursor: default; }
-  .tf button:disabled:hover { color: var(--dim); }
 
   /* 52주 저점~고점 막대. 현재가 위치를 점으로 표시 */
   .w52 { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 9px; color: var(--mute); }
@@ -452,6 +445,16 @@
   /* 창을 세로로 늘리면 차트도 같이 커진다. 최소 150px(기본 창 높이일 때의 크기)는
      지키고, 300px 를 넘어 관심종목 목록을 다 밀어내지는 않게 한다. */
   .chartbox { height: clamp(150px, 26vh, 300px); margin-top: 7px; position: relative; }
+  /* 라인 / 캔들 전환. 기간 버튼과 헷갈리지 않게 차트 왼쪽 위에 아이콘으로 띄운다.
+     첫 봉 위에 겹치므로 평소엔 흐리게, 마우스를 올리면 또렷하게. */
+  #chartMode {
+    position: absolute; top: 4px; left: 4px; z-index: 1;
+    display: flex; align-items: center; justify-content: center; width: 20px; height: 18px;
+    padding: 0; border: 1px solid var(--field-border); border-radius: 4px;
+    background: var(--tooltip); color: var(--dim); cursor: pointer; opacity: .6;
+  }
+  #chartMode:hover { opacity: 1; color: var(--text-3); }
+  #chartMode[hidden] { display: none; }
   .err { margin-top: 5px; font-size: 10px; color: var(--err); min-height: 12px; }
 </style>
 </head>
@@ -529,7 +532,7 @@
         <span class="w52v" id="w52hi"></span>
       </div>
 
-      <div class="chartbox"><canvas id="chart"></canvas></div>
+      <div class="chartbox"><canvas id="chart"></canvas><button id="chartMode" type="button" hidden></button></div>
       <div class="err" id="err"></div>
     </div>
 
