@@ -715,8 +715,9 @@ const crossMarkPlugin = {
   },
 };
 
-// 끄는 중인 확대 구간 { a, b } — 봉 번호(누른 곳, 지금 마우스). 끌기 이벤트가 쓰고
-// 아래 zoomBoxPlugin 이 읽는다. 끄는 동안에는 chart.draw() 로 다시 그리기만 해서 가볍다.
+// 끄는 중인 확대 구간 { a, b, key } — 봉 번호(누른 곳, 지금 마우스), key 는 누른 시점의
+// "종목|기간"(dragKey()). 끌기 이벤트가 쓰고 아래 zoomBoxPlugin 이 읽는다. 끄는 동안에는
+// chart.draw() 로 다시 그리기만 해서 가볍다.
 let zoomDrag = null;
 
 // 끄는 동안의 선택 상자. 양 끝 봉이 상자 안에 다 들어오게 반 칸씩 넓힌다.
@@ -1775,14 +1776,18 @@ function barAt(clientX) {
 // 만들므로, 끄는 도중 30초 갱신이 와도 상자가 끊기지 않는다.
 function bindZoom() {
   const cv = document.getElementById('chart');
+  // 끄는 동안 ↑↓ · 숫자 키로 종목 · 기간이 바뀌면 누른 점과 지금 점이 서로 다른 차트의
+  // 봉 번호가 된다 — 그런 끌기는 취소한다. 30초 갱신은 같은 종목 · 기간이라 그대로 이어진다.
+  const dragKey = () => `${state.selected}|${state.timeframe}`;
   cv.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || !chart || !lastChart || !ZOOM_TF.has(state.timeframe)) return;
     const i = barAt(e.clientX);
-    zoomDrag = { a: i, b: i };
+    zoomDrag = { a: i, b: i, key: dragKey() };
   });
   // 차트 밖으로 나가도 따라가도록 window 에서 받는다
   window.addEventListener('mousemove', (e) => {
     if (!zoomDrag || !chart) return;
+    if (zoomDrag.key !== dragKey()) { zoomDrag = null; chart.draw(); return; }
     const i = barAt(e.clientX);
     if (i === zoomDrag.b) return;
     zoomDrag.b = i;
@@ -1790,9 +1795,9 @@ function bindZoom() {
   });
   window.addEventListener('mouseup', () => {
     if (!zoomDrag) return;
-    const r = dragToRange(zoomDrag.a, zoomDrag.b);
+    const r = zoomDrag.key === dragKey() ? dragToRange(zoomDrag.a, zoomDrag.b) : null;
     zoomDrag = null;
-    if (!r || !lastChart) { // 5봉 미만 — 클릭이거나, 끌다가 도로 좁혀 취소한 것
+    if (!r || !lastChart) { // 5봉 미만(클릭 · 도로 좁혀 취소)이거나, 끄는 도중 종목 · 기간이 바뀐 것
       if (chart) chart.draw(); // 상자만 지운다
       return;
     }
