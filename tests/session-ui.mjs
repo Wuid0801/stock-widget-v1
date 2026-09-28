@@ -396,4 +396,23 @@ await test('cleanMaStyles keeps only valid per-period color/width; maWidth falls
   assert.equal(run('maWidth(5)'), 1);
 });
 
+await test('zoom is remembered per timeframe and cleared for every timeframe when the symbol changes', () => {
+  const { run } = harness(['setTimeframe', 'clearZooms']);
+  run("state.timeframe = '3M'; zoom = { start: 1, end: 2 };");
+  run("setTimeframe('1D');");
+  assert.equal(run('zoom'), null, '1D has no zoom of its own');
+  run("setTimeframe('1Y'); zoom = { start: 3, end: 4 };");
+  run("setTimeframe('3M');");
+  assert.equal(run('JSON.stringify(zoom)'), '{"start":1,"end":2}', '3M zoom comes back');
+  run("setTimeframe('1Y');");
+  assert.equal(run('JSON.stringify(zoom)'), '{"start":3,"end":4}', '1Y keeps its own zoom');
+  run("setTimeframe('1Y');"); // 지금 기간을 다시 눌러도 그대로
+  assert.equal(run('JSON.stringify(zoom)'), '{"start":3,"end":4}');
+
+  run('clearZooms();');
+  assert.equal(run('zoom'), null);
+  run("setTimeframe('3M');");
+  assert.equal(run('zoom'), null, 'another symbol forgets every timeframe');
+});
+
 console.log(`PASS: ${passed} session UI test groups`);

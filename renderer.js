@@ -57,6 +57,9 @@ let chartBars = 0; // 현재 차트의 봉 수. 0이면 이동평균을 안 그�
 // loadChart 의 서명이 읽으므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
 // 마커 앞)에 있어야 한다.
 let zoom = null;
+// 기간별로 기억해 둔 확대 구간. 1D 를 잠깐 보고 3M 으로 돌아오면 그 구간을 되살린다.
+// zoom 은 지금 기간의 것이고, 기간을 떠날 때 여기에 넣어 둔다(setTimeframe).
+const zoomByTf = {};
 const maFits = (p) => chartBars > 0 && p <= chartBars * MA_SPAN;
 
 // RSI·이동평균 계산용 일봉 시리즈.
@@ -1368,7 +1371,7 @@ const save = () => api.setState({
 });
 
 async function select(symbol) {
-  if (symbol !== state.selected) zoom = null; // 다른 종목에 같은 날짜 구간은 뜻이 없다
+  if (symbol !== state.selected) clearZooms(); // 다른 종목에 같은 날짜 구간은 뜻이 없다
   state.selected = symbol;
   save();
   renderList();
@@ -1441,7 +1444,7 @@ async function removeSymbol(symbol) {
   // 보고 있던 종목을 지웠으면 첫 종목으로 옮긴다
   if (state.selected === symbol) {
     state.selected = state.watchlist.length ? state.watchlist[0].symbol : null;
-    zoom = null; // 다른 종목으로 넘어간다 — select() 를 거치지 않으므로 여기서 푼다
+    clearZooms(); // 다른 종목으로 넘어간다 — select() 를 거치지 않으므로 여기서 푼다
   }
   save();
   renderList();
@@ -1520,8 +1523,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key >= '1' && e.key <= String(tabs.length)) {
     const key = tabs[Number(e.key) - 1];
     if (key === state.timeframe) return;
-    state.timeframe = key;
-    zoom = null; // 다른 기간의 날짜 구간은 뜻이 없다
+    setTimeframe(key);
     save();
     renderTabs();
     loadChart();
@@ -1895,6 +1897,20 @@ function resetZoom() {
   if (lastChart) drawChart(lastChart);
 }
 
+// 기간을 바꾼다. 떠나는 기간의 확대는 기억해 두고, 돌아오는 기간의 확대를 되살린다 —
+// 1D 를 잠깐 보고 3M 으로 돌아올 때마다 다시 끌지 않게. 기간 버튼과 숫자 단축키가 같이 쓴다.
+function setTimeframe(key) {
+  zoomByTf[state.timeframe] = zoom;
+  state.timeframe = key;
+  zoom = zoomByTf[key] || null;
+}
+
+// 종목이 바뀌면 모든 기간의 확대를 버린다 — 다른 종목에 같은 날짜 구간은 뜻이 없다.
+function clearZooms() {
+  zoom = null;
+  for (const k of Object.keys(zoomByTf)) delete zoomByTf[k];
+}
+
 // 화면 x 좌표 → 봉 번호. 차트 밖으로 끌면 보이는 구간 끝에서 멈춘다.
 // category 축이라 getValueForPixel 이 봉 번호를 주고, sx.min / max 는 보이는 구간의 끝이다.
 function barAt(clientX) {
@@ -1959,8 +1975,7 @@ function renderTabs() {
     b.textContent = key;
     b.className = key === state.timeframe ? 'on' : '';
     b.onclick = async () => {
-      state.timeframe = key;
-      zoom = null; // 다른 기간의 날짜 구간은 뜻이 없다
+      setTimeframe(key);
       save();
       renderTabs();
       await loadChart();
