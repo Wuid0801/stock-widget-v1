@@ -35,6 +35,7 @@ const ORDER = [
   'trend.mjs',
   'cross.mjs',
   'candle.mjs',
+  'zoom.mjs',
   'dom-contract.mjs',
   'state-contract.mjs',
   'chart-integrity.mjs',

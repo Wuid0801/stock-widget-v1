@@ -139,6 +139,43 @@ function candleBody(yOpen, yClose) {
   return { top: Math.min(yOpen, yClose), h: Math.max(1, Math.abs(yClose - yOpen)) };
 }
 
+// --- 끌어서 확대 ------------------------------------------------------------------
+// 3M · 1Y 차트에서 끌어서 고른 구간을 차트 전체로 펼친다.
+
+// 확대를 허용하는 기간. 1M(약 22봉)은 확대할 일이 거의 없고, 1D · 1W 는 분봉이라
+// 끝에 실시간 점이 붙는 등 다르게 동작한다.
+const ZOOM_TF = new Set(['3M', '1Y']);
+
+// 이보다 좁게 끌면 확대하지 않는다. 클릭 · 손떨림과 구분하고, 끌다가 도로 좁히면
+// 취소가 된다.
+const ZOOM_MIN_BARS = 5;
+
+// 끈 두 지점(봉 번호)을 앞뒤로 정렬한다. 오른쪽에서 왼쪽으로 끌어도 같다.
+function dragToRange(a, b) {
+  const from = Math.min(a, b);
+  const to = Math.max(a, b);
+  return to - from + 1 >= ZOOM_MIN_BARS ? { from, to } : null;
+}
+
+// 날짜로 기억해 둔 구간을 지금 데이터의 봉 번호로 바꾼다. 30초마다 다시 그리고 다음
+// 날엔 봉이 하나 늘어 번호가 밀리므로, 번호가 아니라 날짜로 기억한다.
+// 비교는 UTC 날짜로 한다(renderer.js maFor 와 같은 규칙) — 장중 마지막 봉의 시각은
+// 마지막 체결 시각이라 갱신마다 바뀌어, 시각으로 비교하면 그 봉이 구간 밖으로 밀려난다.
+function zoomRange(times, start, end) {
+  const dayOf = (t) => Math.floor(t / 86400000);
+  const s = dayOf(start);
+  const e = dayOf(end);
+  let from = -1;
+  let to = -1;
+  for (let i = 0; i < times.length; i++) {
+    const d = dayOf(times[i]);
+    if (d < s || d > e) continue;
+    if (from < 0) from = i;
+    to = i;
+  }
+  return from >= 0 && to - from + 1 >= ZOOM_MIN_BARS ? { from, to } : null;
+}
+
 // --- 추세선 ---------------------------------------------------------------------
 // 저점끼리 이으면 지지선, 고점끼리 이으면 저항선. 3M · 1Y 에서만 그린다 —
 // 1M(21봉)은 구간이 짧고, 1D/1W 는 분봉이라 "추세"라고 부를 구간이 아니다.
@@ -275,6 +312,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     calcRSI, sma, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
+    ZOOM_TF, ZOOM_MIN_BARS, dragToRange, zoomRange,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
     hull, trendLine, breakoutOf, meetAt,
   };
