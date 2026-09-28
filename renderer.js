@@ -1374,6 +1374,7 @@ async function removeSymbol(symbol) {
   // 보고 있던 종목을 지웠으면 첫 종목으로 옮긴다
   if (state.selected === symbol) {
     state.selected = state.watchlist.length ? state.watchlist[0].symbol : null;
+    zoom = null; // 다른 종목으로 넘어간다 — select() 를 거치지 않으므로 여기서 푼다
   }
   save();
   renderList();
