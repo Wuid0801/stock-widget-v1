@@ -731,6 +731,7 @@ function clearChart() {
   renderMaLegend();
   renderCrossBadge([], []);
   renderTrendBadges([], 0);
+  document.getElementById('chartMode').hidden = true; // 차트가 없으면 전환할 것도 없다
 }
 
 function drawChart(arg) {
