@@ -20,8 +20,33 @@ const MA_PERIODS = [5, 10, 20, 40, 60, 80, 120, 240, 360];
 // 정작 주가 움직임이 세로 39%까지 눌린다(삼성전자 실측). 구간 봉 수의 1.5배까지만 허용.
 const MA_SPAN = 1.5;
 
-// 조금 굵게(1.2px) 그릴 기간. 나머지는 1px.
+// 기본 굵기가 1.2px 인 기간. 나머지는 1px. 설정에서 선마다 바꿀 수 있다(maStyles).
 const MA_THICK = new Set([20, 40, 80]);
+
+// 설정에서 바꾼 이동평균 모양 — state.maStyles = { [기간]: { color: '#rrggbb', width } },
+// 바꾼 값만 담는다. 색은 두 테마에 같이 쓰고, 바꾸지 않은 선은 테마별 기본색(--ma-N)이다.
+const MA_WIDTH_MIN = 0.5; // 이보다 가늘면 1x 화면에서 선이 끊겨 보인다
+const MA_WIDTH_MAX = 3;   // 주가선(2px)보다 굵게도 허용하되, 3M 캔들 몸통(3px)을 넘지 않는 데까지
+const maWidth = (p) => state.maStyles?.[p]?.width ?? (MA_THICK.has(p) ? 1.2 : 1);
+const maColor = (p) => state.maStyles?.[p]?.color || cssVar(`--ma-${p}`);
+
+// 저장된 값을 믿지 않는다 — 모르는 기간, 색 형식이 아닌 것, 범위 밖이거나 숫자가 아닌
+// 굵기는 버린다. 색 고르기(<input type="color">)가 #rrggbb 소문자를 주므로 그 형식만 받는다.
+function cleanMaStyles(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const p of MA_PERIODS) {
+    const s = raw[p];
+    if (!s || typeof s !== 'object') continue;
+    const o = {};
+    if (typeof s.color === 'string' && /^#[0-9a-f]{6}$/i.test(s.color)) o.color = s.color.toLowerCase();
+    if (typeof s.width === 'number' && s.width >= MA_WIDTH_MIN && s.width <= MA_WIDTH_MAX) {
+      o.width = Math.round(s.width * 10) / 10; // 슬라이더 단위(0.1px)
+    }
+    if (Object.keys(o).length) out[p] = o;
+  }
+  return out;
+}
 
 // 골든/데드크로스를 볼 이동평균 조합.
 // 60/80 처럼 가까운 기간끼리는 횡보 구간에서 계속 교차해 신호 가치가 없어 넣지 않는다.
@@ -478,7 +503,7 @@ function renderMaLegend() {
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
   // 범례가 한 줄에서 두 줄로 접히면서 아래 차트가 들썩인다.
-  const add = (label, value, varName, title, dashed) => {
+  const add = (label, value, color, title, dashed) => {
     const s = document.createElement('span');
     s.title = title;
     s.append(label);
@@ -486,7 +511,7 @@ function renderMaLegend() {
     val.textContent = value == null ? '' : money(value, lastChart.cur);
     s.appendChild(val);
     const i = document.createElement('i');
-    i.style.background = cssVar(varName);
+    i.style.background = color;
     if (dashed) i.className = 'dash';
     s.appendChild(i);
     box.appendChild(s);
@@ -494,14 +519,14 @@ function renderMaLegend() {
 
   for (const m of mas) {
     add(String(m.p), hoverIdx == null ? null : m.data[hoverIdx],
-      m.varName, `${m.p}일 이동평균`);
+      maColor(m.p), `${m.p}일 이동평균`);
   }
   // 추세선은 마우스를 안 올렸을 때 마지막 봉(오늘) 값을 보여준다.
   // 이동평균과 달리 개수가 둘로 고정이라 늘 떠 있어도 줄이 넘치지 않는다.
   for (const t of trends) {
     const sup = t.varName === '--sup-line';
     const i = hoverIdx == null ? t.data.length - 1 : hoverIdx;
-    add(sup ? '지지' : '저항', t.data[i], t.varName,
+    add(sup ? '지지' : '저항', t.data[i], cssVar(t.varName),
       sup ? '저점을 잇는 지지선' : '고점을 잇는 저항선', true);
   }
 }
@@ -859,8 +884,8 @@ function drawChart(arg) {
         data: m.data,
         yAxisID: 'y',
         order: 3,
-        borderColor: hexA(cssVar(m.varName), 0.8),
-        borderWidth: MA_THICK.has(m.p) ? 1.2 : 1,
+        borderColor: hexA(maColor(m.p), 0.8),
+        borderWidth: maWidth(m.p),
         pointRadius: 0,
         pointHitRadius: 0,
         tension: 0.2,
@@ -1199,7 +1224,7 @@ async function loadChart() {
   for (const p of state.maPeriods) {
     if (!maFits(p)) continue; // 구간에 비해 너무 긴 선은 y축만 벌리므로 건너뛴다
     const data = maFor(item.symbol, times, p);
-    if (data) mas.push({ p, data, varName: `--ma-${p}` });
+    if (data) mas.push({ p, data }); // 색 · 굵기는 그릴 때 maColor · maWidth 로 읽는다(설정에서 바뀐다)
   }
 
   // 골든/데드크로스. 양쪽 이평선이 실제로 그려지는 조합만 본다
@@ -1338,6 +1363,7 @@ const save = () => api.setState({
   theme: state.theme,
   opacity: state.opacity,
   maPeriods: state.maPeriods,
+  maStyles: state.maStyles,
   chartMode: state.chartMode,
 });
 
@@ -1641,7 +1667,7 @@ function renderMaChips() {
       ? `${p}일 이동평균`
       : `${p}일 이동평균 — ${state.timeframe} 구간에는 너무 길어 지금은 그리지 않습니다`;
     if (on) {
-      const c = cssVar(`--ma-${p}`);
+      const c = maColor(p);
       b.className = fits ? 'on' : 'on off';
       b.style.color = c;
       b.style.borderColor = c;
@@ -1658,6 +1684,96 @@ function renderMaChips() {
       loadChart();
     };
     box.appendChild(b);
+  }
+  renderMaStyleRows();
+}
+
+// 켜 둔 이동평균선마다 색 · 굵기 한 줄. 끈 선은 바꿀 이유가 없어 보이지 않는다.
+// 움직이는 동안은 이미 받은 데이터로 다시 그리기만 하고(테마 변경과 같은 경로, 네트워크
+// 없음), 손을 뗄 때 한 번 저장한다. 끄는 도중에 이 줄들을 다시 만들면 슬라이더가 끊기므로
+// 칩과 줄은 손을 뗀 뒤에만 다시 그린다.
+function renderMaStyleRows() {
+  const box = document.getElementById('maStyles');
+  box.innerHTML = '';
+  for (const p of state.maPeriods) {
+    const row = document.createElement('div');
+    row.className = 'marow';
+
+    const name = document.createElement('span');
+    name.className = 'maname';
+    name.textContent = `${p}일`;
+    name.style.color = maColor(p);
+
+    const color = document.createElement('input');
+    color.type = 'color';
+    color.value = maColor(p);
+    color.title = `${p}일선 색`;
+
+    const width = document.createElement('input');
+    width.type = 'range';
+    width.min = String(MA_WIDTH_MIN);
+    width.max = String(MA_WIDTH_MAX);
+    width.step = '0.1';
+    width.value = String(maWidth(p));
+    width.title = `${p}일선 굵기`;
+
+    // 굵기 숫자는 눌러서 직접 고친다. Enter · 다른 곳 클릭으로 확정, Esc 는 취소.
+    // 범위 밖이면 끝값으로 조이고, 숫자가 아니면 원래 값으로 돌린다.
+    const num = document.createElement('input');
+    num.type = 'number';
+    num.className = 'mawidth';
+    num.min = String(MA_WIDTH_MIN);
+    num.max = String(MA_WIDTH_MAX);
+    num.step = '0.1';
+    num.value = maWidth(p).toFixed(1);
+    num.title = `${p}일선 굵기 — 눌러서 직접 입력 (${MA_WIDTH_MIN}~${MA_WIDTH_MAX}px)`;
+    const unit = document.createElement('span');
+    unit.className = 'maunit';
+    unit.textContent = 'px';
+
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = '↺';
+    reset.title = '기본 색 · 굵기로';
+    reset.disabled = !state.maStyles[p];
+
+    const set = (patch, done) => {
+      state.maStyles = { ...state.maStyles, [p]: { ...state.maStyles[p], ...patch } };
+      name.style.color = maColor(p);
+      num.value = maWidth(p).toFixed(1);
+      width.value = String(maWidth(p));
+      reset.disabled = false;
+      if (lastChart) drawChart(lastChart);
+      if (done) { save(); renderMaChips(); }
+    };
+    color.oninput = () => set({ color: color.value }, false);
+    color.onchange = () => set({ color: color.value }, true);
+    width.oninput = () => set({ width: Number(width.value) }, false);
+    width.onchange = () => set({ width: Number(width.value) }, true);
+    num.onchange = () => {
+      const v = Number(num.value);
+      if (num.value.trim() === '' || !Number.isFinite(v)) { num.value = maWidth(p).toFixed(1); return; }
+      const w = Math.round(Math.min(MA_WIDTH_MAX, Math.max(MA_WIDTH_MIN, v)) * 10) / 10;
+      set({ width: w }, true);
+    };
+    num.onkeydown = (e) => {
+      if (e.key === 'Enter') num.blur(); // blur 가 change 를 부른다
+      if (e.key === 'Escape') {
+        e.stopPropagation(); // 위젯 접기(Esc)로 번지지 않게
+        num.value = maWidth(p).toFixed(1);
+        num.blur();
+      }
+    };
+    reset.onclick = () => {
+      const { [p]: _gone, ...rest } = state.maStyles;
+      state.maStyles = rest;
+      save();
+      renderMaChips();
+      if (lastChart) drawChart(lastChart);
+    };
+
+    row.append(name, color, width, num, unit, reset);
+    box.appendChild(row);
   }
 }
 
@@ -1955,6 +2071,8 @@ async function refreshNow() {
     : [5, 20, 60];
   // 저장값에 없거나 모르는 값이면 캔들로 시작한다
   state.chartMode = state.chartMode === 'line' ? 'line' : 'candle';
+  // 이동평균 색 · 굵기 — 잘못된 값은 버리고 기본으로 그린다(applyTheme 가 칩을 그리기 전에)
+  state.maStyles = cleanMaStyles(state.maStyles);
   applyTheme(state.theme);
   applyOpacity(state.opacity);
   renderMaChips();

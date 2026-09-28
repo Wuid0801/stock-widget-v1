@@ -64,6 +64,7 @@ const store = new Store({
     theme: 'dark', // 'dark' | 'light'
     opacity: 74,   // 평소(마우스가 벗어났을 때) 불투명도 %
     maPeriods: [5, 20, 60], // 표시할 이동평균 기간(일)
+    maStyles: {}, // 이동평균선별로 바꾼 색 · 굵기 { [기간]: { color, width } } — 바꾼 것만
     chartMode: 'candle', // 'candle' | 'line'
   },
 });
@@ -146,6 +147,7 @@ ipcMain.handle('state:get', () => ({
   theme: store.get('theme'),
   opacity: store.get('opacity'),
   maPeriods: store.get('maPeriods'),
+  maStyles: store.get('maStyles'),
   chartMode: store.get('chartMode'),
 }));
 
@@ -153,7 +155,7 @@ ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'chartMode'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode'].includes(k)) store.set(k, v);
   }
 });
 

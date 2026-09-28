@@ -375,4 +375,25 @@ await test('maFor keeps the in-progress bar when the chart was fetched a moment 
   assert.equal(c.maFor('005930.KS', [d0 + 9 * DAY], 2), null);
 });
 
+await test('cleanMaStyles keeps only valid per-period color/width; maWidth falls back to defaults', () => {
+  const { run } = harness();
+  // 저장값은 믿지 않는다 — 모르는 기간 · 색 형식이 아닌 것 · 범위 밖 굵기 · 숫자가 아닌 굵기는 버린다
+  assert.equal(run(`JSON.stringify(cleanMaStyles({
+    5: { color: '#FF8800', width: 1.6 },
+    20: { color: 'red', width: 9 },
+    7: { color: '#123456' },
+    60: { width: 0.4 },
+    120: { width: '2' },
+    240: null,
+  }))`), JSON.stringify({ 5: { color: '#ff8800', width: 1.6 } }));
+  assert.equal(run('JSON.stringify(cleanMaStyles(null))'), '{}');
+  assert.equal(run('JSON.stringify(cleanMaStyles("x"))'), '{}');
+
+  // 바꾼 굵기가 있으면 그 값, 없으면 기본(20 · 40 · 80 은 1.2px, 나머지 1px)
+  run('state.maStyles = { 20: { width: 2.4 } };');
+  assert.equal(run('maWidth(20)'), 2.4);
+  assert.equal(run('maWidth(40)'), 1.2);
+  assert.equal(run('maWidth(5)'), 1);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);
