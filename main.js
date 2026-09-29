@@ -23,11 +23,18 @@ const CLOSE_RETRY = 300000;
 
 // 쉼표로 나열한 조각 중 하나라도 URL 에 들어 있으면 그 요청을 실패시킨다.
 const FAIL_URLS = (process.env.KR_STOCK_WIDGET_FAIL_URLS || '').split(',').filter(Boolean);
-const netFetch = FAIL_URLS.length
+const rawFetch = FAIL_URLS.length
   ? (url, opt) => (FAIL_URLS.some((s) => String(url).includes(s))
     ? Promise.reject(new Error('테스트에서 차단한 요청'))
     : fetch(url, opt))
   : fetch;
+
+// 모든 요청은 8초 안에 답이 없으면 포기한다. 제한이 없으면 Node 기본값(최대 5분)만큼
+// 기다리는데, 그동안 렌더러의 갱신이 끝나지 않아 자동 갱신과 ↻ 가 같이 멈춘다.
+// tests/net-timeout.mjs 가 핸들러마다 확인한다.
+const FETCH_TIMEOUT = 8000;
+const netFetch = (url, opt = {}) => rawFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT), ...opt })
+  .catch((e) => { throw e?.name === 'TimeoutError' ? new Error('응답 시간 초과') : e; });
 
 // 'regular' | 'pre' | 'after' | 'closed' 로 장 상태를 고정한다.
 // 실제 장 시간에 기대면 밤·주말에는 폴링 간격 검증을 돌릴 수 없다.
@@ -221,7 +228,7 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
 
   const headers = { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' };
   const read = async (url) => {
-    const res = await netFetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    const res = await netFetch(url, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   };
@@ -281,7 +288,7 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
       try {
         const res = await netFetch('https://query1.finance.yahoo.com/v8/finance/chart/'
           + `${encodeURIComponent(symbolOf.get(code))}?range=5d&interval=1d`,
-          { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) });
+          { headers: { 'User-Agent': 'Mozilla/5.0' } });
         if (!res.ok) return;
         const meta = (await res.json())?.chart?.result?.[0]?.meta;
         const close = dailyRegularClose(

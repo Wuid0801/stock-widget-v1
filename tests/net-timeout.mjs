@@ -1,0 +1,78 @@
+// 요청 시간 제한 — 앱을 띄우지 않고 main.js 의 요청 핸들러를 직접 부른다.
+//
+// 답을 주지 않는 서버에 요청 하나가 걸리면 렌더러의 갱신이 끝나지 않는다(busy).
+// 그동안 자동 갱신도 ↻ 도 돌지 않는다. 시간 제한이 없으면 Node 기본값으로 최대 5분이다.
+// 여기서는 fetch 를 "영원히 답하지 않는 서버"로 바꿔 끼우고, 모든 핸들러가 제한 시간에
+// 포기하고 { ok:false } 로 끝나는지 본다. 제한 시간은 8초 대신 10ms 로 줄여 돌린다.
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+
+const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+
+let fails = 0;
+const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
+
+// electron 은 필요한 만큼만 흉내 낸다. 창은 만들지 않는다(whenReady 가 끝나지 않는다).
+const handlers = {};
+const electron = {
+  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {} },
+  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
+  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
+};
+const modules = {
+  electron,
+  'electron-store': class { get() {} set() {} },
+  path,
+  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
+};
+const require = (m) => {
+  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
+  return modules[m];
+};
+
+// 연결은 되지만 답이 오지 않는 서버. 신호가 끊겨야만 실패로 끝난다.
+const hang = (_url, opt = {}) => new Promise((_, reject) => {
+  opt.signal?.addEventListener('abort', () => reject(opt.signal.reason));
+});
+const limits = [];
+const FastAbortSignal = { timeout: (ms) => { limits.push(ms); return AbortSignal.timeout(10); } };
+
+new Function('require', 'process', 'fetch', 'AbortSignal', src)(
+  require, { env: {}, platform: 'test' }, hang, FastAbortSignal);
+
+// 네트워크를 쓰는 핸들러 전부. 새로 추가하면 여기에도 넣어야 아래 검사가 통과한다.
+const CALLS = {
+  'quote:realtime': [['005930.KS']],
+  'quote:indices': [],
+  'fx:usdkrw': [],
+  'yf:sector': ['005930.KS'],
+  'yf:search': ['삼성'],
+  'yf:chart': [{ symbol: '005930.KS', range: '1d', interval: '5m' }],
+};
+const network = Object.keys(handlers).filter((k) => !k.startsWith('state:'));
+const unlisted = network.filter((k) => !(k in CALLS));
+check('네트워크 핸들러가 전부 이 스위트에 있다', unlisted.length === 0,
+  unlisted.length ? `목록에 없음: ${unlisted.join(' ')}` : `${network.length}개`);
+
+const GUARD = 1000; // 이 안에 안 끝나면 "멈춤"으로 본다
+const results = await Promise.all(Object.entries(CALLS).map(async ([name, args]) => {
+  if (!handlers[name]) return [name, 'missing'];
+  let timer;
+  const guard = new Promise((r) => { timer = setTimeout(() => r('hang'), GUARD); });
+  const out = await Promise.race([handlers[name]({}, ...args), guard]);
+  clearTimeout(timer);
+  return [name, out];
+}));
+
+for (const [name, out] of results) {
+  check(`${name} 가 답 없는 서버에 멈추지 않고 실패로 끝난다`, out && out.ok === false,
+    out === 'hang' ? `${GUARD}ms 안에 안 끝남` : out === 'missing' ? '핸들러 없음' : JSON.stringify(out));
+}
+
+const chart = results.find(([n]) => n === 'yf:chart')[1];
+check('시간 초과는 한글로 알린다', chart && chart.error === '응답 시간 초과', JSON.stringify(chart));
+check('제한 시간은 8초다', limits.length > 0 && limits.every((ms) => ms === 8000), limits.join(','));
+
+console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
+process.exit(fails === 0 ? 0 : 1);

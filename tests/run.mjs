@@ -38,6 +38,7 @@ const ORDER = [
   'zoom.mjs',
   'dom-contract.mjs',
   'state-contract.mjs',
+  'net-timeout.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',
