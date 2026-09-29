@@ -265,4 +265,11 @@ await test('day candle is null when the open is missing', () => {
   const q = normalizeQuote(row({ integratedPriceInfo: null, openPriceRaw: null, openPrice: null }), { now });
   assert.equal(q.candle, null);
 });
+await test('regular open time comes from the exchange metadata; malformed values are dropped', () => {
+  assert.equal(normalizeQuote(paused.datas[0], { now }).openTime, '0900');
+  const late = row({ stockExchangeType: { ...after.datas[0].stockExchangeType, startTime: '1000' } });
+  assert.equal(normalizeQuote(late, { now }).openTime, '1000'); // e.g. college entrance exam day
+  const bad = row({ stockExchangeType: { ...after.datas[0].stockExchangeType, startTime: '9:00' } });
+  assert.equal(normalizeQuote(bad, { now }).openTime, null);
+});
 console.log(`\nPASS: ${count} deterministic session cases`);

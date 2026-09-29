@@ -73,6 +73,10 @@ const DAILY = { range: '5y', interval: '1d' };
 const DAILY_TTL = 30 * 60 * 1000;
 const dailyCache = {}; // symbol -> { at, price, closes, times, currency, week52High, week52Low }
 
+// 야후 한국 시세가 늦게 오는 분. 실측에서 세 종목 모두 기준 시각이 정확히 20분 전이었다
+// (docs/DEVELOPMENT.md "왜 나눠 쓰는가"). 그래서 분봉은 개장 20분 뒤부터 들어온다.
+const YAHOO_KR_DELAY_MIN = 20;
+
 let state = { watchlist: [], selected: null, timeframe: '1D' };
 const quotes = {}; // symbol -> { price, prevClose, rsi } | { error }
 let dragFrom = null; // 순서 변경 드래그 중인 행 인덱스
@@ -1099,6 +1103,7 @@ async function loadQuote(item, live) {
     market: live && live.market || null,
     source: live && live.source || (live ? 'Naver' : 'Yahoo'),
     tradedAt: live && live.tradedAt || null,
+    openTime: live && live.openTime || null, // 정규장 시작 'HHMM' — 분봉이 언제 들어오는지 알릴 때 쓴다
     fetchedAt: Date.now(),
     // 장후 가격의 검증된 당일 정규장 종가 대비 이동폭. 종료 후에도 유지한다.
     // 0 도 뜻이 있는 값이라(움직이지 않음) || 로 뭉개면 안 된다.
@@ -1178,6 +1183,41 @@ async function fetchChartCached(symbol, tf) {
 
 let lastDrawSig = null; // 내용이 그대로면 다시 그리지 않는다
 
+// 분봉이 들어오기 시작하는 시각(한국 시간 'HH:MM')과 거기까지 남은 분(지났으면 0 이하).
+// 야후 국내 시세는 늦게 오므로 개장 시각 + delayMin 이다. openTime 은 네이버가 주는
+// 'HHMM' — 수능일처럼 늦게 여는 날은 1000 이 온다. 없으면 평소 개장(09:00)으로 본다.
+function intradayEta(nowMs, openTime, delayMin) {
+  const hhmm = /^\d{4}$/.test(openTime || '') ? openTime : '0900';
+  const startMin = Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(2)) + delayMin;
+  const kst = new Date(nowMs + 9 * 3600000); // 보는 사람의 시간대와 상관없이 한국 시간으로 센다
+  const nowOfDay = ((kst.getUTCHours() * 60 + kst.getUTCMinutes()) * 60 + kst.getUTCSeconds()) * 1000
+    + kst.getUTCMilliseconds();
+  const p = (n) => String(n).padStart(2, '0');
+  return {
+    at: `${p(Math.floor(startMin / 60))}:${p(startMin % 60)}`,
+    minutes: Math.ceil((startMin * 60000 - nowOfDay) / 60000),
+  };
+}
+
+// 남은 분을 "약 7분 뒤" · "약 2시간 20분 뒤" 로
+function leftText(minutes) {
+  if (minutes < 60) return `약 ${minutes}분 뒤`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `약 ${h}시간 ${m}분 뒤` : `약 ${h}시간 뒤`;
+}
+
+// 분봉(1D · 1W)이 비어 있을 때의 안내. 고장이 아니라는 것과 언제 들어오는지를 말한다.
+// 국내만 시각을 댄다 — 해외는 야후가 늦지 않아 이 이유로 비지 않는다.
+function intradayWaitText(item, q) {
+  const head = `${item.name} ${state.timeframe}`;
+  if (!isDomestic(item.symbol)) return `${head}: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`;
+  const eta = intradayEta(Date.now(), q && q.openTime, YAHOO_KR_DELAY_MIN);
+  return eta.minutes > 0
+    ? `${head}: 분봉은 ${eta.at}쯤부터 들어옵니다 (${leftText(eta.minutes)} · 1M 이상은 정상)`
+    : `${head}: 분봉이 늦어지고 있습니다 (보통 ${eta.at}쯤 들어옵니다 · 1M 이상은 정상)`;
+}
+
 async function loadChart() {
   const item = state.watchlist.find((i) => i.symbol === state.selected);
   if (!item) { document.getElementById('period').hidden = true; return; }
@@ -1194,10 +1234,10 @@ async function loadChart() {
     clearChart();
     document.getElementById('period').hidden = true;
     // 장 시작 직후엔 Yahoo가 한국 분봉을 아직 안 채워 빈 응답이 온다.
-    // 일봉(1M 이상)은 정상이므로 고장이 아니라는 걸 알려준다.
+    // 일봉(1M 이상)은 정상이므로 고장이 아니라는 걸 알려주고, 언제 들어오는지 말한다.
     const intraday = tf.interval !== '1d';
     err(intraday && r.error === '빈 데이터'
-      ? `${item.name} ${state.timeframe}: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`
+      ? intradayWaitText(item, quotes[item.symbol])
       : `${item.name} 차트: ${r.error}`);
     return;
   }

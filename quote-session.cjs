@@ -154,6 +154,9 @@ function normalizeQuote(data, { now = Date.now(), regularClose = null, nxt = nul
     fromClose: overFromClose(close?.price, selected.price, selected.priceSession),
     market: selected.market,
     source: selected.source, tradedAt: selected.tradedAt,
+    // Regular open as the exchange reports it (HHMM). Late-open days (e.g. the college
+    // entrance exam) say 1000; the empty-intraday hint uses it to tell when bars arrive.
+    openTime: /^\d{4}$/.test(data?.stockExchangeType?.startTime || '') ? data.stockExchangeType.startTime : null,
   };
 }
 

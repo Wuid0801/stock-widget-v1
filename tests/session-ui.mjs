@@ -415,4 +415,25 @@ await test('zoom is remembered per timeframe and cleared for every timeframe whe
   assert.equal(run('zoom'), null, 'another symbol forgets every timeframe');
 });
 
+await test('empty intraday chart says when Yahoo bars start (open + delay, KST) and how long until then', () => {
+  const { c, run } = harness(['intradayEta', 'leftText', 'intradayWaitText']);
+  const kst = (hhmm) => Date.parse(`2026-09-29T${hhmm}+09:00`);
+  assert.deepEqual({ ...c.intradayEta(kst('09:13:00'), '0900', 20) }, { at: '09:20', minutes: 7 });
+  assert.deepEqual({ ...c.intradayEta(kst('09:13:30'), '0900', 20) }, { at: '09:20', minutes: 7 });
+  assert.deepEqual({ ...c.intradayEta(kst('09:13:00'), null, 20) }, { at: '09:20', minutes: 7 }); // no Naver value → 09:00
+  assert.deepEqual({ ...c.intradayEta(kst('09:40:00'), '1000', 20) }, { at: '10:20', minutes: 40 }); // late-open day
+  assert.equal(c.intradayEta(kst('09:25:00'), '0900', 20).minutes <= 0, true);
+
+  assert.equal(c.leftText(7), '약 7분 뒤');
+  assert.equal(c.leftText(60), '약 1시간 뒤');
+  assert.equal(c.leftText(140), '약 2시간 20분 뒤');
+
+  // the harness clock is 18:30 KST — past 09:20, so a domestic empty chart is "running late"
+  run("state.timeframe = '1D';");
+  assert.equal(c.intradayWaitText({ symbol: '005930.KS', name: '삼성전자' }, { openTime: '0900' }),
+    '삼성전자 1D: 분봉이 늦어지고 있습니다 (보통 09:20쯤 들어옵니다 · 1M 이상은 정상)');
+  assert.equal(c.intradayWaitText({ symbol: 'NVDA', name: '엔비디아' }, null),
+    '엔비디아 1D: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)');
+});
+
 console.log(`PASS: ${passed} session UI test groups`);
