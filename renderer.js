@@ -1908,11 +1908,14 @@ function checkAlerts(prevPrices) {
     const hasSession = q.isTrading !== undefined || q.session !== undefined || q.open !== undefined;
     if (isDomestic(item.symbol) && hasSession && tradingState(q) !== true) continue;
 
+    // 해외 종목은 원이 아니다 — $179.50 를 원화 포맷에 넣으면 "180원" 이 된다
+    const cur = curOf(item.symbol);
+    const unit = (v) => (cur === 'KRW' ? `${money(v, cur)}원` : `${money(v, cur)} ${cur}`);
     if (t.up != null && prev < t.up && q.price >= t.up) {
-      api.notify({ title: `${item.name} 상한 도달`, body: `${fmt(q.price)}원 (목표 ${fmt(t.up)}원)` });
+      api.notify({ title: `${item.name} 상한 도달`, body: `${unit(q.price)} (목표 ${unit(t.up)})` });
     }
     if (t.down != null && prev > t.down && q.price <= t.down) {
-      api.notify({ title: `${item.name} 하한 도달`, body: `${fmt(q.price)}원 (목표 ${fmt(t.down)}원)` });
+      api.notify({ title: `${item.name} 하한 도달`, body: `${unit(q.price)} (목표 ${unit(t.down)})` });
     }
   }
 }

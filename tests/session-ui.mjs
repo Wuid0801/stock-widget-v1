@@ -6,6 +6,8 @@ import * as indicators from '../indicators.js';
 
 const source = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
 const prelude = source.slice(0, source.indexOf('// 과열도 5단계'));
+// 가격 포맷(fmt · money · curOf …). 화살표 함수라 realFunction 으로 못 꺼내 구획째 넣는다.
+const formatting = source.slice(source.indexOf('// --- 포맷'), source.indexOf('// 색은 CSS 변수'));
 function realFunction(name) {
   const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
   assert.notEqual(start, -1, `renderer function ${name} exists`);
@@ -279,7 +281,7 @@ await test('daily chart syncs the last bar to the live candle, older bars untouc
 
 await test('alerts use per-symbol trading state; legacy price-only alerts remain compatible', () => {
   const { c, run, notifications } = harness(['checkAlerts']);
-  c.fmt = String;
+  run(formatting);
   run(`state.alerts.targets = {'005930.KS':{up:100},'000660.KS':{up:100}};
     quotes['000660.KS'] = {price:101,session:'after',isTrading:true};`);
   const prev = {'005930.KS':99,'000660.KS':99};
@@ -305,6 +307,21 @@ await test('alerts use per-symbol trading state; legacy price-only alerts remain
     state.alerts.targets = {AAPL:{up:100}}; quotes.AAPL = {price:101,session:'unknown',isTrading:null};`);
   c.checkAlerts({AAPL:99});
   assert.equal(notifications.length, 1, 'domestic restrictions do not block foreign alerts');
+});
+
+await test('alert text shows the stock currency, not always 원', () => {
+  const { c, run, notifications } = harness(['checkAlerts']);
+  run(formatting);
+  run(`state.watchlist = [{symbol:'005930.KS',name:'삼성전자'},{symbol:'AAPL',name:'Apple'}];
+    state.alerts.targets = {'005930.KS':{up:300000}, AAPL:{down:180}};
+    quotes['005930.KS'] = {price:301000,currency:'KRW'};
+    quotes.AAPL = {price:179.5,currency:'USD'};`);
+  c.checkAlerts({'005930.KS':299000, AAPL:182.25});
+  assert.equal(notifications.length, 2);
+  assert.deepEqual(notifications.map((n) => n.body), [
+    '301,000원 (목표 300,000원)',
+    '179.50 USD (목표 180.00 USD)',
+  ]);
 });
 
 await test('poll timeout always rearms, including first refresh failure', async () => {
