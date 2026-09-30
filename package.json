@@ -34,7 +34,8 @@
       "!tests/**",
       "!docs/**",
       "!*.md",
-      "!**/*.map"
+      "!**/*.map",
+      "!.superpowers/**"
     ],
     "win": {
       "target": "nsis",
