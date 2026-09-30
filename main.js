@@ -486,12 +486,28 @@ function registerToggle() {
   if (!ok) console.warn(`전역 단축키 ${TOGGLE_KEY} 등록 실패 (다른 프로그램이 사용 중일 수 있음)`);
 }
 
-app.whenReady().then(() => {
-  // Windows에서 알림이 뜨려면 AppUserModelID가 필요하다
-  if (process.platform === 'win32') app.setAppUserModelId('com.wuid0801.kr-stock-widget');
-  createWindow();
-  registerToggle();
-});
+// 한 번만 실행한다. 위젯이 둘 뜨면 각자 관심종목 전체를 저장해 서로 덮어쓰고(한쪽에서
+// 추가한 종목이 다른 쪽 저장에 사라진다), 네이버 요청도 두 배가 된다. 두 번째 실행은 창을
+// 만들지 않고 끝내고, 이미 떠 있는 창을 앞으로 가져온다 — 숨겼거나 최소화해 뒀어도.
+// 잠금은 userData 경로마다 걸린다. 테스트는 --user-data-dir 로 따로 잡혀 켜 둔 위젯과 겹치지 않는다.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.setAlwaysOnTop(true, 'screen-saver'); // 숨겼다 켜면 최상단 레벨이 풀리는 경우가 있다
+  });
+
+  app.whenReady().then(() => {
+    // Windows에서 알림이 뜨려면 AppUserModelID가 필요하다
+    if (process.platform === 'win32') app.setAppUserModelId('com.wuid0801.kr-stock-widget');
+    createWindow();
+    registerToggle();
+  });
+}
 
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());

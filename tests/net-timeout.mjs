@@ -16,7 +16,7 @@ const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : '
 // electron 은 필요한 만큼만 흉내 낸다. 창은 만들지 않는다(whenReady 가 끝나지 않는다).
 const handlers = {};
 const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {} },
+  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
   BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
   ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
 };

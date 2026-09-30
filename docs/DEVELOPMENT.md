@@ -108,9 +108,9 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 열 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `zoom` · `trend` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout`.
+푸시와 PR 마다 **앱을 띄우지 않는 열한 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `zoom` · `trend` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance`.
 
-이 열은 Node 내장 모듈과 앱 파일(`indicators.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 3초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다.
+이 열한 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 3초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 
@@ -429,6 +429,8 @@ Yahoo의 1D 봉은 20분 전에서 끊기므로, 장중에는 현재가를 끝�
 > 작업표시줄에 아이콘이 없는 위젯이라(`skipTaskbar`) **✕ 버튼으로 종료**해야 합니다.
 > 최소화하면 그동안만 작업표시줄에 나타나고, 되살리면 다시 숨겨집니다.
 > 창을 놓쳤을 때는 위 단축키로 되살릴 수 있습니다.
+
+위젯은 **한 번만 실행**됩니다(`requestSingleInstanceLock`). 둘이 뜨면 각자 관심종목 전체를 저장해 서로 덮어쓰고 — 한쪽에서 추가한 종목이 다른 쪽 저장에 사라집니다 — 네이버 요청도 두 배가 되기 때문입니다. 켜져 있을 때 다시 실행하면 새 창 없이 끝나고, 떠 있는 창이 숨었거나 최소화돼 있어도 앞으로 나옵니다. 잠금은 userData 경로마다 걸리므로 `--user-data-dir` 로 뜨는 테스트는 켜 둔 위젯과 겹치지 않습니다. `tests/single-instance.mjs` 가 앱을 띄우지 않고 이 연결을 검사합니다.
 
 ### 이동평균선
 
