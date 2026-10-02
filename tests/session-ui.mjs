@@ -634,4 +634,13 @@ await test('saved selection survives restart when it is an index, even with an e
   assert.equal(c.validSelection(undefined, []), null);
 });
 
+await test('indexLive rejects a non-positive value or previous close, like the stock adapter', () => {
+  const { run } = harness();
+  const base = `{ code: 'KOSPI', name: '코스피', change: 5, pct: 0.1, open: 100, high: 101, low: 99, isOpen: true }`;
+  // 빈 closePrice 는 main.js num('') 에서 0 이 된다 — 0 이 실시간 값으로 들어가면 1D 끝점이 0 이라 차트가 눌린다
+  assert.equal(run(`indexLive({ ...${base}, value: 0 })`), undefined);
+  assert.equal(run(`indexLive({ ...${base}, value: 5 })`), undefined, 'previous close would be 0');
+  assert.equal(run(`indexLive({ ...${base}, value: 105 }).prevClose`), 100);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);

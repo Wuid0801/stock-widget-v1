@@ -99,9 +99,10 @@ function selectedItem() {
 // 네이버 지수 항목 → 종목 실시간 시세(quote-session.cjs normalizeQuote)와 같은 모양.
 // loadQuote 에 그대로 넣으면 RSI · 52주 · 이동평균 · 1D 끝점 · 오늘 봉 맞추기가 종목과 똑같이
 // 동작한다. 지수에는 프리 · 애프터마켓이 없어 열려 있으면 정규장, 아니면 장마감이다.
-// 전일 대비가 없으면 실시간 값이 없는 것으로 친다 — loadQuote 가 야후 값(20분지연)을 쓴다.
+// 전일 대비가 없거나, 값 · 전일 종가가 0 이하면(빈 응답이 0 으로 읽힌 것) 실시간 값이 없는
+// 것으로 친다 — loadQuote 가 야후 값(20분지연)을 쓴다. 종목 어댑터(candidate)와 같은 검사다.
 function indexLive(n) {
-  if (!n || !Number.isFinite(n.value) || !Number.isFinite(n.change)) return undefined;
+  if (!n || !Number.isFinite(n.change) || !(n.value > 0) || !(n.value - n.change > 0)) return undefined;
   const session = n.isOpen ? 'regular' : 'closed';
   return {
     price: n.value,
