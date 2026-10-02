@@ -77,6 +77,46 @@ const dailyCache = {}; // symbol -> { at, price, closes, times, currency, week52
 // (docs/DEVELOPMENT.md "왜 나눠 쓰는가"). 그래서 분봉은 개장 20분 뒤부터 들어온다.
 const YAHOO_KR_DELAY_MIN = 20;
 
+// 상단 지수 줄의 코스피 · 코스닥. 누르면 관심종목처럼 "선택"되어 헤더 · 차트가 지수로 바뀐다.
+// 기호는 야후 것이다(차트 · 일봉을 야후에서 받는다). code 는 네이버 지수 응답의 itemCode.
+// loadChart 가 selectedItem 을 부르므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
+// 마커 앞)에 있어야 한다.
+const INDICES = [
+  { symbol: '^KS11', code: 'KOSPI', name: '코스피' },
+  { symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥' },
+];
+
+function isIndex(symbol) {
+  return INDICES.some((i) => i.symbol === symbol);
+}
+
+// 지금 보고 있는 대상 — 관심종목이면 그 항목, 지수면 지수 항목, 둘 다 아니면 null.
+function selectedItem() {
+  return state.watchlist.find((i) => i.symbol === state.selected)
+    || INDICES.find((i) => i.symbol === state.selected) || null;
+}
+
+// 네이버 지수 항목 → 종목 실시간 시세(quote-session.cjs normalizeQuote)와 같은 모양.
+// loadQuote 에 그대로 넣으면 RSI · 52주 · 이동평균 · 1D 끝점 · 오늘 봉 맞추기가 종목과 똑같이
+// 동작한다. 지수에는 프리 · 애프터마켓이 없어 열려 있으면 정규장, 아니면 장마감이다.
+// 전일 대비가 없으면 실시간 값이 없는 것으로 친다 — loadQuote 가 야후 값(20분지연)을 쓴다.
+function indexLive(n) {
+  if (!n || !Number.isFinite(n.value) || !Number.isFinite(n.change)) return undefined;
+  const session = n.isOpen ? 'regular' : 'closed';
+  return {
+    price: n.value,
+    prevClose: n.value - n.change,
+    change: n.change,
+    candle: n.open > 0 ? { open: n.open, high: n.high, low: n.low } : null,
+    open: !!n.isOpen,
+    session,
+    priceSession: session,
+    isTrading: !!n.isOpen,
+    source: 'Naver',
+    tradedAt: n.tradedAt || null,
+  };
+}
+
 let state = { watchlist: [], selected: null, timeframe: '1D' };
 const quotes = {}; // symbol -> { price, prevClose, rsi } | { error }
 let dragFrom = null; // 순서 변경 드래그 중인 행 인덱스
@@ -113,7 +153,9 @@ const fmt = (v) => v == null ? '—'
 const signed = (v) => (v > 0 ? '+' : '') + fmt(v);
 
 // 해외 종목은 통화가 다르다. 원화는 정수, 그 외(USD 등)는 소수 2자리로 보여준다.
-const curOf = (symbol) => (quotes[symbol] && quotes[symbol].currency) || 'KRW';
+// 지수는 통화가 아니라 포인트다. money 는 원화가 아니면 소수 둘째 자리로 쓰므로 'pt' 를 주면
+// 헤더 · 오늘 캔들 안내 · 52주 · 차트 축 · 툴팁이 상단 지수 줄처럼 7,003.74 로 나온다.
+const curOf = (symbol) => (isIndex(symbol) ? 'pt' : (quotes[symbol] && quotes[symbol].currency) || 'KRW');
 const money = (v, cur) => {
   if (v == null) return '—';
   if (!cur || cur === 'KRW') return fmt(v);

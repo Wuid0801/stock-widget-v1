@@ -453,4 +453,52 @@ await test('empty intraday chart says when Yahoo bars start (open + delay, KST) 
     '엔비디아 1D: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)');
 });
 
+await test('indices: selectedItem finds a watchlist row or an index; indexLive matches the stock live shape', () => {
+  const { run } = harness();
+  assert.equal(run('selectedItem().name'), '삼성전자');
+  run("state.selected = '^KS11';");
+  assert.equal(run('selectedItem().name'), '코스피');
+  assert.equal(run("isIndex('^KQ11')"), true);
+  assert.equal(run("isIndex('005930.KS')"), false);
+  run("state.selected = 'GONE';");
+  assert.equal(run('selectedItem()'), null);
+
+  const kosdaq = `{ code: 'KOSDAQ', name: '코스닥', value: 893.29, change: -1, pct: -0.11,
+    open: 893.22, high: 903.88, low: 885.65, isOpen: false, tradedAt: '2026-10-02T15:37:00+09:00' }`;
+  const closed = run(`indexLive(${kosdaq})`);
+  assert.equal(closed.price, 893.29);
+  assert.equal(Math.round(closed.prevClose * 100) / 100, 894.29);
+  assert.equal(closed.change, -1);
+  assert.equal(JSON.stringify(closed.candle), '{"open":893.22,"high":903.88,"low":885.65}');
+  assert.equal(closed.session, 'closed');
+  assert.equal(closed.priceSession, 'closed');
+  assert.equal(closed.isTrading, false);
+  assert.equal(closed.open, false);
+  assert.equal(closed.source, 'Naver');
+  assert.equal(closed.tradedAt, '2026-10-02T15:37:00+09:00');
+
+  const open = run(`indexLive({ ...${kosdaq}, isOpen: true })`);
+  assert.equal(open.session, 'regular');
+  assert.equal(open.isTrading, true);
+  assert.equal(open.open, true);
+
+  // 시가가 없으면 오늘 캔들을 그리지 않는다
+  assert.equal(run(`indexLive({ ...${kosdaq}, open: null }).candle`), null);
+  // 전일 대비가 없으면 실시간 값이 없는 것으로 — 야후 값(20분지연)으로 넘어간다
+  assert.equal(run(`indexLive({ ...${kosdaq}, change: null })`), undefined);
+  assert.equal(run('indexLive(undefined)'), undefined);
+});
+
+await test('index numbers keep two decimals like the index line; stocks keep their format', () => {
+  const { run } = harness();
+  run(formatting);
+  assert.equal(run("curOf('^KS11')"), 'pt');
+  assert.equal(run("money(7003.74, curOf('^KS11'))"), '7,003.74');
+  assert.equal(run("signedMoney(-1, curOf('^KQ11'))"), '-1.00');
+  run("quotes['005930.KS'] = { currency: 'KRW' };");
+  assert.equal(run("money(271500, curOf('005930.KS'))"), '271,500');
+  run("quotes.AAPL = { currency: 'USD' };");
+  assert.equal(run("curOf('AAPL')"), 'USD');
+});
+
 console.log(`PASS: ${passed} session UI test groups`);
