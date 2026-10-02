@@ -108,9 +108,9 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 열한 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `zoom` · `trend` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance`.
+푸시와 PR 마다 **앱을 띄우지 않는 열두 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `zoom` · `trend` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main`.
 
-이 열한 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 3초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다.
+이 열두 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 3초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 

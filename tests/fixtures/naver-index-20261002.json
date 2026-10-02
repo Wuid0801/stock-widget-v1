@@ -1,0 +1,42 @@
+{
+  "datas": [
+    {
+      "itemCode": "KOSPI",
+      "stockName": "코스피",
+      "closePrice": "7,003.74",
+      "closePriceRaw": "7003.74",
+      "compareToPreviousClosePrice": "32.39",
+      "compareToPreviousClosePriceRaw": "32.39",
+      "compareToPreviousPrice": { "code": "2", "text": "상승", "name": "RISING" },
+      "fluctuationsRatio": "0.46",
+      "fluctuationsRatioRaw": "0.46",
+      "openPrice": "6,938.27",
+      "openPriceRaw": "6938.27",
+      "highPrice": "7,011.04",
+      "highPriceRaw": "7011.04",
+      "lowPrice": "6,927.88",
+      "lowPriceRaw": "6927.88",
+      "marketStatus": "CLOSE",
+      "localTradedAt": "2026-10-02T15:37:00+09:00"
+    },
+    {
+      "itemCode": "KOSDAQ",
+      "stockName": "코스닥",
+      "closePrice": "893.29",
+      "closePriceRaw": "893.29",
+      "compareToPreviousClosePrice": "-1.00",
+      "compareToPreviousClosePriceRaw": "-1.00",
+      "compareToPreviousPrice": { "code": "5", "text": "하락", "name": "FALLING" },
+      "fluctuationsRatio": "-0.11",
+      "fluctuationsRatioRaw": "-0.11",
+      "openPrice": "893.22",
+      "openPriceRaw": "893.22",
+      "highPrice": "903.88",
+      "highPriceRaw": "903.88",
+      "lowPrice": "885.65",
+      "lowPriceRaw": "885.65",
+      "marketStatus": "CLOSE",
+      "localTradedAt": "2026-10-02T15:37:00+09:00"
+    }
+  ]
+}

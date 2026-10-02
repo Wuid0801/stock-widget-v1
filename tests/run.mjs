@@ -40,6 +40,7 @@ const ORDER = [
   'state-contract.mjs',
   'net-timeout.mjs',
   'single-instance.mjs',
+  'index-main.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',

@@ -314,6 +314,12 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
 ipcMain.handle('quote:indices', async () => {
   const url = 'https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ';
   const num = (v) => Number(String(v ?? '').replace(/,/g, ''));
+  // 지수 헤더용 값. 빠진 값은 0 이 아니라 null — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
+  const opt = (v) => {
+    const s = String(v ?? '').replace(/,/g, '').trim();
+    const n = s ? Number(s) : NaN;
+    return Number.isFinite(n) ? n : null;
+  };
   try {
     const res = await netFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
@@ -322,9 +328,17 @@ ipcMain.handle('quote:indices', async () => {
 
     const json = await res.json();
     const items = (json.datas || []).map((d) => ({
+      code: d.itemCode,
       name: d.stockName,
       value: num(d.closePriceRaw ?? d.closePrice),
+      // 지수도 종목처럼 내리면 음수다(2026-10-02 코스닥 -1.00 실측)
+      change: opt(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice),
       pct: num(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
+      open: opt(d.openPriceRaw ?? d.openPrice),
+      high: opt(d.highPriceRaw ?? d.highPrice),
+      low: opt(d.lowPriceRaw ?? d.lowPrice),
+      isOpen: d.marketStatus === 'OPEN',
+      tradedAt: d.localTradedAt || null,
     })).filter((i) => Number.isFinite(i.value) && Number.isFinite(i.pct));
 
     return items.length ? { ok: true, items } : { ok: false, error: '빈 응답' };
@@ -405,7 +419,8 @@ ipcMain.handle('yf:search', async (_e, query) => {
 // (호스트는 고정이지만, 쿼리에 임의 문자열이 그대로 들어가지 않도록)
 const RANGES = new Set(['1d', '5d', '1mo', '3mo', '1y', '5y']);
 const INTERVALS = new Set(['5m', '30m', '1d']);
-const SYMBOL_RE = /^[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
+// 지수는 야후 기호가 ^ 로 시작한다(^KS11 코스피 · ^KQ11 코스닥). 맨 앞 한 번만 받는다.
+const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
 
 ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
   if (!SYMBOL_RE.test(String(symbol ?? '')) || !RANGES.has(range) || !INTERVALS.has(interval)) {
