@@ -215,6 +215,11 @@
   .indices .ixn { color: var(--mute); }
   .indices .ixv { color: var(--text-2); font-variant-numeric: tabular-nums; }
   .indices .ixp { font-variant-numeric: tabular-nums; }
+  /* 누르면 그 지수 차트. 보고 있는 지수는 목록 선택 줄(.row.on)과 같은 색.
+     안쪽 여백만큼 바깥 여백을 빼서 줄 높이와 간격은 그대로 둔다. */
+  .indices .ix[data-symbol] { cursor: pointer; margin: -2px -4px; padding: 2px 4px; border-radius: 4px; }
+  .indices .ix[data-symbol]:hover { background: var(--hover); }
+  .indices .ix.on { background: var(--sel); box-shadow: inset 0 -1px 0 var(--accent); }
 
   /* 보유 종목 전체 합계. 보유가 하나도 없으면 줄 자체가 사라진다. */
   .folio {

@@ -501,4 +501,109 @@ await test('index numbers keep two decimals like the index line; stocks keep the
   assert.equal(run("curOf('AAPL')"), 'USD');
 });
 
+await test('index line marks the selected index and only known indices are clickable', () => {
+  const { c, run, elements } = harness(['renderIndices']);
+  run(formatting);
+  run(source.match(/^let indexItems = .*$/m)[0]);
+  Object.assign(c, { cssVar: () => '#888888', esc: String });
+  run(`state.selected = '^KQ11'; indexItems = [
+    { code: 'KOSPI', name: '코스피', value: 7003.74, pct: 0.46 },
+    { code: 'KOSDAQ', name: '코스닥', value: 893.29, pct: -0.11 },
+    { code: 'KPI200', name: '코스피200', value: 950, pct: 0 }];`);
+  c.renderIndices();
+  const box = elements.get('indices');
+  assert.equal(box.hidden, false);
+  assert.match(box.innerHTML, /<span class="ix" data-symbol="\^KS11" title="코스피 차트 보기">/);
+  assert.match(box.innerHTML, /<span class="ix on" data-symbol="\^KQ11" title="코스닥 차트 보기">/);
+  assert.match(box.innerHTML, /<span class="ix"><span class="ixn">코스피200/, 'unknown index is shown but not clickable');
+  assert.match(box.innerHTML, /7,003\.74/);
+  run('indexItems = [];');
+  c.renderIndices();
+  assert.equal(box.hidden, true, 'no indices → the line hides (Naver failure)');
+});
+
+await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {
+  const { c, run } = harness(['select', 'clearZooms']);
+  let marks = 0;
+  let charts = 0;
+  Object.assign(c, {
+    save() {}, renderList() {}, renderDetail() {},
+    renderIndices: () => { marks++; }, loadChart: async () => { charts++; },
+  });
+  run("zoom = { start: 1, end: 2 }; zoomByTf['1Y'] = { start: 3, end: 4 };");
+  await c.select('^KS11');
+  assert.equal(run('state.selected'), '^KS11');
+  assert.equal(run('zoom'), null);
+  assert.equal(run("zoomByTf['1Y']"), undefined);
+  assert.equal(marks, 1);
+  assert.equal(charts, 1);
+});
+
+await test('refresh builds index quotes from the Naver index line; a missing index falls back to Yahoo', async () => {
+  const { c, run } = harness(['refreshAll']);
+  const loaded = [];
+  Object.assign(c, {
+    loadIndices: async () => [{ code: 'KOSPI', name: '코스피', value: 7003.74, change: 32.39, pct: 0.46,
+      open: 6938.27, high: 7011.04, low: 6927.88, isOpen: true, tradedAt: '2026-10-02T15:20:00+09:00' }],
+    fetchLive: async () => ({}),
+    loadQuote: async (item, live) => { loaded.push([item.symbol, live]); },
+    renderList() {}, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderFolio: async () => {}, loadChart: async () => {}, renderUpdated() {},
+  });
+  await c.refreshAll();
+  const kospi = loaded.find(([s]) => s === '^KS11');
+  assert.equal(kospi[1].price, 7003.74);
+  assert.equal(kospi[1].session, 'regular');
+  const kosdaq = loaded.find(([s]) => s === '^KQ11');
+  assert.ok(kosdaq, 'both indices are loaded every refresh');
+  assert.equal(kosdaq[1], undefined, 'no Naver value → loadQuote without live (Yahoo, 20분지연)');
+  assert.equal(run('busy'), false);
+});
+
+await test('index detail: points with two decimals, no currency tag, no sector lookup', () => {
+  const { c, run, elements } = harness(['renderDetail']);
+  run(formatting);
+  let lookups = 0;
+  Object.assign(c, {
+    sectors: new Map(), loadSector: () => { lookups++; return Promise.resolve(); },
+    renderHolding: () => {}, renderW52: () => {}, candleTag: () => '',
+    levelOf: () => ({ label: '—', color: '#000000' }), cssVar: () => '#000000',
+  });
+  run(`state.selected = '^KS11'; quotes['^KS11'] = { price: 7003.74, change: 32.39, pct: 0.46,
+    live: true, session: 'closed', source: 'Naver', fetchedAt: Date.now() };`);
+  c.renderDetail();
+  assert.equal(elements.get('dname').textContent, '코스피');
+  assert.equal(elements.get('dprice').textContent, '7,003.74');
+  assert.match(elements.get('dchg').innerHTML, /\+32\.39/);
+  assert.equal(lookups, 0, 'indices have no sector');
+  run("state.selected = '005930.KS'; quotes['005930.KS'] = { price: 271500, currency: 'KRW' };");
+  c.renderDetail();
+  assert.equal(elements.get('dname').textContent, '삼성전자');
+  assert.equal(elements.get('dprice').textContent, '271,500');
+  assert.equal(lookups, 1, 'stocks still look up their sector');
+});
+
+await test('loadChart draws the selected index from its Yahoo symbol in points', async () => {
+  const { c, run } = harness(['loadChart']);
+  run(formatting);
+  const asked = [];
+  const draws = [];
+  Object.assign(c, {
+    fetchChartCached: async (symbol) => {
+      asked.push(symbol);
+      return { ok: true, closes: [6900, 7000], times: [1, 2], volumes: [1, 2], highs: [6950, 7010], lows: [6890, 6990] };
+    },
+    err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {},
+    renderCrossBadge: () => {}, renderTrendBadges: () => {}, TREND_TF: new Set(),
+    drawChart: (data) => draws.push(data),
+  });
+  run(`let lastDrawSig = null; state.selected = '^KS11';
+    quotes['^KS11'] = { price: 7003.74, prevClose: 6971.35, change: 32.39, live: true, open: false,
+      session: 'closed', priceSession: 'closed' };`);
+  await c.loadChart();
+  assert.deepEqual(asked, ['^KS11']);
+  assert.equal(draws.at(-1).cur, 'pt');
+  assert.equal(draws.at(-1).hLines.find((l) => l.label === '전일').value, 6971.35);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);

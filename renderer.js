@@ -292,15 +292,25 @@ function moveSymbol(from, to) {
 
 // --- 코스피/코스닥 지수 -----------------------------------------------------------
 // 개별 종목이 빠질 때 시장 전체 흐름인지 바로 알 수 있게 한 줄로 보여준다.
-async function loadIndices() {
-  const box = document.getElementById('indices');
-  const r = await api.indices();
-  if (!r.ok) { box.hidden = true; return; } // 실패하면 조용히 숨긴다(핵심 기능이 아님)
+// 누르면 그 지수를 관심종목처럼 고른다(select) — 헤더 · 차트가 지수로 바뀐다.
+let indexItems = []; // 마지막으로 받은 네이버 지수 항목 — 선택만 바뀔 때 강조를 다시 그리는 데 쓴다
 
-  box.hidden = false;
-  box.innerHTML = r.items.map((i) => {
+async function loadIndices() {
+  const r = await api.indices();
+  indexItems = r.ok ? r.items : []; // 실패하면 조용히 숨긴다(핵심 기능이 아님)
+  renderIndices();
+  return indexItems;
+}
+
+function renderIndices() {
+  const box = document.getElementById('indices');
+  box.hidden = !indexItems.length;
+  box.innerHTML = indexItems.map((i) => {
+    const ix = INDICES.find((x) => x.code === i.code); // 모르는 지수는 보이기만 하고 누를 수 없다
     const color = i.pct === 0 ? cssVar('--flat') : (i.pct > 0 ? UP : DOWN);
-    return `<span class="ix"><span class="ixn">${esc(i.name)}</span>`
+    const cls = ix && ix.symbol === state.selected ? 'ix on' : 'ix';
+    const attrs = ix ? ` data-symbol="${ix.symbol}" title="${ix.name} 차트 보기"` : '';
+    return `<span class="${cls}"${attrs}><span class="ixn">${esc(i.name)}</span>`
       + `<span class="ixv">${i.value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
       + `<span class="ixp" style="color:${color}">${fmtPct(i.pct)}</span></span>`;
   }).join('');
@@ -441,7 +451,7 @@ function renderUpdated() {
 
 function renderDetail() {
   renderUpdated();
-  const item = state.watchlist.find((i) => i.symbol === state.selected);
+  const item = selectedItem(); // 관심종목 또는 지수
   const q = item && quotes[item.symbol];
 
   const cur = item ? curOf(item.symbol) : 'KRW';
@@ -449,14 +459,15 @@ function renderDetail() {
   document.getElementById('dcandle').innerHTML = candleTag(q, cur);
   // 원화가 아니면 어느 통화인지 이름 옆에 표시
   document.getElementById('dname').textContent = item
-    ? (cur === 'KRW' ? item.name : `${item.name} (${cur})`) : '—';
+    ? (cur === 'KRW' || cur === 'pt' ? item.name : `${item.name} (${cur})`) : '—';
 
   // 업종은 네트워크를 타므로 종목이 바뀌면 일단 비우고 채워 넣는다.
   // 이전 종목의 업종이 새 종목 이름 옆에 잠깐 남으면 잘못된 정보가 된다.
   const secEl = document.getElementById('dsector');
   const cached = item && sectors.get(item.symbol);
   secEl.textContent = cached || '';
-  if (item && !sectors.has(item.symbol)) loadSector(item).catch(console.error);
+  // 지수는 업종이 없다
+  if (item && !isIndex(item.symbol) && !sectors.has(item.symbol)) loadSector(item).catch(console.error);
 
   const chgEl = document.getElementById('dchg');
   const badge = document.getElementById('badge');
@@ -1261,7 +1272,7 @@ function intradayWaitText(item, q) {
 }
 
 async function loadChart() {
-  const item = state.watchlist.find((i) => i.symbol === state.selected);
+  const item = selectedItem(); // 관심종목 또는 지수
   if (!item) { document.getElementById('period').hidden = true; return; }
 
   // 종목/타임프레임을 빠르게 바꾸면 요청이 겹친다. 응답이 뒤늦게 도착한
@@ -1413,7 +1424,7 @@ async function refreshAll() {
   if (busy) return;
   busy = true;
   try {
-    await loadIndices();
+    const indexNow = await loadIndices();
 
     // 목표가 "통과" 판정을 위해 갱신 전 가격을 기억해 둔다
     const prevPrices = {};
@@ -1425,6 +1436,9 @@ async function refreshAll() {
       await loadQuote(item, liveMap[item.symbol.split('.')[0]]);
       renderList();
     }
+    // 지수도 종목과 같은 시세로 만든다 — 누르면 바로 뜨게 둘 다. 네이버 지수를 못 받았으면
+    // 실시간 없이 들어가 야후 값(20분지연)이 된다(종목 폴백과 같다).
+    for (const ix of INDICES) await loadQuote(ix, indexLive(indexNow.find((n) => n.code === ix.code)));
     checkAlerts(prevPrices);
     err(quoteErrText());
     renderDetail();
@@ -1457,6 +1471,7 @@ async function select(symbol) {
   state.selected = symbol;
   save();
   renderList();
+  renderIndices(); // 지수를 골랐거나 지수에서 종목으로 왔으면 강조가 옮겨 간다
   renderDetail();
   await loadChart();
 }
@@ -2133,6 +2148,11 @@ async function refreshNow() {
   document.getElementById('close').onclick = () => api.closeWindow();
   document.getElementById('refresh').onclick = refreshNow;
   document.getElementById('undoBtn').onclick = () => undoRemove();
+  // 지수 줄은 30초마다 다시 그려지므로 항목이 아니라 줄에 한 번만 붙인다
+  document.getElementById('indices').onclick = (e) => {
+    const el = e.target.closest('.ix[data-symbol]');
+    if (el) select(el.dataset.symbol);
+  };
 
   document.getElementById('add').onclick = () => (searchEl.hidden ? openSearch() : closeSearch());
   document.getElementById('qclose').onclick = closeSearch;
