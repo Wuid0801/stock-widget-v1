@@ -451,6 +451,9 @@ await test('empty intraday chart says when Yahoo bars start (open + delay, KST) 
     '삼성전자 1D: 분봉이 늦어지고 있습니다 (보통 09:20쯤 들어옵니다 · 1M 이상은 정상)');
   assert.equal(c.intradayWaitText({ symbol: 'NVDA', name: '엔비디아' }, null),
     '엔비디아 1D: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)');
+  // 야후 지수 분봉도 국내 종목처럼 20분 늦다(2026-10-02 실측) — 지수 시세에는 openTime 이 없어 09:00 기준
+  assert.equal(c.intradayWaitText({ symbol: '^KS11', name: '코스피' }, {}),
+    '코스피 1D: 분봉이 늦어지고 있습니다 (보통 09:20쯤 들어옵니다 · 1M 이상은 정상)');
 });
 
 await test('indices: selectedItem finds a watchlist row or an index; indexLive matches the stock live shape', () => {
@@ -604,6 +607,31 @@ await test('loadChart draws the selected index from its Yahoo symbol in points',
   assert.deepEqual(asked, ['^KS11']);
   assert.equal(draws.at(-1).cur, 'pt');
   assert.equal(draws.at(-1).hLines.find((l) => l.label === '전일').value, 6971.35);
+});
+
+await test('arrow keys from an index go to the first (↓) or last (↑) watchlist row', () => {
+  const { c, run } = harness(['moveSelection']);
+  const picked = [];
+  c.select = (s) => { picked.push(s); return Promise.resolve(); };
+  run('document.querySelector = () => null;');
+  run("state.selected = '^KS11';");
+  c.moveSelection(1);
+  c.moveSelection(-1);
+  run("state.selected = '005930.KS';"); // 목록 안에서는 지금처럼 한 칸씩, 끝에서 돈다
+  c.moveSelection(1);
+  c.moveSelection(-1);
+  assert.deepEqual(picked, ['005930.KS', '000660.KS', '000660.KS', '000660.KS']);
+});
+
+await test('saved selection survives restart when it is an index, even with an empty watchlist', () => {
+  const { c } = harness(['validSelection']);
+  const wl = [{ symbol: '005930.KS' }, { symbol: '000660.KS' }];
+  assert.equal(c.validSelection('^KQ11', wl), '^KQ11');
+  assert.equal(c.validSelection('^KQ11', []), '^KQ11');
+  assert.equal(c.validSelection('000660.KS', wl), '000660.KS');
+  assert.equal(c.validSelection('GONE', wl), '005930.KS');
+  assert.equal(c.validSelection('GONE', []), null);
+  assert.equal(c.validSelection(undefined, []), null);
 });
 
 console.log(`PASS: ${passed} session UI test groups`);

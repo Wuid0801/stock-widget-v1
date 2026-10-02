@@ -1264,7 +1264,8 @@ function leftText(minutes) {
 // 국내만 시각을 댄다 — 해외는 야후가 늦지 않아 이 이유로 비지 않는다.
 function intradayWaitText(item, q) {
   const head = `${item.name} ${state.timeframe}`;
-  if (!isDomestic(item.symbol)) return `${head}: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`;
+  // 지수도 야후 분봉이 국내 종목처럼 20분 늦다. isDomestic 은 그대로 둔다 — 폴링 · 알림이 쓴다.
+  if (!isDomestic(item.symbol) && !isIndex(item.symbol)) return `${head}: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`;
   const eta = intradayEta(Date.now(), q && q.openTime, YAHOO_KR_DELAY_MIN);
   return eta.minutes > 0
     ? `${head}: 분봉은 ${eta.at}쯤부터 들어옵니다 (${leftText(eta.minutes)} · 1M 이상은 정상)`
@@ -1466,6 +1467,13 @@ const save = () => api.setState({
   chartMode: state.chartMode,
 });
 
+// 저장된 선택이 관심종목도 지수도 아니면 첫 관심종목. 관심종목이 비어 있으면 null —
+// undefined 를 그대로 저장하면 electron-store 가 거부한다.
+function validSelection(selected, watchlist) {
+  if (watchlist.some((i) => i.symbol === selected) || isIndex(selected)) return selected;
+  return (watchlist[0] && watchlist[0].symbol) || null;
+}
+
 async function select(symbol) {
   if (symbol !== state.selected) clearZooms(); // 다른 종목에 같은 날짜 구간은 뜻이 없다
   state.selected = symbol;
@@ -1590,7 +1598,8 @@ function moveSelection(step) {
   if (!list.length) return;
 
   const cur = list.findIndex((i) => i.symbol === state.selected);
-  const next = cur < 0 ? list[0] : list[(cur + step + list.length) % list.length];
+  // 지수를 보고 있으면(목록에 없음) ↓ 는 첫 줄, ↑ 는 마지막 줄
+  const next = cur < 0 ? list[step > 0 ? 0 : list.length - 1] : list[(cur + step + list.length) % list.length];
   select(next.symbol).then(() => {
     const row = document.querySelector('#list .row.on');
     if (row) row.scrollIntoView({ block: 'nearest' });
@@ -2196,10 +2205,7 @@ async function refreshNow() {
   applyTheme(state.theme);
   applyOpacity(state.opacity);
   renderMaChips();
-  if (!state.watchlist.some((i) => i.symbol === state.selected)) {
-    // 관심종목이 비어 있으면 undefined 가 되는데, 그대로 저장하면 electron-store 가 거부한다
-    state.selected = (state.watchlist[0] && state.watchlist[0].symbol) || null;
-  }
+  state.selected = validSelection(state.selected, state.watchlist); // 지수를 보던 중이면 그대로
 
   document.getElementById('chartMode').onclick = async () => {
     state.chartMode = state.chartMode === 'candle' ? 'line' : 'candle';
