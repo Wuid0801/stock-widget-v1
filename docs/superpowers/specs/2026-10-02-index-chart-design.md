@@ -46,10 +46,12 @@
 
 **흐름**
 1. `main.js` `quote:indices` 가 항목마다 더 담는다: `code`(`KOSPI` · `KOSDAQ`), `change`, `open` · `high` · `low`, `isOpen`(`marketStatus === 'OPEN'`), `tradedAt`(`localTradedAt`). 새 요청은 없다.
-   - 전일 대비는 종목처럼 부호 있는 값으로 본다(종목 픽스처에서 하락은 음수). 지수 하락일 응답은 아직 못 봤으므로, 등락률과 부호가 어긋나면 등락률 부호를 따른다.
+   - 전일 대비는 종목처럼 부호 있는 값이다 — 2026-10-02 15:37 응답에서 하락한 코스닥이 `-1.00` 이었다.
+   - 빠진 값(전일 대비 · 시 · 고 · 저)은 0 이 아니라 `null` 로 둔다. 0 이면 시가 0 캔들, 전일 대비 0 으로 잘못 그린다.
 2. `renderer.js` 에 지수 목록을 둔다: `{ symbol: '^KS11', code: 'KOSPI', name: '코스피' }`, `{ symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥' }`.
 3. 네이버 지수 항목 → 종목 실시간 시세와 같은 모양으로 바꾸는 순수 함수(`indexLive`):
-   `price`(값), `prevClose`(값 − 전일 대비), `candle`(시 · 고 · 저, 시가가 0 이하면 없음), `session` · `priceSession`(열려 있으면 `regular`, 아니면 `closed`), `isTrading` · `open`(열림 여부), `source: 'Naver'`, `tradedAt`.
+   `price`(값), `prevClose`(값 − 전일 대비), `candle`(시 · 고 · 저, 시가가 없거나 0 이하면 없음), `session` · `priceSession`(열려 있으면 `regular`, 아니면 `closed`), `isTrading` · `open`(열림 여부), `source: 'Naver'`, `tradedAt`.
+   전일 대비가 없으면 실시간 값이 없는 것으로 친다(`undefined`) — 야후 값(20분지연)으로 넘어간다.
 4. `refreshAll` 이 지수 줄을 그린 뒤 두 지수 모두 `loadQuote(지수, indexLive(…))` 로 `quotes['^KS11']` 등을 만든다. 그러면 RSI · 52주 · 이동평균 · 1D 끝점 이어 붙이기 · 일봉 마지막 봉 맞추기가 종목과 똑같이 동작한다. 야후 일봉은 30분 캐시라 늘어나는 요청은 30분에 2건이다.
 5. `main.js` 의 기호 허용 패턴(`SYMBOL_RE`)이 맨 앞 한 글자 `^` 를 받도록 넓힌다. `^` 는 맨 앞에만, 한 번만.
 
@@ -104,14 +106,14 @@
 
 - `tests/session-ui.mjs`
   - `selectedItem`: 관심종목 · 지수 · 둘 다 아님
-  - `indexLive`: 값 · 전일 종가 · 등락 · 캔들 · 장 상태, 시가 0 이면 캔들 없음, 전일 대비 부호가 등락률과 어긋나면 등락률 부호
+  - `indexLive`: 값 · 전일 종가 · 등락 · 캔들 · 장 상태, 시가가 없으면 캔들 없음, 전일 대비가 없으면 `undefined`
   - `curOf` / `money`: 지수 소수 둘째 자리, 종목은 지금 그대로
   - `moveSelection`: 지수에서 `↓` 첫 줄, `↑` 마지막 줄
   - 시작할 때 선택 검사가 지수 기호를 받아들인다 — 검사를 함수로 빼서 확인한다
   - `intradayWaitText`: 지수도 09:20 안내
 - 새 스위트 `tests/index-main.mjs` — `main.js` 를 가짜 electron 으로 불러(`net-timeout` 과 같은 방식)
   - `yf:chart` 가 `^KS11` 은 받고 `^^KS11` · `KS11^` · `^` 는 거절한다
-  - `quote:indices` 가 저장해 둔 네이버 지수 응답(새 픽스처)에서 새 필드를 꺼낸다
+  - `quote:indices` 가 저장해 둔 네이버 지수 응답(새 픽스처)에서 새 필드를 꺼낸다. 빠진 값은 `null`
 - CI 목록 · `tests/run.mjs` `ORDER` · 스위트 수(11 → 12) 문서에 반영.
 
 ## 문서
