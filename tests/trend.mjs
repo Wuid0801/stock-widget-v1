@@ -121,12 +121,27 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
     line ? `채택됨 (끝점 ${line.to}봉, 창 끝 ${N - 1 - T.LOOKBACK}봉, 오늘값 ${Math.round(line.data[N - 1])})` : '');
 }
 
-// --- 7. 구간이 짧으면 채택하지 않는다 -------------------------------------------
+// --- 6b. 끝점에서 피팅 창 끝까지 10봉 넘게 연장하지 않는다 -----------------------
+// 0~30봉은 봉당 -100 인 한 직선이고, 31봉부터는 그 선의 95% 로 내려앉는다. 최장 선분은
+// 0→30 이라 연장 거리는 창 끝(N - LOOKBACK - 1)까지로 정해진다. 창끝 이격은 5.3% 라
+// 다른 검사는 다 통과하고 이 검사만 걸린다.
 {
-  const N = 24; // 피팅 창이 19봉뿐이라 20봉 조건을 만족할 수 없다
-  const line = T.trendLine(decline(N), N, false);
-  check('피팅 창이 20봉에 못 미치면 선을 그리지 않는다', line === null,
-    line ? `채택됨 (span ${line.to - line.from})` : '');
+  const sag = (n) => Array.from({ length: n }, (_, i) => (i <= 30 ? 20000 - 100 * i : 0.95 * (20000 - 100 * i)));
+  const ten = T.trendLine(sag(46), 46, false);    // 창 끝 40봉 → 10봉 연장
+  const eleven = T.trendLine(sag(47), 47, false); // 창 끝 41봉 → 11봉 연장
+  check('끝점에서 창 끝까지 10봉이면 그리고 11봉이면 그리지 않는다',
+    !!ten && ten.to === 30 && eleven === null,
+    `10봉 ${ten ? `${ten.from}→${ten.to}` : 'null'} · 11봉 ${eleven ? `${eleven.from}→${eleven.to}` : 'null'}`);
+}
+
+// --- 7. 구간이 짧으면 채택하지 않는다 -------------------------------------------
+// decline(N) 은 한 직선이라 선분이 피팅 창 전체다 — 0 부터 N - LOOKBACK - 1 봉까지.
+{
+  const short = T.trendLine(decline(25), 25, false);  // 0→19, 19봉
+  const enough = T.trendLine(decline(26), 26, false); // 0→20, 20봉
+  check('선분이 19봉이면 그리지 않고 20봉이면 그린다',
+    short === null && !!enough && enough.to - enough.from === 20,
+    `19봉 ${short ? '채택됨' : 'null'} · 20봉 ${enough ? `span ${enough.to - enough.from}` : 'null'}`);
 }
 
 // --- 8. 껍질 성질: 피팅 구간 안에서는 아무 봉도 선을 넘지 않는다 ----------------
@@ -174,6 +189,20 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
   check('92% 급락 구간에서 음수로 내려가는 지지선은 채택하지 않는다',
     line === null || worst > 0,
     line ? `오늘값 ${Math.round(line.data[N - 1])}, 최솟값 ${Math.round(worst)}` : '');
+}
+
+// --- 10b. 오늘값이 0 이하인 선은 이 검사가 거른다 ---------------------------------
+// 위 급락 사례는 창끝 이격 검사에도 걸려서 0 이하 검사를 따로 지키지 못한다. 여기서는
+// 피팅 창(0~24봉)이 봉당 -100 인 한 직선이라 이격 0 · 연장 0 이고, 선은 마지막 봉(29봉)
+// 에서 a − 2,900 이 된다. 빼둔 봉은 500 으로 받쳐 선 위에 둔다.
+{
+  const N = 30;
+  const lows = (a) => Array.from({ length: N }, (_, i) => Math.max(a - 100 * i, 500));
+  const zero = T.trendLine(lows(2900), N, true);
+  const above = T.trendLine(lows(3000), N, true);
+  check('오늘값이 정확히 0 이면 그리지 않고 100 이면 그린다',
+    zero === null && !!above && Math.abs(above.data[N - 1] - 100) < 1e-9,
+    `0 → ${zero ? '채택됨' : 'null'} · 100 → ${above ? Math.round(above.data[N - 1]) : 'null'}`);
 }
 
 // --- 11. 선 값이 0 이하일 때 돌파를 오판하지 않는다 -----------------------------
@@ -224,7 +253,8 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
   else {
     const h2 = highs.slice();
     h2[45] = line.data[45] + 1200; // 선 19,000 → 6.32% (여기서 처음 뚫었다)
-    h2[49] = line.data[49] + 1000; // 선 11,800 → 8.47% (이탈은 여기가 더 크다)
+    h2[47] = line.data[47] * 1.08; // 선 15,400 → 8% (확정 봉 중에서는 이탈이 여기가 더 크다)
+    h2[49] = line.data[49] + 1000; // 선 11,800 → 8.47% (마지막 봉이라 날짜 후보가 아니고, 폭만 잰다)
     const bo = T.breakoutOf(line, h2, N, false);
     check('날짜는 처음 넘은 45봉이다', !!bo && bo.at === 45,
       bo ? `at=${bo.at}` : 'bo=null');
@@ -311,6 +341,43 @@ console.log(`설정: LOOKBACK=${T.LOOKBACK} MIN_SPAN=${T.MIN_SPAN} MAX_EXTEND=${
   }
   check('무작위 시세 400개에서 이름표가 고가 · 저가를 가리지 않는다', drawn > 0 && covered === 0,
     `그린 이름표 ${drawn}, 가린 봉 ${covered}`);
+}
+
+// --- 16. 돌파한 봉으로 선이 다시 그어지면 배지를 끈다 ---------------------------
+// 뚫은 봉도 5봉이 지나면 피팅 창에 들어가고, 껍질이 그 봉을 지나도록 선을 다시 잡는다.
+// 오름세가 이어지면 다음 봉이 새 선을 또 넘는다 — 예전에는 그래서 배지가 몇 주씩
+// 켜진 채 날짜가 늘 "4봉 전"에 머물렀다. 오래된 돌파는 이미 새 추세의 일부라,
+// 뚫은 날부터 4봉(1~4봉 전)까지만 말한다.
+{
+  // 65봉까지 봉당 80원씩 내려가는 저항(5봉마다 한 번 선에 닿는다), 66봉부터 봉당 250원씩 오른다
+  const up = Array.from({ length: 85 }, (_, i) => (i < 66
+    ? 20000 - 80 * i - (i % 5 === 0 ? 0 : 300)
+    : 20000 - 80 * 66 + 900 + 250 * (i - 66)));
+  const down = up.map((v) => 40000 - v); // 뒤집으면 지지선 이탈이다
+  for (const [vals, low, name] of [[up, false, '저항'], [down, true, '지지']]) {
+    const seen = [];
+    for (let len = 68; len <= 84; len++) {
+      const line = T.trendLine(vals, len, low);
+      const bo = line && T.breakoutOf(line, vals, len, low);
+      seen.push(bo ? `${bo.at}봉/${len - 1 - bo.at}` : '-');
+    }
+    check(`${name}: 뚫은 66봉을 1~4봉 전까지만 짚고, 그 봉으로 선이 다시 그어진 뒤로는 끈다`,
+      seen.join(' ') === '66봉/1 66봉/2 66봉/3 66봉/4 - - - - - - - - - - - - -', seen.join(' '));
+  }
+}
+
+// --- 17. 두 선이 만나는 봉 -----------------------------------------------------
+// 수렴 배지가 이 값으로 "수렴 n거래일" 을 말한다. 실데이터에서 아직 한 번도 뜬 적이
+// 없어서, 부호가 뒤집혀 배지가 사라져도 화면만으로는 알 수 없다.
+// 지지 100 + 10i · 저항 300 − 10i 는 10봉에서 만난다. 시작 봉(from)을 0 이 아니게 둬
+// y절편을 data[from] 에서 거꾸로 구하는 계산까지 본다.
+{
+  const ln = (from, b, slope) => ({ from, slope, data: Array.from({ length: 30 }, (_, i) => (i < from ? null : b + slope * i)) });
+  const sup = ln(5, 100, 10);
+  const res = ln(2, 300, -10);
+  check('수렴하는 두 선은 10봉에서 만난다', T.meetAt(sup, res) === 10 && T.meetAt(res, sup) === 10,
+    `${T.meetAt(sup, res)} · ${T.meetAt(res, sup)}`);
+  check('기울기가 같으면(평행) 만나지 않는다', T.meetAt(sup, ln(2, 300, 10)) === null);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

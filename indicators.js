@@ -280,41 +280,53 @@ function trendLabelBox(line, low, w, h, xOf, yOf, area) {
   return { left, top };
 }
 
+// i 봉이 선에서 얼마나 벗어났는지. y <= 0 이면 나눌 때 부호가 뒤집혀 이탈이 아닌 봉을
+// 큰 이탈로 보고하므로 아예 뺀다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%").
+function excessAt(line, extremes, i, low) {
+  const y = line.data[i];
+  const v = extremes[i];
+  if (y == null || v == null || y <= 0) return null;
+  const gap = low ? y - v : v - y;
+  return { gap, pct: gap / y };
+}
+
+// 뚫은 날 = 빼둔 구간에서 문턱을 처음 넘은 봉, 없으면 null. 이탈이 가장 큰 봉을 고르면
+// 안 된다 — 저항선은 내려가고 주가는 오르니 초과폭이 날마다 커져서 늘 최근 봉이 뽑힌다.
+// SK하이닉스 실측에서 09-07 에 뚫었는데 배지가 09-10 을 가리켰다.
+// 닿기만 한 봉은 돌파가 아니다 — 껍질은 원래 선에 닿는다.
+//
+// 마지막 봉은 판정에서 뺀다. 그 봉의 고가·저가는 장중에 실시간 값으로 계속
+// 덮이므로, 넣으면 배지가 장중에 떴다 사라지고 다음 날 또 뜬다(크로스 배지와
+// 같은 이유).
+function firstBreak(line, extremes, len, low) {
+  for (let i = len - TREND_LOOKBACK; i < len - 1; i++) {
+    const e = excessAt(line, extremes, i, low);
+    if (e && e.gap > 0 && e.pct >= TREND_MIN_BREAK) return i;
+  }
+  return null;
+}
+
 // 빼둔 최근 봉이 선을 넘었는가. 문턱(TREND_MIN_BREAK)을 처음 넘은 확정 봉(at)을 돌려주고,
 // 폭(gap · pct)은 마지막 봉에서 잰다 — 되밀렸으면 음수다.
 // 저항은 고가가 선 위로, 지지는 저가가 선 아래로 나간 것이 돌파다.
 // 껍질을 피팅 창 [0, len - TREND_LOOKBACK) 의 봉으로만 만들므로 그 봉들은 선을 넘지 않는다
-// — 제외 구간만 보면 된다.
+// — 제외 구간만 보면 된다. extremes 는 선을 만든 값 그대로다(저항은 고가, 지지는 저가).
 function breakoutOf(line, extremes, len, low) {
-  // 선에서 얼마나 벗어났는지. y <= 0 이면 나눌 때 부호가 뒤집혀 이탈이 아닌 봉을
-  // 큰 이탈로 보고하므로 아예 뺀다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%").
-  const excess = (i) => {
-    const y = line.data[i];
-    const v = extremes[i];
-    if (y == null || v == null || y <= 0) return null;
-    const gap = low ? y - v : v - y;
-    return { gap, pct: gap / y };
-  };
-
-  // 뚫은 날 = 창 안에서 문턱을 처음 넘은 봉. 이탈이 가장 큰 봉을 고르면 안 된다 —
-  // 저항선은 내려가고 주가는 오르니 초과폭이 날마다 커져서 늘 최근 봉이 뽑힌다.
-  // SK하이닉스 실측에서 09-07 에 뚫었는데 배지가 09-10 을 가리켰다.
-  // 닿기만 한 봉은 돌파가 아니다 — 껍질은 원래 선에 닿는다.
-  //
-  // 마지막 봉은 판정에서 뺀다. 그 봉의 고가·저가는 장중에 실시간 값으로 계속
-  // 덮이므로, 넣으면 배지가 장중에 떴다 사라지고 다음 날 또 뜬다(크로스 배지와
-  // 같은 이유). 폭은 그대로 마지막 봉에서 재는데, 그건 "지금 얼마나 벗어나
-  // 있나" 라는 현재 상태지 사건이 아니다.
-  let at = null;
-  for (let i = len - TREND_LOOKBACK; i < len - 1; i++) {
-    const e = excess(i);
-    if (e && e.gap > 0 && e.pct >= TREND_MIN_BREAK) { at = i; break; }
-  }
+  const at = firstBreak(line, extremes, len, low);
   if (at == null) return null;
 
+  // 한 봉 전 계산에서 돌파로 잡은 봉 위로 선이 다시 그어졌으면 끈다. 뚫은 봉도 5봉이
+  // 지나면 피팅 창에 들어가 껍질이 그 봉을 지나도록 선을 다시 잡고, 오름세가 이어지면
+  // 다음 봉이 새 선을 또 넘는다 — 그대로 두면 배지가 몇 주씩 켜진 채 날짜가 늘
+  // "4봉 전"에 머문다. 오래된 돌파는 이미 새 추세의 일부라, 뚫은 뒤 4봉까지만 말한다.
+  // 한 봉 전 결과는 이 검사를 거치지 않은 값이다 — 끈 날에도 움직임이 이어지면 계속 끈다.
+  const prev = trendLine(extremes, len - 1, low);
+  const prevAt = prev && firstBreak(prev, extremes, len - 1, low);
+  if (prevAt != null && line.to >= prevAt) return null;
+
   // 폭은 마지막 봉 기준. "지금 선에서 얼마나 떨어져 있나" 가 알고 싶은 값이고
-  // 뚫은 날의 폭은 이미 지난 숫자다. 되밀렸으면 음수로 나온다.
-  const now = excess(len - 1) || excess(at);
+  // 뚫은 날의 폭은 이미 지난 숫자다. 되밀렸으면 음수로 나온다 — 사건이 아니라 현재 상태다.
+  const now = excessAt(line, extremes, len - 1, low) || excessAt(line, extremes, at, low);
   return { at, gap: now.gap, pct: now.pct };
 }
 

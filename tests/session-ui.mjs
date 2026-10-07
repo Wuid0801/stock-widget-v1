@@ -724,4 +724,40 @@ await test('trendLabelPlugin draws 저항 above / 지지 below with the ink and 
   assert.equal(calls.length, 0);
 });
 
+// 수렴 배지는 실데이터에서 아직 뜬 적이 없다 — 깨져도 "안 뜨는 게 정상" 처럼 보인다.
+// 지지 100 + i · 저항 b − i 는 (b − 100) / 2 봉에서 만나고, 마지막 봉은 59 다.
+await test('trend badges: convergence counts up from the last bar, hides when past or too far, and gives way to a breakout', () => {
+  const { c, run, elements } = harness(['renderTrendBadges']);
+  run(formatting);
+  const toggled = [];
+  for (const id of ['breakout', 'converge']) {
+    c.document.getElementById(id).classList = { toggle: (k, on) => toggled.push([id, k, on]) };
+  }
+  const brk = elements.get('breakout');
+  const conv = elements.get('converge');
+  const ln = (varName, b, slope, broke = null) =>
+    ({ varName, slope, from: 0, data: Array.from({ length: 60 }, (_, i) => b + slope * i), broke });
+  const shown = (b) => {
+    c.renderTrendBadges([ln('--sup-line', 100, 1), ln('--res-line', b, -1)], 60, []);
+    return conv.hidden ? null : conv.textContent;
+  };
+  assert.equal(shown(222.6), '수렴 3거래일', '61.3봉 → 2.3봉 뒤 → 올림 3');
+  assert.equal(shown(242), '수렴 12거래일 · 약 2주', '71봉 → 12거래일 ≈ 16.8일');
+  assert.equal(shown(218), null, '마지막 봉(59)에서 이미 만났다');
+  assert.equal(shown(200), null, '벌어지는 중 — 교차점이 과거(50봉)');
+  assert.equal(shown(718), '수렴 250거래일 · 약 50주', '309봉 → 250거래일까지는 말한다');
+  assert.equal(shown(720), null, '251거래일 — 사실상 평행선');
+  assert.equal(brk.hidden, true);
+
+  // 돌파가 있으면 수렴(여기선 12거래일)은 숨고 돌파만 말한다. 57봉 = 09-07 09:00 KST, 지금 09-10
+  const times = [];
+  times[57] = Date.parse('2026-09-07T00:00:00Z');
+  c.renderTrendBadges([ln('--sup-line', 100, 1),
+    ln('--res-line', 242, -1, { at: 57, gap: 9, pct: 0.0523 })], 60, times);
+  assert.equal(conv.hidden, true);
+  assert.equal(brk.hidden, false);
+  assert.equal(brk.textContent, '저항 돌파 +5.23% · 3일 전');
+  assert.deepEqual(toggled.at(-1), ['breakout', 'sup', false]);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);
