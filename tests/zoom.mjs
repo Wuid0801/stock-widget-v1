@@ -21,14 +21,21 @@ if (typeof Z.dragToRange !== 'function' || typeof Z.zoomRange !== 'function') {
 
 // --- 1. 끈 구간 -----------------------------------------------------------------
 {
-  check('왼쪽에서 오른쪽', same(Z.dragToRange(10, 20), { from: 10, to: 20 }));
-  check('오른쪽에서 왼쪽으로 끌어도 같다', same(Z.dragToRange(20, 10), { from: 10, to: 20 }));
-  check('4봉은 확대하지 않는다', Z.dragToRange(10, 13) === null);
-  check('5봉은 확대한다', same(Z.dragToRange(10, 14), { from: 10, to: 14 }));
-  check('제자리 클릭은 확대하지 않는다', Z.dragToRange(7, 7) === null);
+  // 세 번째 값은 마우스가 실제로 움직인 거리(px). 3M 은 봉 간격 약 4.3px 다.
+  check('왼쪽에서 오른쪽', same(Z.dragToRange(10, 20, 43), { from: 10, to: 20 }));
+  check('오른쪽에서 왼쪽으로 끌어도 같다', same(Z.dragToRange(20, 10, -43), { from: 10, to: 20 }));
+  check('4봉은 확대하지 않는다', Z.dragToRange(10, 13, 17) === null);
+  check('5봉은 확대한다', same(Z.dragToRange(10, 14, 21), { from: 10, to: 14 }));
+  check('제자리 클릭은 확대하지 않는다', Z.dragToRange(7, 7, 0) === null);
   check('ZOOM_MIN_BARS 는 5', Z.ZOOM_MIN_BARS === 5);
-  check('ZOOM_TF 는 3M · 1Y 둘뿐이다',
-    Z.ZOOM_TF.size === 2 && Z.ZOOM_TF.has('3M') && Z.ZOOM_TF.has('1Y'));
+  // 3Y 는 봉 간격이 약 0.38px 라 5봉이 2px 남짓이다 — 클릭할 때의 손떨림(1~3px)이 확대가
+  // 되지 않게 움직인 거리도 본다. 6px 은 1Y(약 1.2px)의 5봉 폭이라 3M · 1Y 는 그대로다.
+  check('3Y 에서 5px 만 움직였으면 13봉에 걸쳐도 확대하지 않는다', Z.dragToRange(100, 112, 5) === null);
+  check('6px 움직이면 확대한다', same(Z.dragToRange(100, 115, 6), { from: 100, to: 115 }));
+  check('왼쪽으로 5px 도 확대하지 않고, 6px 은 확대한다',
+    Z.dragToRange(112, 100, -5) === null && same(Z.dragToRange(115, 100, -6), { from: 100, to: 115 }));
+  check('ZOOM_TF 는 3M · 1Y · 3Y 셋뿐이다',
+    Z.ZOOM_TF.size === 3 && Z.ZOOM_TF.has('3M') && Z.ZOOM_TF.has('1Y') && Z.ZOOM_TF.has('3Y'));
 }
 
 // --- 2. 날짜 → 봉 번호 -----------------------------------------------------------

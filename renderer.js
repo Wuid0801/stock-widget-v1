@@ -10,7 +10,12 @@ const TF = {
   '1M': { range: '1mo', interval: '1d' },
   '3M': { range: '3mo', interval: '1d' },
   '1Y': { range: '1y', interval: '1d' },
+  // 야후에는 3년 구간이 없다 — 5년치를 받아 loadChart 가 최근 3년만 남긴다(lastYears).
+  '3Y': { range: '5y', interval: '1d', years: 3 },
 };
+
+// 축 라벨을 연/월(YY/MM)로 쓰는 기간. 툴팁 제목에는 일까지 붙이고, 확대하면 월/일로 쓴다.
+const YEAR_TF = new Set(['1Y', '3Y']);
 
 // 선택 가능한 이동평균 기간(일)
 const MA_PERIODS = [5, 10, 20, 40, 60, 80, 120, 240, 360];
@@ -53,7 +58,7 @@ function cleanMaStyles(raw) {
 const CROSS_PAIRS = [[5, 20], [20, 60]];
 let chartBars = 0; // 현재 차트의 봉 수. 0이면 이동평균을 안 그리는 타임프레임(1D/1W)
 // 끌어서 고른 확대 구간 { start, end } — 봉 시각(ms). 번호가 아니라 날짜로 기억해
-// 30초 갱신 · 다음 날 새 봉에도 같은 구간이 잡힌다. 3M · 1Y 에서만, 저장하지 않는다.
+// 30초 갱신 · 다음 날 새 봉에도 같은 구간이 잡힌다. 3M · 1Y · 3Y 에서만, 저장하지 않는다.
 // loadChart 의 서명이 읽으므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
 // 마커 앞)에 있어야 한다.
 let zoom = null;
@@ -179,8 +184,8 @@ function labelFor(ms, timeframe) {
   const p = (n) => String(n).padStart(2, '0');
   if (timeframe === '1D') return `${p(d.getHours())}:${p(d.getMinutes())}`;
   if (timeframe === '1W') return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}시`;
-  // 1Y는 MM/DD로 쓰면 양 끝이 같은 날짜로 보여 1년 구간이 구분되지 않는다
-  if (timeframe === '1Y') return `${String(d.getFullYear()).slice(2)}/${p(d.getMonth() + 1)}`;
+  // 1Y · 3Y 는 MM/DD로 쓰면 양 끝이 같은 날짜로 보여 1년 구간이 구분되지 않는다
+  if (YEAR_TF.has(timeframe)) return `${String(d.getFullYear()).slice(2)}/${p(d.getMonth() + 1)}`;
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}`;
 }
 
@@ -841,9 +846,9 @@ const trendLabelPlugin = {
   },
 };
 
-// 끄는 중인 확대 구간 { a, b, key } — 봉 번호(누른 곳, 지금 마우스), key 는 누른 시점의
-// "종목|기간"(dragKey()). 끌기 이벤트가 쓰고 아래 zoomBoxPlugin 이 읽는다. 끄는 동안에는
-// chart.draw() 로 다시 그리기만 해서 가볍다.
+// 끄는 중인 확대 구간 { a, b, x, key } — 봉 번호(누른 곳, 지금 마우스), x 는 누른 곳의
+// clientX, key 는 누른 시점의 "종목|기간"(dragKey()). 끌기 이벤트가 쓰고 아래
+// zoomBoxPlugin 이 읽는다. 끄는 동안에는 chart.draw() 로 다시 그리기만 해서 가볍다.
 let zoomDrag = null;
 
 // 끄는 동안의 선택 상자. 양 끝 봉이 상자 안에 다 들어오게 반 칸씩 넓힌다.
@@ -904,7 +909,7 @@ function drawChart(arg) {
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
   // 넘기는 호출만 라인으로 그린다.
   const daily = TF[state.timeframe].interval === '1d';
-  // 확대 구간(3M · 1Y). 날짜로 기억해 둔 것을 지금 봉 번호로 바꾼다 — 구간이
+  // 확대 구간(3M · 1Y · 3Y). 날짜로 기억해 둔 것을 지금 봉 번호로 바꾼다 — 구간이
   // 사라졌으면(5봉 미만) 전체 보기로 돌아간다.
   const zr = zoom && ZOOM_TF.has(state.timeframe) ? zoomRange(times, zoom.start, zoom.end) : null;
   if (!zr) zoom = null;
@@ -927,9 +932,9 @@ function drawChart(arg) {
     // 같은 단계의 플러그인은 이 순서대로 그린다 — ▲▼ 표식이 추세선 이름표 위에 오게 뒤에 둔다
     plugins: [candlePlugin, hLinePlugin, trendLabelPlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
     data: {
-      // 1Y 를 확대하면 몇 주 · 몇 달만 보이므로 연/월 라벨로는 눈금이 같은 값으로
+      // 1Y · 3Y 를 확대하면 몇 주 · 몇 달만 보이므로 연/월 라벨로는 눈금이 같은 값으로
       // 반복된다(26/03 · 26/03 · 26/04). 그때는 1M · 3M 과 같은 월/일로 쓴다.
-      labels: times.map((t) => labelFor(t, zr && state.timeframe === '1Y' ? '3M' : state.timeframe)),
+      labels: times.map((t) => labelFor(t, zr && YEAR_TF.has(state.timeframe) ? '3M' : state.timeframe)),
       datasets: [{
         label: '',
         data: closes,
@@ -1067,12 +1072,12 @@ function drawChart(arg) {
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
           callbacks: {
-            // 1Y 는 축 라벨이 연/월(YY/MM)이라 제목에 일이 없으면 어느 날을 가리키는지
-            // 모른다 — 끌어서 구간을 고를 때 특히. 1Y 만 일까지 보인다.
+            // 1Y · 3Y 는 축 라벨이 연/월(YY/MM)이라 제목에 일이 없으면 어느 날을 가리키는지
+            // 모른다 — 끌어서 구간을 고를 때 특히. 1Y · 3Y 만 일까지 보인다.
             title: (items) => {
               const it = items[0];
               if (!it) return '';
-              if (state.timeframe !== '1Y') return it.label;
+              if (!YEAR_TF.has(state.timeframe)) return it.label;
               const d = new Date(times[it.dataIndex]);
               const p = (n) => String(n).padStart(2, '0');
               return `${String(d.getFullYear()).slice(2)}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
@@ -1327,8 +1332,9 @@ async function loadChart() {
   // 이전 요청은 버려야 헤더와 차트가 서로 다른 종목을 가리키지 않는다.
   const seq = ++chartSeq;
   const tf = TF[state.timeframe];
-  const r = await fetchChartCached(item.symbol, tf);
+  const got = await fetchChartCached(item.symbol, tf);
   if (seq !== chartSeq) return;
+  const r = got.ok && tf.years ? lastYears(got, tf.years) : got; // 3Y: 5년치에서 3년만
 
   if (!r.ok) {
     // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
@@ -1358,7 +1364,7 @@ async function loadChart() {
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
   renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1]);
 
-  // 이동평균선은 일봉 타임프레임(1M/3M/1Y)에서만 의미가 있다.
+  // 이동평균선은 일봉 타임프레임(1M/3M/1Y/3Y)에서만 의미가 있다.
   // 1D(5분봉)/1W(30분봉)에 "5일선"을 그리면 이름과 실제가 안 맞는다.
   const daily = tf.interval === '1d';
   const bars = daily ? r.times.length : 0;
@@ -1672,7 +1678,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  const tabs = Object.keys(TF); // 1~5 → 1D · 1W · 1M · 3M · 1Y
+  const tabs = Object.keys(TF); // 1~6 → 1D · 1W · 1M · 3M · 1Y · 3Y
   if (e.key >= '1' && e.key <= String(tabs.length)) {
     const key = tabs[Number(e.key) - 1];
     if (key === state.timeframe) return;
@@ -2088,7 +2094,7 @@ function bindZoom() {
   cv.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || !chart || !lastChart || !ZOOM_TF.has(state.timeframe)) return;
     const i = barAt(e.clientX);
-    zoomDrag = { a: i, b: i, key: dragKey() };
+    zoomDrag = { a: i, b: i, x: e.clientX, key: dragKey() };
   });
   // 차트 밖으로 나가도 따라가도록 window 에서 받는다
   window.addEventListener('mousemove', (e) => {
@@ -2101,11 +2107,12 @@ function bindZoom() {
     zoomDrag.b = i;
     chart.draw();
   });
-  window.addEventListener('mouseup', () => {
+  window.addEventListener('mouseup', (e) => {
     if (!zoomDrag) return;
-    const r = zoomDrag.key === dragKey() ? dragToRange(zoomDrag.a, zoomDrag.b) : null;
+    const r = zoomDrag.key === dragKey() ? dragToRange(zoomDrag.a, zoomDrag.b, e.clientX - zoomDrag.x) : null;
     zoomDrag = null;
-    if (!r || !lastChart) { // 5봉 미만(클릭 · 도로 좁혀 취소)이거나, 끄는 도중 종목 · 기간이 바뀐 것
+    // 5봉 · 6px 미만(클릭 · 손떨림 · 도로 좁혀 취소)이거나, 끄는 도중 종목 · 기간이 바뀐 것
+    if (!r || !lastChart) {
       if (chart) chart.draw(); // 상자만 지운다
       return;
     }

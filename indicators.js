@@ -140,22 +140,27 @@ function candleBody(yOpen, yClose) {
 }
 
 // --- 끌어서 확대 ------------------------------------------------------------------
-// 3M · 1Y 차트에서 끌어서 고른 구간을 차트 전체로 펼친다.
+// 3M · 1Y · 3Y 차트에서 끌어서 고른 구간을 차트 전체로 펼친다.
 
 // 확대를 허용하는 기간. 1M(약 22봉)은 확대할 일이 거의 없고, 1D · 1W 는 분봉이라
 // 끝에 실시간 점이 붙는 등 다르게 동작한다.
-const ZOOM_TF = new Set(['3M', '1Y']);
+const ZOOM_TF = new Set(['3M', '1Y', '3Y']);
 
 // 이보다 좁게 끌면 확대하지 않는다. 클릭 · 손떨림과 구분하고, 끌다가 도로 좁히면
-// 취소가 된다. 5봉은 거래일 한 주다 — 가장 촘촘한 1Y(봉 약 1.2px)에서도 약 6px,
-// 3M(약 4.3px)에서는 약 22px 라 클릭할 때의 흔들림(1~3px)보다 넉넉히 크다.
+// 취소가 된다. 5봉은 거래일 한 주다 — 1Y(봉 약 1.2px)에서 약 6px, 3M(약 4.3px)에서는
+// 약 22px 라 클릭할 때의 흔들림(1~3px)보다 넉넉히 크다.
 const ZOOM_MIN_BARS = 5;
+// 마우스가 이만큼은 움직여야 확대한다. 3Y(봉 약 0.38px)는 5봉이 2px 남짓이라 봉 수만
+// 보면 클릭 · 더블클릭의 손떨림이 확대가 된다. 6px 은 1Y 의 5봉 폭이라 3M · 1Y 는
+// 봉 수 기준과 같고, 3Y 는 약 16봉(3주)부터 확대된다.
+const ZOOM_MIN_PX = 6;
 
 // 끈 두 지점(봉 번호)을 앞뒤로 정렬한다. 오른쪽에서 왼쪽으로 끌어도 같다.
-function dragToRange(a, b) {
+// px 는 누른 곳에서 놓은 곳까지 마우스가 움직인 거리(왼쪽이면 음수).
+function dragToRange(a, b, px) {
   const from = Math.min(a, b);
   const to = Math.max(a, b);
-  return to - from + 1 >= ZOOM_MIN_BARS ? { from, to } : null;
+  return to - from + 1 >= ZOOM_MIN_BARS && Math.abs(px) >= ZOOM_MIN_PX ? { from, to } : null;
 }
 
 // 날짜로 기억해 둔 구간을 지금 데이터의 봉 번호로 바꾼다. 30초마다 다시 그리고 다음
@@ -175,6 +180,25 @@ function zoomRange(times, start, end) {
     to = i;
   }
   return from >= 0 && to - from + 1 >= ZOOM_MIN_BARS ? { from, to } : null;
+}
+
+// --- 3Y 구간 ---------------------------------------------------------------------
+// 야후에는 3년 구간(range=3y)이 없어서 5년치 일봉을 받아 자른다. 마지막 봉에서 달력으로
+// years 년 전 날짜부터 남기고, 그날 봉도 넣는다. 날짜는 UTC 로 센다(zoomRange 와 같은
+// 이유 — 장중 마지막 봉의 시각은 마지막 체결 시각이라 갱신마다 바뀐다).
+// 응답 r 은 차트 캐시에 그대로 들어 있으므로 고치지 않고 잘린 사본을 돌려준다.
+// 상장한 지 years 년이 안 됐으면 받은 그대로다.
+function lastYears(r, years) {
+  const end = new Date(r.times[r.times.length - 1]);
+  const from = Date.UTC(end.getUTCFullYear() - years, end.getUTCMonth(), end.getUTCDate()) / 86400000;
+  const k = r.times.findIndex((t) => Math.floor(t / 86400000) >= from);
+  if (k <= 0) return r;
+  const cut = (a) => (a ? a.slice(k) : a);
+  return {
+    ...r,
+    closes: cut(r.closes), times: cut(r.times), opens: cut(r.opens),
+    highs: cut(r.highs), lows: cut(r.lows), volumes: cut(r.volumes),
+  };
 }
 
 // --- 추세선 ---------------------------------------------------------------------
@@ -345,7 +369,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     calcRSI, sma, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
-    ZOOM_TF, ZOOM_MIN_BARS, dragToRange, zoomRange,
+    ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
     hull, trendLine, trendLabelBox, breakoutOf, meetAt,
   };

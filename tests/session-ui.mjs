@@ -724,6 +724,116 @@ await test('trendLabelPlugin draws 저항 above / 지지 below with the ink and 
   assert.equal(calls.length, 0);
 });
 
+// 야후에는 3년 구간(range=3y)이 없다. 3Y 는 5년치 일봉을 받아 마지막 봉에서 달력 3년
+// 전 날짜(UTC 날짜 — maFor · zoomRange 와 같은 규칙)부터 남긴다. 그날 봉은 들어간다.
+await test('3Y fetches five years of daily bars and draws only the last three calendar years', async () => {
+  const { c, run } = harness(['loadChart']);
+  const asked = [];
+  const periods = [];
+  const draws = [];
+  const at = (s) => Date.parse(`${s}T00:00:00Z`);
+  let bars;
+  Object.assign(c, {
+    fetchChartCached: async (symbol, tf) => { asked.push(`${tf.range}/${tf.interval}`); return bars; },
+    err: () => {}, quoteErrText: () => '', renderPeriod: (from, to) => periods.push([from, to]),
+    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {},
+    curOf: () => 'KRW', drawChart: (data) => draws.push(data),
+  });
+  run(`let lastDrawSig = null; state.timeframe = '3Y';
+    quotes['005930.KS'] = { price: 300, live: true, session: 'closed', priceSession: 'closed' };`);
+  bars = { ok: true,
+    times: ['2023-09-08', '2023-09-11', '2023-09-12', '2026-09-09', '2026-09-10'].map(at),
+    closes: [100, 110, 120, 280, 290], opens: [99, 109, 119, 279, 289],
+    highs: [101, 111, 121, 281, 291], lows: [98, 108, 118, 278, 288], volumes: [1, 2, 3, 4, 5] };
+  // 마지막 봉 2026-09-10 → 2023-09-10(일요일)부터. 금요일 09-08 은 빠지고 월요일 09-11 부터 남는다
+  await c.loadChart();
+  assert.deepEqual(asked, ['5y/1d']);
+  const d = draws.at(-1);
+  assert.deepEqual(d.times, ['2023-09-11', '2023-09-12', '2026-09-09', '2026-09-10'].map(at));
+  assert.deepEqual(d.closes, [110, 120, 280, 290]);
+  assert.deepEqual(d.opens, [109, 119, 279, 289]);
+  assert.deepEqual(d.highs, [111, 121, 281, 291]);
+  assert.deepEqual(d.lows, [108, 118, 278, 288]);
+  assert.deepEqual(d.volumes, [2, 3, 4, 5]);
+  assert.deepEqual(periods.at(-1), [110, 300], '3Y 수익률은 잘라 낸 첫 봉에서 잰다');
+  assert.equal(bars.closes.length, 5, '캐시에 든 원본은 그대로 둔다(1Y 등과 같은 캐시 규칙)');
+
+  // 정확히 3년 전 같은 날 봉은 들어간다
+  bars = { ...bars, times: ['2023-09-08', '2023-09-10', '2023-09-11', '2026-09-09', '2026-09-10'].map(at) };
+  run('lastDrawSig = null;');
+  await c.loadChart();
+  assert.equal(draws.at(-1).closes[0], 110, '2023-09-10 봉부터');
+
+  // 3년이 안 된 종목은 있는 만큼 다 그린다
+  bars = { ...bars, times: ['2024-05-02', '2024-05-03', '2025-01-02', '2026-09-09', '2026-09-10'].map(at) };
+  run('lastDrawSig = null;');
+  await c.loadChart();
+  assert.deepEqual(draws.at(-1).closes, [100, 110, 120, 280, 290]);
+
+  // 다른 기간은 받은 그대로다
+  run("state.timeframe = '1Y'; lastDrawSig = null;");
+  bars = { ...bars, times: ['2023-09-08', '2023-09-11', '2023-09-12', '2026-09-09', '2026-09-10'].map(at) };
+  await c.loadChart();
+  assert.equal(asked.at(-1), '1y/1d');
+  assert.equal(draws.at(-1).closes.length, 5);
+});
+
+// 3Y 는 1Y 처럼 축 라벨이 연/월이다 — 툴팁 제목에는 일까지, 확대하면 월/일 라벨.
+await test('3Y labels read like 1Y: YY/MM axis, full date in the tooltip, MM/DD when zoomed', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    trendLabelPlugin: { id: 'trendLabel' },
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
+  });
+  const day = 86400000;
+  const t0 = Date.parse('2024-03-04T00:00:00Z');
+  run(`state.timeframe = '3Y';
+    var T_ = Array.from({ length: 30 }, (_, i) => ${t0} + i * ${day});
+    var C_ = Array.from({ length: 30 }, (_, i) => 100 + i);
+    var arg_ = { closes: C_, times: T_, up: true, volumes: C_.map(() => 10), highs: C_, lows: C_ };`);
+  run('drawChart(arg_);');
+  let cfg = configs.at(-1);
+  assert.equal(cfg.data.labels[0], '24/03');
+  assert.equal(cfg.options.plugins.tooltip.callbacks.title([{ dataIndex: 2, label: cfg.data.labels[2] }]), '24/03/06');
+  run('zoom = { start: T_[5], end: T_[25] }; drawChart(arg_);');
+  cfg = configs.at(-1);
+  assert.equal(cfg.data.labels[5], '03/09', 'zoomed 3Y shows month/day like zoomed 1Y');
+});
+
+// 3Y 는 봉 하나가 약 0.38px 라 5봉이 2px 남짓이다. 끈 봉 수만 보면 클릭할 때의 손떨림이
+// 확대가 된다 — 마우스가 실제로 움직인 거리(6px 이상)도 넘겨야 한다.
+await test('drag zoom needs 6px of real mouse travel, so a jittery click on dense 3Y does not zoom', () => {
+  const { c, run } = harness(['bindZoom', 'barAt']);
+  run(source.match(/^let zoomDrag = .*$/m)[0]);
+  run(source.match(/^let lastChart = .*$/m)[0]);
+  const on = {};
+  const cv = { addEventListener: (k, fn) => { on[k] = fn; }, getBoundingClientRect: () => ({ left: 0 }) };
+  c.document.getElementById = (id) => (id === 'chart' ? cv : null);
+  c.window = { addEventListener: (k, fn) => { on[k] = fn; } };
+  const drawn = [];
+  Object.assign(c, { cv_: cv, drawChart: (d) => drawn.push(d), resetZoom: () => {} });
+  run(`state.timeframe = '3Y';
+    chart = { draw() {}, canvas: cv_, scales: { x: { min: 0, max: 729, getValueForPixel: (px) => px / 0.38 } } };
+    lastChart = { times: Array.from({ length: 730 }, (_, i) => i * 86400000) };`);
+  c.bindZoom();
+  const drag = (x0, x1) => {
+    on.mousedown({ button: 0, clientX: x0 });
+    on.mousemove({ buttons: 1, clientX: x1 });
+    on.mouseup({ clientX: x1 });
+  };
+  drag(100, 105); // 263 → 276봉, 14봉에 걸치지만 5px
+  assert.equal(run('zoom'), null, '5px 손떨림은 확대가 아니다');
+  assert.equal(drawn.length, 0);
+  drag(100, 106); // 263 → 279봉
+  assert.equal(run('JSON.stringify(zoom)'), JSON.stringify({ start: 263 * 86400000, end: 279 * 86400000 }));
+  assert.equal(drawn.length, 1);
+});
+
 // 수렴 배지는 실데이터에서 아직 뜬 적이 없다 — 깨져도 "안 뜨는 게 정상" 처럼 보인다.
 // 지지 100 + i · 저항 b − i 는 (b − 100) / 2 봉에서 만나고, 마지막 봉은 59 다.
 await test('trend badges: convergence counts up from the last bar, hides when past or too far, and gives way to a breakout', () => {
