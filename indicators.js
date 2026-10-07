@@ -262,9 +262,29 @@ function trendLine(values, len, low) {
   return { data: out, slope, from: x1, to: x2 };
 }
 
-// 빼둔 최근 봉이 선을 넘었는가. 가장 크게 벗어난 봉 하나를 돌려준다.
+// 추세선 이름표(지지 · 저항) 자리 — { left, top } (글자 왼쪽 위 픽셀) 또는 null.
+// 선을 만든 마지막 맞닿은 점(to)에서 글자 폭 w 만큼 왼쪽으로, 저항은 선 위 · 지지는 선 아래.
+// 껍질의 한 변이라 피팅 창의 봉은 모두 선의 한쪽에 있어서 바깥쪽 글자는 고가 · 저가를
+// 가리지 않는다. 오른쪽 끝은 피한다 — 돌파가 일어나는 최근 봉이 거기 있다.
+// 기울어진 선이 글자를 지나가지 않게 글자 양 끝에서 선 높이를 재 바깥쪽 값을 쓴다.
+// 픽셀 변환은 부르는 쪽이 준다(xOf: 봉 번호 → x, yOf: 값 → y, 화면 y 는 아래로 커진다).
+// 차트 영역(area)을 벗어나면 잘리게 두지 않고 null — 선은 그대로 그려진다.
+function trendLabelBox(line, low, w, h, xOf, yOf, area) {
+  const right = xOf(line.to);
+  const left = right - w;
+  const step = xOf(line.to + 1) - right; // 봉 하나의 픽셀 폭(카테고리 축이라 일정)
+  const valueAt = (px) => line.data[line.to] + line.slope * ((px - right) / step);
+  const ys = [yOf(valueAt(left)), yOf(valueAt(right))];
+  const top = low ? Math.max(...ys) + 2 : Math.min(...ys) - 2 - h;
+  if (left < area.left || top < area.top || top + h > area.bottom) return null;
+  return { left, top };
+}
+
+// 빼둔 최근 봉이 선을 넘었는가. 문턱(TREND_MIN_BREAK)을 처음 넘은 확정 봉(at)을 돌려주고,
+// 폭(gap · pct)은 마지막 봉에서 잰다 — 되밀렸으면 음수다.
 // 저항은 고가가 선 위로, 지지는 저가가 선 아래로 나간 것이 돌파다.
-// 선분은 반드시 피팅 창 안에서 끝나므로(span >= 20) 제외 구간만 보면 된다.
+// 껍질을 피팅 창 [0, len - TREND_LOOKBACK) 의 봉으로만 만들므로 그 봉들은 선을 넘지 않는다
+// — 제외 구간만 보면 된다.
 function breakoutOf(line, extremes, len, low) {
   // 선에서 얼마나 벗어났는지. y <= 0 이면 나눌 때 부호가 뒤집혀 이탈이 아닌 봉을
   // 큰 이탈로 보고하므로 아예 뺀다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%").
@@ -315,6 +335,6 @@ if (typeof module !== 'undefined') {
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, dragToRange, zoomRange,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
-    hull, trendLine, breakoutOf, meetAt,
+    hull, trendLine, trendLabelBox, breakoutOf, meetAt,
   };
 }

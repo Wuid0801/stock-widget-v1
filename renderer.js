@@ -803,6 +803,44 @@ const crossMarkPlugin = {
   },
 };
 
+// 추세선 이름표. 두 선은 굵기 · 점선이 같고 밝기도 비슷해서(1.08:1) 색만으로는 어느 쪽이
+// 지지인지 알 수 없다. 선 색 9px 글자를 저항은 선 위, 지지는 선 아래에 붙인다 — 자리는
+// trendLabelBox(indicators.js). 선은 그대로 데이터셋이고(y축 범위를 잡는다) 글자만 캔버스에
+// 그리므로, 자리가 없으면 잘리게 두지 않고 생략한다. 패널색 외곽선을 둘러 이동평균 · 격자가
+// 글자를 지나가도 읽히게 한다. 확대 중에는 선과 함께 빠진다(drawChart 가 빈 목록을 준다).
+const trendLabelPlugin = {
+  id: 'trendLabel',
+  afterDatasetsDraw(c, _args, opts) {
+    const list = opts.list || [];
+    if (!list.length) return;
+    const ctx = c.ctx;
+    const xOf = (i) => c.scales.x.getPixelForValue(i);
+    const yOf = (v) => c.scales.y.getPixelForValue(v);
+    ctx.save();
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round';
+    for (const t of list) {
+      const low = t.varName === '--sup-line';
+      const text = low ? '지지' : '저항';
+      // 자리는 실제 글자 잉크 + 외곽선(3px → 위아래 1.5px) 높이로 잡는다. 'top' 기준선은 글꼴의
+      // em 상자 위라 잉크가 위아래로 어긋난다(맑은 고딕 9px: 위로 0.8 · 아래로 8.2) — 9px 상자로
+      // 잡으면 지지는 선에 붙어 외곽선이 선을 지우고 저항은 2.5px 뜬다.
+      const m = ctx.measureText(text);
+      const asc = m.actualBoundingBoxAscent;
+      const box = trendLabelBox(t, low, m.width, asc + m.actualBoundingBoxDescent + 3, xOf, yOf, c.chartArea);
+      if (!box) continue;
+      const y = box.top + 1.5 + asc; // 잉크 위 끝이 상자 위 + 외곽선 1.5px
+      ctx.strokeStyle = cssVar('--panel');
+      ctx.lineWidth = 3;
+      ctx.strokeText(text, box.left, y);
+      ctx.fillStyle = cssVar(t.varName);
+      ctx.fillText(text, box.left, y);
+    }
+    ctx.restore();
+  },
+};
+
 // 끄는 중인 확대 구간 { a, b, key } — 봉 번호(누른 곳, 지금 마우스), key 는 누른 시점의
 // "종목|기간"(dragKey()). 끌기 이벤트가 쓰고 아래 zoomBoxPlugin 이 읽는다. 끄는 동안에는
 // chart.draw() 로 다시 그리기만 해서 가볍다.
@@ -886,7 +924,8 @@ function drawChart(arg) {
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
-    plugins: [candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
+    // 같은 단계의 플러그인은 이 순서대로 그린다 — ▲▼ 표식이 추세선 이름표 위에 오게 뒤에 둔다
+    plugins: [candlePlugin, hLinePlugin, trendLabelPlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
     data: {
       // 1Y 를 확대하면 몇 주 · 몇 달만 보이므로 연/월 라벨로는 눈금이 같은 값으로
       // 반복된다(26/03 · 26/03 · 26/04). 그때는 1M · 3M 과 같은 월/일로 쓴다.
@@ -895,7 +934,10 @@ function drawChart(arg) {
         label: '',
         data: closes,
         yAxisID: 'y',
-        order: 2, // 거래량 막대(0)·고저 밴드(1)보다 뒤에 그려서 위로 올라온다
+        // Chart.js 는 order 가 큰 것부터 그린다(4.5.1: 오름차순 정렬 후 뒤에서부터) — 아래부터
+        // 이동평균(3) · 주가선(2) · 고저 밴드(1) · 거래량(0) · 추세선(-1). 밴드 · 막대는 옅어서
+        // 주가선을 가리지 않는다.
+        order: 2,
         borderColor: candles ? 'transparent' : color,
         borderWidth: 2,
         pointRadius: 0,
@@ -954,7 +996,9 @@ function drawChart(arg) {
         spanGaps: false,
       })),
       // 지지·저항 추세선 (3M · 1Y 에서만 전달된다).
-      // 점선 1px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
+      // 점선 1.6px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
+      // 맨 위에 그린다(order -1). 아래에 깔면 1Y 라인 모드의 주가 채움에 물들고, 같은 주황
+      // 계열인 5일선이 저항선을 덮는다. 어느 선이 지지인지는 trendLabelPlugin 이 글자로 붙인다.
       // 정규 데이터셋이라 y축이 알아서 범위에 넣는다. 캔버스에 직접 그리면
       // 기울어진 선의 양 끝이 축 밖으로 나가 말없이 잘린다(시간외 선에서 겪음).
       // 확대 중에는 숨긴다. "지금"을 말하는 선(최근 5봉을 빼고 만들어 오늘 값 · 돌파를
@@ -962,7 +1006,7 @@ function drawChart(arg) {
       ...(zr ? [] : trends).map((t) => ({
         data: t.data,
         yAxisID: 'y',
-        order: 3,
+        order: -1,
         borderColor: cssVar(t.varName),
         borderWidth: 1.6,
         borderDash: [5, 3],
@@ -980,7 +1024,7 @@ function drawChart(arg) {
         isVolume: true,
         data: volumes,
         yAxisID: 'yVol',
-        order: 0, // 가장 먼저 = 밴드·주가선·이평선 뒤에
+        order: 0, // 추세선 바로 아래 — 옅어서(0.2) 주가선 · 이평선이 비쳐 보인다
         backgroundColor: hexA(color, 0.2),
         borderWidth: 0,
         barPercentage: 1,
@@ -1003,10 +1047,12 @@ function drawChart(arg) {
       plugins: {
         // 범례는 띄우지 않는다. 이동평균을 여러 개 켜면 두 줄로 늘어나
         // 150px 짜리 차트에서 35px 가까이 잡아먹는다.
-        // 어느 선이 무엇인지는 설정의 색 있는 칩과 툴팁이 알려준다.
+        // 이동평균은 차트 위 범례(renderMaLegend)가 색과 값으로, 추세선은 선 옆 글자
+        // (trendLabelPlugin)가 알려준다.
         legend: { display: false },
         hLine: { lines: hLines },
         crossMark: { list: crosses },
+        trendLabel: { list: zr ? [] : trends }, // 선과 같은 조건 — 확대 중에는 함께 숨는다
         candle: candles ? { opens, highs, lows, closes } : {},
         tooltip: {
           // 이동평균 값은 툴팁이 아니라 위쪽 범례에 띄운다.

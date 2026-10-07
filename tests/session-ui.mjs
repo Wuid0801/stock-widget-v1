@@ -643,4 +643,85 @@ await test('indexLive rejects a non-positive value or previous close, like the s
   assert.equal(run(`indexLive({ ...${base}, value: 105 }).prevClose`), 100);
 });
 
+// Chart.js 는 order 가 큰 데이터셋부터 그린다(4.5.1: _sortedMetasets 를 order 오름차순으로
+// 정렬한 뒤 뒤에서부터 _drawDataset). 추세선이 맨 위에 오려면 다른 어떤 것보다 order 가 작아야 한다.
+await test('drawChart draws trend lines on top and hands them to the label plugin unless zoomed', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    trendLabelPlugin: { id: 'trendLabel' },
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
+  });
+  const day = 86400000;
+  const t0 = Date.parse('2026-07-01T00:00:00Z');
+  run(`state.timeframe = '3M'; state.maPeriods = [5];
+    var T_ = Array.from({ length: 30 }, (_, i) => ${t0} + i * ${day});
+    var C_ = Array.from({ length: 30 }, (_, i) => 100 + i);
+    var trend_ = { data: C_.map((v) => v + 5), slope: 1, from: 0, to: 20, varName: '--res-line', broke: null };
+    var arg_ = { closes: C_, times: T_, up: true, volumes: C_.map(() => 10), highs: C_, lows: C_,
+      mas: [{ p: 5, data: C_ }], trends: [trend_] };`);
+  run('drawChart(arg_);');
+  let cfg = configs.at(-1);
+  const sets = cfg.data.datasets;
+  const trendSet = sets.find((d) => Array.isArray(d.borderDash));
+  const others = sets.filter((d) => d !== trendSet);
+  assert.ok(trendSet, 'trend dataset is drawn');
+  assert.ok(others.length >= 4, 'price, high/low band, MA and volume are there to compare against');
+  assert.ok(others.every((d) => trendSet.order < d.order),
+    `trend order ${trendSet.order} must be below ${others.map((d) => d.order).join(',')}`);
+  assert.equal(cfg.plugins.includes(c.trendLabelPlugin), true, 'label plugin registered');
+  assert.ok(cfg.plugins.indexOf(c.trendLabelPlugin) < cfg.plugins.indexOf(c.crossMarkPlugin),
+    'cross marks (▲▼) draw after — on top of — the labels');
+  assert.equal(cfg.options.plugins.trendLabel.list.length, 1, 'trend handed to the label plugin');
+
+  // 확대 중에는 선과 이름표가 함께 숨는다
+  run('zoom = { start: T_[5], end: T_[25] }; drawChart(arg_);');
+  cfg = configs.at(-1);
+  assert.equal(cfg.data.datasets.some((d) => Array.isArray(d.borderDash)), false);
+  assert.equal(cfg.options.plugins.trendLabel.list.length, 0);
+});
+
+// 실제 trendLabelPlugin 을 가짜 캔버스로 그려 본다. 글자 잉크는 textBaseline 'top' 의 em 상자와
+// 다르다(맑은 고딕 9px: 위로 0.8 · 아래로 8.2) — 실제 잉크 + 외곽선(양쪽 1.5px)이 선에서 정확히
+// 2px 떨어져야 지지 · 저항이 같은 간격으로 보이고 외곽선이 선을 지우지 않는다.
+await test('trendLabelPlugin draws 저항 above / 지지 below with the ink and halo 2px off the line', () => {
+  const { c, run } = harness();
+  c.cssVar = (name) => ({ '--panel': 'P', '--sup-line': 'S', '--res-line': 'R' })[name];
+  run(source.slice(source.indexOf('// 추세선 이름표'), source.indexOf('// 끄는 중인 확대 구간')));
+  const plugin = run('trendLabelPlugin');
+  assert.equal(plugin.id, 'trendLabel', 'id is the options key drawChart uses');
+  const calls = [];
+  const ctx = {
+    save() {}, restore() {},
+    measureText: () => ({ width: 18, actualBoundingBoxAscent: 1, actualBoundingBoxDescent: 8 }),
+    strokeText: (t, x, y) => calls.push({ op: 'stroke', t, x, y, style: ctx.strokeStyle, width: ctx.lineWidth }),
+    fillText: (t, x, y) => calls.push({ op: 'fill', t, x, y, style: ctx.fillStyle }),
+  };
+  const chart = {
+    ctx,
+    chartArea: { left: 0, right: 600, top: 0, bottom: 300 },
+    scales: { x: { getPixelForValue: (i) => 10 + 6 * i }, y: { getPixelForValue: (v) => 300 - v } },
+  };
+  const flat = (v, varName) => ({ data: Array(40).fill(v), slope: 0, from: 0, to: 20, varName });
+  plugin.afterDatasetsDraw(chart, {}, { list: [flat(200, '--res-line'), flat(50, '--sup-line')] });
+  const fills = calls.filter((k) => k.op === 'fill');
+  assert.deepEqual(fills.map((k) => [k.t, k.style]), [['저항', 'R'], ['지지', 'S']]);
+  const [res, sup] = fills;
+  assert.equal(res.x, 130 - 18, 'right edge at the last touch point (to)');
+  assert.ok(Math.abs(res.y + 8 + 1.5 - (100 - 2)) < 1e-9, `저항 ink+halo bottom ${res.y + 9.5} should be 98`);
+  assert.ok(Math.abs(sup.y - 1 - 1.5 - (250 + 2)) < 1e-9, `지지 ink+halo top ${sup.y - 2.5} should be 252`);
+  const strokes = calls.filter((k) => k.op === 'stroke');
+  assert.ok(strokes.every((k) => k.style === 'P' && k.width === 3), 'panel-colored halo under each label');
+  assert.ok(calls.findIndex((k) => k.op === 'stroke') < calls.findIndex((k) => k.op === 'fill'), 'halo before text');
+
+  // 자리가 없으면 아무것도 그리지 않는다
+  calls.length = 0;
+  plugin.afterDatasetsDraw(chart, {}, { list: [flat(298, '--res-line')] });
+  assert.equal(calls.length, 0);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);
