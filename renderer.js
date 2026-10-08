@@ -133,6 +133,11 @@ let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해�
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
 let marketOpen = true;
+// 목표가 "통과" 판정의 기준 — 종목마다 직전에 알림 판정을 받은 가격(checkAlerts).
+// 화면 가격(quotes)을 기준으로 쓰면 네이버가 한 번 실패한 사이 뜬 야후 지연가 — 국내 종목은
+// 그 가격으로 판정하지 않는다 — 가 다음 갱신의 "직전 가격" 이 되어 같은 통과를 두 번
+// 알리거나(100,500 → 지연 99,800 → 100,600) 놓친다(99,900 → 지연 100,200 → 100,300).
+const alertBase = {};
 const SESSION_TEXT = {
   regular: '정규장', pre: '프리마켓', after: '애프터마켓', closed: '장마감', unknown: '확인중',
 };
@@ -1439,10 +1444,6 @@ async function refreshAll() {
   try {
     const indexNow = await loadIndices();
 
-    // 목표가 "통과" 판정을 위해 갱신 전 가격을 기억해 둔다
-    const prevPrices = {};
-    for (const i of state.watchlist) prevPrices[i.symbol] = quotes[i.symbol] && quotes[i.symbol].price;
-
     // 실시간 현재가는 한 번에 (요청 1건), 일봉은 rate limit 고려해 종목별 순차
     const liveMap = await fetchLive(state.watchlist.map((i) => i.symbol));
     for (const item of state.watchlist) {
@@ -1452,7 +1453,7 @@ async function refreshAll() {
     // 지수도 종목과 같은 시세로 만든다 — 누르면 바로 뜨게 둘 다. 네이버 지수를 못 받았으면
     // 실시간 없이 들어가 야후 값(20분지연)이 된다(종목 폴백과 같다).
     for (const ix of INDICES) await loadQuote(ix, indexLive(indexNow.find((n) => n.code === ix.code)));
-    checkAlerts(prevPrices);
+    checkAlerts();
     err(quoteErrText());
     renderDetail();
     await renderFolio();
@@ -1974,17 +1975,23 @@ function renderAlerts() {
 
 // 목표가 "통과" 시에만 알린다. 이전 가격이 없는 첫 갱신은 기준만 잡고 넘어가므로
 // 앱을 켜자마자 이미 목표가를 넘긴 종목이 무더기로 울리지 않는다.
-function checkAlerts(prevPrices) {
-  if (!state.alerts.enabled || !marketOpen) return;
-
+function checkAlerts() {
   for (const item of state.watchlist) {
     const t = state.alerts.targets[item.symbol];
     const q = quotes[item.symbol];
-    const prev = prevPrices[item.symbol];
-    if (!t || !q || q.error || prev == null) continue;
+    if (!q || q.error) continue;
+    // 국내 장이 모두 닫혔으면 국내 종목만 건너뛴다. 미국 정규장은 한국 시간 밤이라 국내 장과
+    // 겹치지 않는다 — 알림 전체를 끄면 국내 종목이 하나라도 있을 때 해외 알림이 울릴 수 없다.
+    if (isDomestic(item.symbol) && !marketOpen) continue;
     // 세션 정보가 전혀 없는 기존 가격 전용 테스트/호출은 그대로 지원한다.
     const hasSession = q.isTrading !== undefined || q.session !== undefined || q.open !== undefined;
     if (isDomestic(item.symbol) && hasSession && tradingState(q) !== true) continue;
+
+    // 판정한 가격만 다음 기준이 된다. 알림이 꺼져 있거나 목표가가 없어도 기준은 따라가야
+    // 켜거나 목표가를 넣은 직후에 지난 통과를 뒤늦게 알리지 않는다.
+    const prev = alertBase[item.symbol];
+    alertBase[item.symbol] = q.price;
+    if (!state.alerts.enabled || !t || prev == null) continue;
 
     // 해외 종목은 원이 아니다 — $179.50 를 원화 포맷에 넣으면 "180원" 이 된다
     const cur = curOf(item.symbol);

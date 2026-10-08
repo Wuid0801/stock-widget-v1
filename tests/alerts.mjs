@@ -19,7 +19,8 @@ window.__t = {
   setTarget: (s, t) => { state.alerts.targets[s] = t; },
   setMarketOpen: (v) => { marketOpen = v; },
   setQuote: (s, price) => { quotes[s] = { price }; },
-  check: (prev) => checkAlerts(prev),
+  // prev 를 직전 판정 가격(alertBase)으로 두고 한 번 판정한다
+  check: (prev) => { for (const k in alertBase) delete alertBase[k]; Object.assign(alertBase, prev); checkAlerts(); },
 };
 `;
 fs.writeFileSync(RENDERER, orig + HOOK);

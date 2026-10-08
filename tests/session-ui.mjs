@@ -279,6 +279,12 @@ await test('daily chart syncs the last bar to the live candle, older bars untouc
   assert.deepEqual(draws.at(-1).highs, [99, 101], '1D bars are not day candles');
 });
 
+// 직전 판정 가격(alertBase)을 prev 로 두고 한 번 판정한다.
+const checkFrom = (c, run, prev) => {
+  run(`for (const k in alertBase) delete alertBase[k]; Object.assign(alertBase, ${JSON.stringify(prev)});`);
+  c.checkAlerts();
+};
+
 await test('alerts use per-symbol trading state; legacy price-only alerts remain compatible', () => {
   const { c, run, notifications } = harness(['checkAlerts']);
   run(formatting);
@@ -289,23 +295,23 @@ await test('alerts use per-symbol trading state; legacy price-only alerts remain
     "session:'regular',isTrading:null", "session:'closed'", "open:false"]) {
     run(`quotes['005930.KS'] = {price:101,${meta}};`);
     notifications.length = 0;
-    c.checkAlerts(prev);
+    checkFrom(c, run, prev);
     assert.equal(notifications.length, 1);
     assert.match(notifications[0].title, /SK하이닉스/);
   }
   for (const meta of ['', ",session:'pre',open:false", ",session:'after',isTrading:true"]) {
     run(`quotes['005930.KS'] = {price:101${meta}};`);
     notifications.length = 0;
-    c.checkAlerts(prev);
+    checkFrom(c, run, prev);
     assert.equal(notifications.length, 2);
   }
   notifications.length = 0;
   run('marketOpen = false;');
-  c.checkAlerts(prev);
-  assert.equal(notifications.length, 0, 'legacy global disable is respected');
+  checkFrom(c, run, prev);
+  assert.equal(notifications.length, 0, 'domestic stocks stay quiet while every domestic market is closed');
   run(`marketOpen = true; state.watchlist = [{symbol:'AAPL',name:'Apple'}];
     state.alerts.targets = {AAPL:{up:100}}; quotes.AAPL = {price:101,session:'unknown',isTrading:null};`);
-  c.checkAlerts({AAPL:99});
+  checkFrom(c, run, {AAPL:99});
   assert.equal(notifications.length, 1, 'domestic restrictions do not block foreign alerts');
 });
 
@@ -316,12 +322,87 @@ await test('alert text shows the stock currency, not always 원', () => {
     state.alerts.targets = {'005930.KS':{up:300000}, AAPL:{down:180}};
     quotes['005930.KS'] = {price:301000,currency:'KRW'};
     quotes.AAPL = {price:179.5,currency:'USD'};`);
-  c.checkAlerts({'005930.KS':299000, AAPL:182.25});
+  checkFrom(c, run, {'005930.KS':299000, AAPL:182.25});
   assert.equal(notifications.length, 2);
   assert.deepEqual(notifications.map((n) => n.body), [
     '301,000원 (목표 300,000원)',
     '179.50 USD (목표 180.00 USD)',
   ]);
+});
+
+// 갱신을 여러 번 돌리며 그때그때의 시세를 넣는다. 알림 판정은 refreshAll 안에서 일어난다.
+function alertRun(watchlist, targets) {
+  const h = harness(['refreshAll', 'checkAlerts']);
+  h.run(formatting);
+  let tick = {};
+  Object.assign(h.c, {
+    loadIndices: async () => [], fetchLive: async () => ({}),
+    loadQuote: async (item) => {
+      if (tick[item.symbol]) h.run(`quotes[${JSON.stringify(item.symbol)}] = ${JSON.stringify(tick[item.symbol])};`);
+    },
+    renderList() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderFolio: async () => {}, loadChart: async () => {}, renderUpdated() {},
+  });
+  h.run(`state.watchlist = ${JSON.stringify(watchlist)}; state.alerts.targets = ${JSON.stringify(targets)};`);
+  return { ...h, refresh: async (quotesNow) => { tick = quotesNow; await h.c.refreshAll(); } };
+}
+const krLive = (price) => ({ price, currency: 'KRW', live: true, session: 'regular', isTrading: true });
+const krFallback = (price) => ({ price, currency: 'KRW', live: false, session: 'unknown', isTrading: null });
+
+// 네이버가 한 번 실패하면 야후 지연가가 화면에 뜬다. 국내 종목은 그 가격으로 알림을 판정하지
+// 않는데, 직전 화면 가격을 기준으로 쓰면 다음 갱신에서 그 지연가가 "직전 가격" 이 된다.
+await test('a Naver fallback price in between neither repeats nor swallows a target-price alert', async () => {
+  const sam = { symbol: '005930.KS', name: '삼성전자' };
+  const a = alertRun([sam], { '005930.KS': { up: 100000 } });
+  await a.refresh({ '005930.KS': krLive(99900) });
+  await a.refresh({ '005930.KS': krLive(100500) });
+  assert.equal(a.notifications.length, 1, '99,900 → 100,500 crosses once');
+  await a.refresh({ '005930.KS': krFallback(99800) }); // 야후 20분 지연가
+  await a.refresh({ '005930.KS': krLive(100600) });
+  assert.equal(a.notifications.length, 1, 'the delayed 99,800 is not a new starting point — no second alert');
+
+  const b = alertRun([sam], { '005930.KS': { up: 100000 } });
+  await b.refresh({ '005930.KS': krLive(99900) });
+  await b.refresh({ '005930.KS': krFallback(100200) });
+  await b.refresh({ '005930.KS': krLive(100300) });
+  assert.equal(b.notifications.length, 1, '99,900 → 100,300 between live prices crosses — the delayed 100,200 must not hide it');
+});
+
+// 알림이 꺼져 있거나 목표가가 없던 동안에도 기준 가격은 따라간다 — 켜거나 목표가를 넣은
+// 직후의 갱신이 그 전에 이미 지나간 통과를 뒤늦게 알리면 안 된다.
+await test('turning alerts on, or adding a target, does not report a crossing that happened before', async () => {
+  const sam = { symbol: '005930.KS', name: '삼성전자' };
+  const a = alertRun([sam], { '005930.KS': { up: 100000 } });
+  await a.refresh({ '005930.KS': krLive(99900) }); // 켜진 채로 기준이 생긴다
+  a.run('state.alerts.enabled = false;');
+  await a.refresh({ '005930.KS': krLive(100500) }); // 꺼져 있는 동안 통과
+  a.run('state.alerts.enabled = true;');
+  await a.refresh({ '005930.KS': krLive(100600) });
+  assert.equal(a.notifications.length, 0, 'enabled after the crossing — nothing to report');
+
+  const b = alertRun([sam], { '005930.KS': { up: 100000 } });
+  await b.refresh({ '005930.KS': krLive(99900) }); // 목표가가 있는 채로 기준이 생긴다
+  b.run('state.alerts.targets = {};');
+  await b.refresh({ '005930.KS': krLive(100500) }); // 목표가를 지운 동안 통과
+  b.run("state.alerts.targets = { '005930.KS': { up: 100000 } };");
+  await b.refresh({ '005930.KS': krLive(100600) });
+  assert.equal(b.notifications.length, 0, 'target added above the price it already passed — no alert');
+  await b.refresh({ '005930.KS': krLive(99000) });
+  await b.refresh({ '005930.KS': krLive(100100) });
+  assert.equal(b.notifications.length, 1, 'a real crossing afterwards still alerts');
+});
+
+// 국내 장(정규 · 시간외 · NXT 08:00~20:00)과 미국 정규장(한국 시간 밤)은 겹치지 않는다.
+// 국내 종목이 모두 닫혔다고 알림 전체를 끄면 미국 종목 알림은 거의 울릴 수 없다.
+await test('US target alerts still fire while every domestic stock is closed', async () => {
+  const a = alertRun([{ symbol: '005930.KS', name: '삼성전자' }, { symbol: 'AAPL', name: 'Apple' }],
+    { '005930.KS': { up: 300000 }, AAPL: { up: 250 } });
+  const closed = (price) => ({ price, currency: 'KRW', live: true, session: 'closed', isTrading: false });
+  const us = (price) => ({ price, currency: 'USD', live: false, session: 'unknown', isTrading: null });
+  a.run('marketOpen = false;'); // 국내가 모두 닫힘 — pollingIsOpen 이 내는 값
+  await a.refresh({ '005930.KS': closed(299000), AAPL: us(249) });
+  await a.refresh({ '005930.KS': closed(301000), AAPL: us(251) });
+  assert.deepEqual(a.notifications.map((n) => n.title), ['Apple 상한 도달'], 'Apple fires; the closed domestic stock does not');
 });
 
 await test('poll timeout always rearms, including first refresh failure', async () => {
