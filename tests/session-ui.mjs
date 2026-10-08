@@ -715,6 +715,14 @@ await test('saved selection survives restart when it is an index, even with an e
   assert.equal(c.validSelection(undefined, []), null);
 });
 
+// 저장된 기간이 지금 빌드에 없으면(손으로 고친 설정, 앞으로 기간 이름을 바꾸거나 뺀 빌드) loadChart 가
+// TF[...] 에서 undefined 를 읽어 매 갱신 예외로 끝나고 차트가 조용히 비었다. 다른 저장값처럼 거른다.
+await test('a saved timeframe this build does not know falls back to 1D', () => {
+  const { c } = harness(['validTimeframe']);
+  for (const tf of ['1D', '1W', '1M', '3M', '1Y', '3Y']) assert.equal(c.validTimeframe(tf), tf);
+  for (const tf of ['6M', '5Y', '', undefined, null, 'toString', '__proto__']) assert.equal(c.validTimeframe(tf), '1D', String(tf));
+});
+
 await test('indexLive rejects a non-positive value or previous close, like the stock adapter', () => {
   const { run } = harness();
   const base = `{ code: 'KOSPI', name: '코스피', change: 5, pct: 0.1, open: 100, high: 101, low: 99, isOpen: true }`;

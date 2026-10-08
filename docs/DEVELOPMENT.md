@@ -95,6 +95,8 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 
 저장 값을 추가할 때는 renderer.js 의 save() 와 main.js 의 state:set · state:get 세 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다.
 
+읽어 온 값은 믿지 않습니다. 시작할 때 모르는 이동평균 기간 · 색 · 굵기는 버리고, 모르는 `chartMode` 는 캔들, 없는 선택 종목은 첫 종목, 이 빌드에 없는 `timeframe` 은 `1D` 로 바꿉니다(`validTimeframe`) — 그대로 쓰면 차트가 매 갱신 예외로 끝나 조용히 빕니다. 기간을 빼거나 이름을 바꾸는 빌드가 나와도 같은 설정 폴더를 쓰는 다른 빌드가 멈추지 않게 하려는 것입니다.
+
 기본값으로 되돌리려면 앱을 종료한 뒤 이 파일을 지웁니다. 예전에는 내용을 `{}` 로 바꾸라고 안내했는데, Windows PowerShell 5.1 의 `'{}' >` 는 UTF-16 으로 저장해 읽지 못하는 파일이 됩니다.
 
 **파일이 깨져 있으면**(끝 쉼표, UTF-16 등) 저장소(conf)가 만들어질 때 `SyntaxError` 를 던져 창 코드가 하나도 돌지 않았습니다 — 위젯이 아예 뜨지 않습니다. 지금은 그 파일을 지우지 않고 `config.broken-<시각>.json` 으로 옮겨 두고(평단가는 이 파일에만 있습니다) 기본값으로 시작한 뒤, 옮겨 둔 이름을 알림으로 알립니다(`openStore`). 메모장 · PowerShell 이 붙이는 UTF-8 BOM 은 깨진 게 아니라 떼고 읽습니다.

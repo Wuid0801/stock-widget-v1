@@ -1516,6 +1516,12 @@ function validSelection(selected, watchlist) {
   return (watchlist[0] && watchlist[0].symbol) || null;
 }
 
+// 저장된 기간이 이 빌드에 없으면 1D. 손으로 고친 설정이나, 기간 이름을 바꾸거나 뺀 빌드가 남긴 값이면
+// loadChart 가 TF[...] 에서 undefined 를 읽어 매 갱신 예외로 끝나고 차트가 조용히 빈다.
+function validTimeframe(tf) {
+  return Object.hasOwn(TF, tf) ? tf : '1D';
+}
+
 async function select(symbol) {
   if (symbol !== state.selected) clearZooms(); // 다른 종목에 같은 날짜 구간은 뜻이 없다
   state.selected = symbol;
@@ -2267,6 +2273,7 @@ async function refreshNow() {
   applyOpacity(state.opacity);
   renderMaChips();
   state.selected = validSelection(state.selected, state.watchlist); // 지수를 보던 중이면 그대로
+  state.timeframe = validTimeframe(state.timeframe);
 
   document.getElementById('chartMode').onclick = async () => {
     state.chartMode = state.chartMode === 'candle' ? 'line' : 'candle';
