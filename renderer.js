@@ -1167,6 +1167,7 @@ async function loadQuote(item, live) {
   }
 
   const closes = r.closes.slice();
+  let times = r.times;
   let price = r.price;
   let prevClose = closes.length >= 2 ? closes[closes.length - 2] : price;
 
@@ -1175,7 +1176,20 @@ async function loadQuote(item, live) {
     // RSI가 20분 지난 값으로 계산되지 않게 한다
     price = live.price;
     prevClose = live.prevClose;
-    if (closes.length) closes[closes.length - 1] = price;
+    // 다만 마지막 봉이 아직 어제인데(장 전 프리마켓 · 개장 직후 — 야후 일봉은 20분 늦고 30분 캐시)
+    // 실시간은 오늘 거래면, 어제 종가를 지우지 않고 오늘 봉을 덧붙인다. 덮으면 어제 봉의 이동평균
+    // 끝점이 오늘 가격으로 틀어져 차트의 어제 캔들(실제 종가)과 어긋났다. 시각은 야후 일봉처럼 그날
+    // 09:00 KST(00:00 UTC)다 — maFor 는 UTC 날짜로 짝짓는데 08:30 KST 는 UTC 로 아직 어제다.
+    // 실시간 값이 오늘 것이 아니면(휴장일 · 장 전 08:00 이전) 지금처럼 마지막 봉을 맞춘다.
+    const kstDay = (ms) => Math.floor((ms + 9 * 3600000) / 86400000);
+    const today = kstDay(Date.now());
+    if (closes.length && kstDay(times[times.length - 1]) < today
+      && live.tradedAt && kstDay(Date.parse(live.tradedAt)) === today) {
+      closes.push(price);
+      times = [...times, today * 86400000];
+    } else if (closes.length) {
+      closes[closes.length - 1] = price;
+    }
   }
 
   const change = price - prevClose;
@@ -1210,7 +1224,7 @@ async function loadQuote(item, live) {
     week52Low: r.week52Low,
     // 이동평균 계산용. 1M 차트는 23봉뿐이라 자체 데이터로는 20일선이 끝부분만 그려진다.
     // 이미 받아둔 1년치를 그대로 재활용해 추가 요청 없이 앞구간까지 채운다.
-    daily: { times: r.times, closes },
+    daily: { times, closes },
   };
 }
 

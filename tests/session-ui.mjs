@@ -121,6 +121,45 @@ await test('fetch failures/empty/partial results clear stale closure; partial sy
   assert.equal(run('marketOpen'), true);
 });
 
+// 장 전(NXT 프리마켓 08:00~)과 개장 직후에는 야후 일봉의 마지막 봉이 아직 어제다(20분 지연 + 30분
+// 캐시). 그 자리에 오늘 가격을 덮으면 어제 봉의 이동평균 끝점이 오늘 가격으로 틀어진다 — 차트의
+// 어제 캔들은 실제 종가라 둘이 어긋났다. 오늘 봉을 덧붙이면 RSI 는 지금 가격을 따르고 어제 종가는 남는다.
+await test('before Yahoo has today\'s bar, the live price is added as today instead of replacing yesterday', async () => {
+  const { c, run } = harness(['loadQuote', 'maFor']);
+  let clock;
+  c.Date = class extends Date {
+    constructor(...a) { super(...(a.length ? a : [clock])); }
+    static now() { return clock; }
+  };
+  const at = (d) => Date.parse(`${d}T00:00:00Z`); // KRX 일봉 시각 = 09:00 KST
+  const days = ['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10']; // 월~목
+  const closes = [100, 102, 104, 108];
+  c.dailyFor = async () => ({ price: 108, closes, times: days.map(at), currency: 'KRW' });
+  const live = (price, tradedAt) => ({ price, prevClose: 108, open: true, session: 'pre', priceSession: 'pre',
+    isTrading: true, source: 'Naver', tradedAt });
+
+  clock = Date.parse('2026-09-11T08:30:00+09:00'); // 금요일 프리마켓, 야후 마지막 봉은 목요일
+  await c.loadQuote({ symbol: '005930.KS' }, live(112, '2026-09-11T08:29:00+09:00'));
+  let d = run("quotes['005930.KS'].daily");
+  assert.equal(JSON.stringify(d.closes), '[100,102,104,108,112]', 'Thursday keeps its close, Friday is added');
+  assert.equal(d.times.at(-1), at('2026-09-11'), 'stamped as Friday 09:00 KST like a Yahoo daily bar');
+  assert.equal(run(`maFor('005930.KS', [${at('2026-09-10')}], 2)[0]`), 106, "Thursday's MA2 is (104 + 108) / 2");
+  assert.equal(closes.length, 4, 'the cached series is not touched');
+
+  // 야후에 오늘 봉이 이미 있으면 지금처럼 그 봉을 지금 가격으로 맞춘다
+  c.dailyFor = async () => ({ price: 110, closes: [...closes, 110], times: [...days, '2026-09-11'].map(at), currency: 'KRW' });
+  clock = Date.parse('2026-09-11T10:00:00+09:00');
+  await c.loadQuote({ symbol: '005930.KS' }, live(113, '2026-09-11T09:59:00+09:00'));
+  d = run("quotes['005930.KS'].daily");
+  assert.equal(JSON.stringify(d.closes), '[100,102,104,108,113]');
+
+  // 휴장일(토요일)에는 실시간 값도 금요일 것이다 — 토요일 봉을 지어내지 않는다
+  clock = Date.parse('2026-09-12T10:00:00+09:00');
+  await c.loadQuote({ symbol: '005930.KS' }, live(113, '2026-09-11T20:00:00+09:00'));
+  d = run("quotes['005930.KS'].daily");
+  assert.equal(d.closes.length, 5, 'no Saturday bar');
+});
+
 await test('loadQuote carries metadata, zero close delta, timestamp, and delayed fallback', async () => {
   const { c, run } = harness(['loadQuote']);
   c.dailyFor = async () => ({price:99,closes:[90,100,99],times:[1,2,3],currency:'KRW'});
