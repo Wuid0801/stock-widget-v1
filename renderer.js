@@ -866,6 +866,9 @@ let lastChart = null;
 // 차트를 지울 때 딸린 상태까지 한 번에 정리한다.
 // 흩어 두면 상태가 하나 늘 때마다 여러 곳을 고쳐야 하고, 빠뜨리면 유령 값이 남는다.
 function clearChart() {
+  // 그 전에 시작한 차트 요청도 무효로 한다. 마지막 종목을 지울 때 그 종목의 요청이 진행 중이면
+  // 늦게 온 응답이 지운 종목의 차트를 빈 헤더 아래 다시 그렸다.
+  chartSeq++;
   if (chart) { chart.destroy(); chart = null; }
   lastChart = null;
   lastDrawSig = null;
@@ -1550,10 +1553,14 @@ async function undoRemove() {
   if (!s) return;
   hideUndo();
 
-  // 원래 자리에 다시 끼워 넣는다 (그 사이 목록이 짧아졌으면 끝에)
-  state.watchlist.splice(Math.min(s.index, state.watchlist.length), 0, s.item);
-  if (s.target) state.alerts.targets[s.item.symbol] = s.target;
-  if (s.holding) state.holdings[s.item.symbol] = s.holding;
+  // 원래 자리에 다시 끼워 넣는다 (그 사이 목록이 짧아졌으면 끝에). 6초 안에 검색으로 다시
+  // 추가했으면 줄은 이미 있다 — 두 줄이 되면 보유 합계가 두 배, 목표가 알림도 두 번이다. 그때는
+  // 줄은 그대로 두고 비어 있는 목표가 · 보유만 되살린다(다시 추가해도 이 둘은 돌아오지 않는다).
+  if (!state.watchlist.some((i) => i.symbol === s.item.symbol)) {
+    state.watchlist.splice(Math.min(s.index, state.watchlist.length), 0, s.item);
+  }
+  if (s.target && !state.alerts.targets[s.item.symbol]) state.alerts.targets[s.item.symbol] = s.target;
+  if (s.holding && !state.holdings[s.item.symbol]) state.holdings[s.item.symbol] = s.holding;
   save();
 
   renderList();
@@ -1566,6 +1573,9 @@ async function undoRemove() {
   renderList();
   renderDetail();
   await renderFolio();
+  // 위 select 의 차트는 시세가 돌아오기 전에 그려져 이동평균 · 교차 배지 · 색(늘 빨강)이 빠졌다.
+  // 시세가 생겼으니 다시 그린다 — 안 그리면 다음 갱신(장 마감 후 5분)까지 그대로다.
+  if (state.selected === s.item.symbol) await loadChart();
 }
 
 async function removeSymbol(symbol) {
@@ -1619,7 +1629,10 @@ async function addSymbol(item) {
       return;
     }
 
-    state.watchlist.push({ symbol: item.symbol, name: item.name });
+    // 조회를 기다리는 사이 되돌리기로 같은 종목이 이미 돌아왔으면 또 넣지 않는다
+    if (!state.watchlist.some((i) => i.symbol === item.symbol)) {
+      state.watchlist.push({ symbol: item.symbol, name: item.name });
+    }
     save();
     closeSearch();
     renderList();

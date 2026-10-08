@@ -949,6 +949,97 @@ await test('a cached price shown because Yahoo failed says so, with the time it 
   assert.doesNotMatch(header.innerHTML, /갱신 실패/);
 });
 
+// 삭제 · 되돌리기 · 추가를 실제 함수로 돌린다. 네트워크(시세 · 차트)는 테스트가 막아 두고 푼다.
+function undoRun(extra = []) {
+  const h = harness(['removeSymbol', 'undoRemove', 'addSymbol', 'showUndo', 'hideUndo', 'select', ...extra]);
+  h.run(source.match(/^const UNDO_MS = .*$/m)[0]);
+  h.run(source.match(/^let undoSnap = .*$/m)[0]);
+  h.run(source.match(/^let undoTimer = .*$/m)[0]);
+  h.run(source.match(/^const adding = .*$/m)[0]);
+  let gate = null;
+  const charts = [];
+  Object.assign(h.c, {
+    save() {}, renderList() {}, renderDetail() {}, renderIndices() {}, clearZooms() {}, hint() {}, closeSearch() {},
+    renderFolio: async () => {}, fetchLive: async () => ({}),
+    loadQuote: async (item) => {
+      if (gate) await gate.promise;
+      h.run(`quotes[${JSON.stringify(item.symbol)}] = { price: 100, change: 1 };`);
+    },
+    loadChart: async () => { charts.push(h.run('state.selected && !!quotes[state.selected]')); },
+    clearChart() {},
+  });
+  const hold = () => { let open; gate = { promise: new Promise((r) => { open = r; }) }; return () => { gate = null; open(); }; };
+  return { ...h, charts, hold };
+}
+const SAM = { symbol: '005930.KS', name: '삼성전자' };
+const HYNIX = { symbol: '000660.KS', name: 'SK하이닉스' };
+
+// 지운 종목을 6초 안에 다시 추가하고 되돌리기를 누르면 같은 종목이 두 줄이 됐다 — 보유 합계가
+// 두 배, 목표가 알림도 두 번. 다시 추가하면 보유는 이미 지워진 뒤라, 되돌리기는 줄은 그대로 두고
+// 비어 있는 목표가 · 보유를 되살린다. 추가가 아직 조회 중일 때 되돌려도 마찬가지다.
+await test('undo after re-adding the same stock restores its holding and target without a second row', async () => {
+  const a = undoRun();
+  a.run(`state.watchlist = ${JSON.stringify([SAM, HYNIX])}; state.selected = '000660.KS';
+    state.holdings = { '005930.KS': { qty: 10, avg: 200000 } };
+    state.alerts.targets = { '005930.KS': { up: 300000 } };`);
+  await a.c.removeSymbol('005930.KS');
+  await a.c.addSymbol(SAM);
+  await a.c.undoRemove();
+  assert.deepEqual(a.run("state.watchlist.map((i) => i.symbol).join()"), '000660.KS,005930.KS', 'one row each');
+  assert.equal(a.run("state.holdings['005930.KS'].avg"), 200000, 'the holding comes back');
+  assert.equal(a.run("state.alerts.targets['005930.KS'].up"), 300000, 'the target comes back');
+
+  // 추가가 조회를 기다리는 사이 되돌리기 — 되돌리기가 먼저 줄을 넣고, 추가는 뒤늦게 끝난다
+  const b = undoRun();
+  b.run(`state.watchlist = ${JSON.stringify([SAM, HYNIX])}; state.selected = '000660.KS';`);
+  await b.c.removeSymbol('005930.KS');
+  const open = b.hold();
+  const adding = b.c.addSymbol(SAM);
+  const undoing = b.c.undoRemove();
+  open();
+  await Promise.all([adding, undoing]);
+  assert.equal(b.run("state.watchlist.map((i) => i.symbol).join()"), '005930.KS,000660.KS', 'still one row each');
+});
+
+// 선택 중이던 종목을 지웠다 되돌리면 select → loadChart 가 시세를 다시 받기 전에 돈다. 시세가 없으면
+// 이동평균 · 교차 배지 · 색(늘 빨강)이 빠진 채 그려지고 다음 갱신(장 마감 후 5분)까지 남았다.
+await test('undoing a selected stock redraws its chart once its quote is back', async () => {
+  const a = undoRun();
+  a.run(`state.watchlist = ${JSON.stringify([SAM, HYNIX])}; state.selected = '005930.KS';`);
+  await a.c.removeSymbol('005930.KS');
+  a.charts.length = 0;
+  await a.c.undoRemove();
+  assert.equal(a.run('state.selected'), '005930.KS');
+  assert.equal(a.charts.at(-1), true, `the last chart draw sees the quote — draws: ${JSON.stringify(a.charts)}`);
+});
+
+// 마지막 종목을 지울 때 그 종목의 차트 요청이 진행 중이면, 응답이 뒤늦게 와 지운 종목의 차트가
+// 빈 헤더("—") 아래 다시 그려졌다. 차트를 지우면 그 전에 시작한 요청도 무효다.
+await test('removing the last stock while its chart is loading leaves no chart behind', async () => {
+  const a = undoRun(['loadChart', 'clearChart']);
+  a.run(source.match(/^let lastChart = .*$/m)[0]);
+  a.run(source.match(/^let hoverIdx = .*$/m)[0]);
+  a.run('let lastDrawSig = null;');
+  delete a.c.loadChart; delete a.c.clearChart; // 진짜 loadChart · clearChart 를 쓴다
+  a.run(formatting);
+  let release;
+  const draws = [];
+  Object.assign(a.c, {
+    fetchChartCached: () => new Promise((r) => {
+      release = () => r({ ok: true, closes: [1, 2, 3], times: [1, 2, 3], volumes: [1, 1, 1] });
+    }),
+    err() {}, quoteErrText: () => '', renderPeriod() {}, renderMaChips() {}, renderCrossBadge() {},
+    renderTrendBadges() {}, renderMaLegend() {}, drawChart: (d) => draws.push(d),
+  });
+  a.run(`state.watchlist = ${JSON.stringify([SAM])}; state.selected = '005930.KS'; state.timeframe = '1M';`);
+  const loading = a.run('loadChart()');
+  await a.c.removeSymbol('005930.KS');
+  release();
+  await loading;
+  assert.equal(a.run('state.selected'), null);
+  assert.equal(draws.length, 0, 'the late response for the removed stock is dropped');
+});
+
 // 설정 패널을 Esc 로 닫으면 패널만 닫혀야 한다. 패널의 Esc 처리가 이벤트를 문서까지 올려
 // 보내면, 문서 쪽 단축키는 그때 이미 패널이 닫혀 있어 Esc 를 "위젯 접기" 로 처리한다.
 // 입력칸은 문서 쪽이 원래 무시하므로 버튼(다크 · 라이트)에 포커스가 있을 때 생긴다.
