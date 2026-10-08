@@ -30,13 +30,17 @@ async function launch(gotLock, packaged = false, env = {}) {
   let win = null;
   class FakeWindow {
     constructor(o) {
-      win = this; this.visible = true; this.minimized = false; this.webContents = { setWindowOpenHandler() {}, on() {} };
-      this.opts = o; this.sets = [];
+      win = this; this.visible = true; this.minimized = false;
+      this.wcEvents = {};
+      this.webContents = {
+        setWindowOpenHandler() {}, on: (e, fn) => { this.wcEvents[e] = fn; }, reload: () => log.push('reload'),
+      };
+      this.opts = o; this.sets = []; this.minSize = null;
       this.bounds = { x: o.x ?? 790, y: o.y ?? 280, width: o.width, height: o.height }; // x/y 가 없으면 OS 가 가운데에 놓는다
     }
     setBounds(b) { this.sets.push(b); this.bounds = { ...this.bounds, ...b }; }
     getBounds() { return { ...this.bounds }; }
-    setMinimumSize() {} isDestroyed() { return false; }
+    setMinimumSize(w, h) { this.minSize = [w, h]; } isDestroyed() { return false; }
     isVisible() { return this.visible; }
     isMinimized() { return this.minimized; }
     restore() { log.push('restore'); this.minimized = false; }
@@ -182,6 +186,26 @@ const placed = async (bounds, displays = [MAIN]) => {
   const out = app.win.sets.at(-1);
   check('접은 채 모니터를 떼고 펴면 남은 화면 오른쪽 아래에 편다',
     out.x === 1920 - 340 - 12 && out.y === 1040 - 520 - 12 && out.width === 340 && out.height === 520, JSON.stringify(out));
+}
+
+// 화면(렌더러) 프로세스가 죽으면 창은 남는데 내용이 없고 ✕ 도 안 먹는다 — 테두리 없는 투명 창이고
+// 작업표시줄에도 없다. 다시 띄운다. 다시 뜬 화면은 펼친 상태로 시작하므로 접혀 있었으면 창도 편다.
+// 시작하자마자 또 죽으면 끝없이 다시 띄우게 되니 1분 안의 두 번째부터는 되풀이하지 않는다.
+{
+  const app = await launch(true, false, { bounds: { x: 100, y: 100, width: 340, height: 520 } });
+  const gone = app.win.wcEvents['render-process-gone'];
+  const reloads = () => app.log.filter((x) => x === 'reload').length;
+  check('화면 프로세스가 죽는 것을 지켜본다', typeof gone === 'function');
+  gone?.({}, { reason: 'clean-exit' });
+  check('정상 종료는 다시 띄우지 않는다', reloads() === 0);
+  app.ipc['win:dock'](null, true, 200); // 접힌 채로 죽는다
+  gone?.({}, { reason: 'crashed' });
+  check('죽으면 다시 띄운다', reloads() === 1, app.log.join(','));
+  const b = app.win.sets.at(-1);
+  check('접혀 있었으면 펴서 다시 띄운다', b.x === 100 && b.y === 100 && b.height === 520
+    && app.win.minSize && app.win.minSize[1] === 380, `${JSON.stringify(b)} min ${JSON.stringify(app.win.minSize)}`);
+  gone?.({}, { reason: 'oom' });
+  check('1분 안에 또 죽으면 되풀이하지 않는다', reloads() === 1, app.log.join(','));
 }
 
 // 설정 파일이 깨지면(손으로 고치다 남긴 끝 쉼표, PowerShell 5.1 '{}' > 가 만든 UTF-16 등) Store 를

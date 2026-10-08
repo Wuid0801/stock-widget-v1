@@ -169,6 +169,18 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
 
+  // 화면(렌더러) 프로세스가 죽으면 창은 남는데 내용이 없고 ✕ 도 안 먹는다 — 테두리 없는 투명
+  // 창이고 작업표시줄에도 없어 빠져나오기 어렵다. 다시 띄운다. 다시 뜬 화면은 펼친 상태로
+  // 시작하므로 접혀 있었으면 창도 편다(그대로 두면 접힌 크기에 갇히고 위치도 저장되지 않는다).
+  // 시작하자마자 또 죽으면 끝없이 다시 띄우게 되니 1분 안의 두 번째부터는 되풀이하지 않는다.
+  let reloadedAt = -Infinity;
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (details.reason === 'clean-exit' || win.isDestroyed() || Date.now() - reloadedAt < 60000) return;
+    reloadedAt = Date.now();
+    if (compact) unfold();
+    win.webContents.reload();
+  });
+
   win.loadFile('index.html');
 
   // 축소 모드의 임시 크기가 저장되면 재실행 시 접힌 채로 뜨므로, 평소 크기만 저장한다.
@@ -221,42 +233,46 @@ ipcMain.on('win:close', () => win && win.close());
 
 // 우하단 접기/펴기. height는 렌더러가 실제 행 높이를 재서 넘겨준다(배율·폰트 영향 회피).
 // 펼 때는 store에 남아있는 평소 크기로 되돌린다.
+const DOCK_MARGIN = 12; // 화면 가장자리 여백 — 접을 자리와, 펼 자리를 고칠 때 같이 쓴다
+
+// 접기 전 크기 · 자리로 편다. 접기를 푸는 IPC 와, 화면 프로세스가 죽어 다시 띄울 때 쓴다.
+function unfold() {
+  compact = false;
+  win.setMinimumSize(MIN_W, MIN_H);
+  if (!normalBounds) return;
+  // 접은 채 외부 모니터를 떼면 펼 자리(normalBounds)가 없는 화면을 가리킨다. 접힌 창은
+  // Windows 가 남은 화면으로 옮기지만 펼 자리는 그대로라, 크기만 살려 지금 화면의
+  // 오른쪽 아래에 편다.
+  if (!reachable(normalBounds, screen.getAllDisplays())) {
+    const area = screen.getDisplayMatching(win.getBounds()).workArea;
+    normalBounds = {
+      ...normalBounds,
+      x: area.x + area.width - normalBounds.width - DOCK_MARGIN,
+      y: area.y + area.height - normalBounds.height - DOCK_MARGIN,
+    };
+  }
+  win.setBounds(normalBounds);
+}
+
 ipcMain.on('win:dock', (_e, on, height) => {
   if (!win) return;
-  compact = on;
-  const margin = 12; // 화면 가장자리 여백 — 접을 자리와, 펼 자리를 고칠 때 같이 쓴다
-  if (on) {
-    // store의 bounds에는 창을 한 번도 옮기지 않았으면 x/y가 없다.
-    // 그 값으로 되돌리면 크기만 바뀌고 우하단에 머무르므로 직접 기억해 둔다.
-    // 이미 잡아둔 기준이 있으면 다시 읽지 않는다(위 saveBounds 주석 참고).
-    const b = win.getBounds();
-    if (!normalBounds) normalBounds = b;
-    const area = screen.getDisplayMatching(b).workArea; // 작업표시줄을 피한 영역
-    const width = normalBounds.width; // 펼친 폭과 어긋나지 않도록 기준값을 쓴다
-    // 최소 높이(MIN_H)를 먼저 낮추지 않으면 접힌 높이가 그대로 클램프된다
-    win.setMinimumSize(MIN_W, height);
-    win.setBounds({
-      width,
-      height,
-      x: area.x + area.width - width - margin,
-      y: area.y + area.height - height - margin,
-    });
-  } else {
-    win.setMinimumSize(MIN_W, MIN_H);
-    if (!normalBounds) return;
-    // 접은 채 외부 모니터를 떼면 펼 자리(normalBounds)가 없는 화면을 가리킨다. 접힌 창은
-    // Windows 가 남은 화면으로 옮기지만 펼 자리는 그대로라, 크기만 살려 지금 화면의
-    // 오른쪽 아래에 편다.
-    if (!reachable(normalBounds, screen.getAllDisplays())) {
-      const area = screen.getDisplayMatching(win.getBounds()).workArea;
-      normalBounds = {
-        ...normalBounds,
-        x: area.x + area.width - normalBounds.width - margin,
-        y: area.y + area.height - normalBounds.height - margin,
-      };
-    }
-    win.setBounds(normalBounds);
-  }
+  if (!on) { unfold(); return; }
+  compact = true;
+  // store의 bounds에는 창을 한 번도 옮기지 않았으면 x/y가 없다.
+  // 그 값으로 되돌리면 크기만 바뀌고 우하단에 머무르므로 직접 기억해 둔다.
+  // 이미 잡아둔 기준이 있으면 다시 읽지 않는다(위 saveBounds 주석 참고).
+  const b = win.getBounds();
+  if (!normalBounds) normalBounds = b;
+  const area = screen.getDisplayMatching(b).workArea; // 작업표시줄을 피한 영역
+  const width = normalBounds.width; // 펼친 폭과 어긋나지 않도록 기준값을 쓴다
+  // 최소 높이(MIN_H)를 먼저 낮추지 않으면 접힌 높이가 그대로 클램프된다
+  win.setMinimumSize(MIN_W, height);
+  win.setBounds({
+    width,
+    height,
+    x: area.x + area.width - width - DOCK_MARGIN,
+    y: area.y + area.height - height - DOCK_MARGIN,
+  });
 });
 
 // skipTaskbar:true 인 채로 최소화하면 작업표시줄에도 없어서 되살릴 수가 없다.
