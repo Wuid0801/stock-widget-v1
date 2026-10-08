@@ -43,6 +43,8 @@ npm run dist    # dist/KRStockWidget-Setup.exe  (약 90MB, 30초)
 > 그 안에 macOS 용 심볼릭 링크가 들어 있어 Windows 에서는 개발자 모드나 관리자 권한 없이
 > 압축 해제가 실패합니다. 그래서 `win.signAndEditExecutable` 을 끄고,
 > 아이콘과 버전 정보는 `build/after-pack.cjs` 에서 `rcedit` 으로 직접 넣습니다.
+> 아이콘은 `make-icon.cjs` 가 만든 `build/icon.ico` 입니다. 이 파일이나 exe 를 못 찾으면 경고 대신 빌드를 멈춥니다 —
+> 예전 경로(`dist/.icon-ico`)를 보던 동안 이 단계가 경고 한 줄로 건너뛰어져, 설치본이 "Electron" 이름 · 아이콘으로 나갔습니다.
 > 따라서 개발자 모드나 관리자 권한 없이 빌드할 수 있습니다.
 >
 > 서명되지 않은 exe 라 실행 시 SmartScreen 경고가 뜹니다. 없애려면 코드 서명 인증서가 필요합니다.

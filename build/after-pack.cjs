@@ -12,11 +12,15 @@ exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'win32') return;
 
   const exe = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`);
-  // electron-builder 가 icon.png 로부터 만들어 둔 ico
-  const ico = path.join(context.outDir, '.icon-ico', 'icon.ico');
+  // make-icon.cjs 가 icon.svg 로 만든 멀티사이즈 ico(npm run dist 가 먼저 돌린다).
+  // 예전에는 electron-builder 가 icon.png 로 만들던 dist/.icon-ico 를 봤는데, 55d2b4a 에서
+  // make-icon 으로 바꾼 뒤로 그 파일이 생기지 않아 이 단계가 경고 한 줄만 남기고 건너뛰어졌다 —
+  // 설치본이 "Electron" 이름 · 아이콘(작업 관리자, 바로가기)으로 나갔다.
+  const ico = path.join(__dirname, 'icon.ico');
 
-  if (!fs.existsSync(exe)) { console.warn(`  afterPack: exe 없음 — ${exe}`); return; }
-  if (!fs.existsSync(ico)) { console.warn(`  afterPack: ico 없음 — 아이콘 삽입 건너뜀`); return; }
+  // 건너뛰지 않고 빌드를 멈춘다. 경고는 빌드 로그에 묻혀 아무도 못 봤다.
+  if (!fs.existsSync(exe)) throw new Error(`afterPack: exe 없음 — ${exe}`);
+  if (!fs.existsSync(ico)) throw new Error(`afterPack: ico 없음 — ${ico} (npm run dist 로 빌드하면 make-icon 이 만든다)`);
 
   const rcedit = require('rcedit');
   await rcedit(exe, {
