@@ -869,6 +869,40 @@ await test('drag zoom needs 6px of real mouse travel, so a jittery click on dens
   assert.equal(drawn.length, 1);
 });
 
+// 설정 패널을 Esc 로 닫으면 패널만 닫혀야 한다. 패널의 Esc 처리가 이벤트를 문서까지 올려
+// 보내면, 문서 쪽 단축키는 그때 이미 패널이 닫혀 있어 Esc 를 "위젯 접기" 로 처리한다.
+// 입력칸은 문서 쪽이 원래 무시하므로 버튼(다크 · 라이트)에 포커스가 있을 때 생긴다.
+await test('Esc closes the settings panel only — it does not also fold the widget', () => {
+  const { c, run } = harness();
+  let docKey = null;
+  const folds = [];
+  c.document.addEventListener = (type, fn) => { if (type === 'keydown') docKey = fn; };
+  Object.assign(c, {
+    searchEl: { hidden: true },
+    alertsEl: { hidden: false },
+    closeAlerts: () => { c.alertsEl.hidden = true; },
+    setCompact: (on) => folds.push(on),
+    compact: false,
+  });
+  const listener = source.slice(source.indexOf("document.addEventListener('keydown', (e) => {"));
+  run(listener.slice(0, listener.indexOf('\n});') + 4));
+  run(source.match(/^\s*alertsEl\.onkeydown = .*$/m)[0]);
+  // 패널 → 문서 순서로 올라간다. 패널이 전파를 멈추면 문서까지 가지 않는다
+  const press = (key, target) => {
+    let stopped = false;
+    const e = { key, target, preventDefault() {}, stopPropagation() { stopped = true; } };
+    c.alertsEl.onkeydown(e);
+    if (!stopped) docKey(e);
+  };
+  press('Escape', { tagName: 'BUTTON' }); // 라이트 버튼을 누른 뒤 Esc
+  assert.equal(c.alertsEl.hidden, true, 'the panel closes');
+  assert.deepEqual(folds, [], 'the widget does not fold as well');
+
+  // 패널이 닫힌 뒤의 Esc 는 패널을 거치지 않고 문서로 간다 — 지금처럼 접기다
+  docKey({ key: 'Escape', target: { tagName: 'BODY' }, preventDefault() {} });
+  assert.deepEqual(folds, [true]);
+});
+
 // 수렴 배지는 실데이터에서 아직 뜬 적이 없다 — 깨져도 "안 뜨는 게 정상" 처럼 보인다.
 // 지지 100 + i · 저항 b − i 는 (b − 100) / 2 봉에서 만나고, 마지막 봉은 59 다.
 await test('trend badges: convergence counts up from the last bar, hides when past or too far, and gives way to a breakout', () => {

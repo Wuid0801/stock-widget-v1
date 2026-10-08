@@ -2199,7 +2199,9 @@ async function refreshNow() {
     save();
     renderAlerts();
   };
-  alertsEl.onkeydown = (e) => { if (e.key === 'Escape') closeAlerts(); };
+  // 문서의 Esc(위젯 접기)로 번지지 않게 멈춘다 — 이 처리로 패널이 먼저 닫히므로 문서 쪽의
+  // "패널이 열려 있으면 무시" 검사를 지나 버린다(다크 · 라이트 버튼에 포커스가 있을 때).
+  alertsEl.onkeydown = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeAlerts(); } };
   qEl.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 300); };
   qEl.onkeydown = (e) => {
     if (e.key === 'Escape') closeSearch();
