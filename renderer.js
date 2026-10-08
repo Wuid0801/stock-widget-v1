@@ -76,7 +76,15 @@ const DAILY = { range: '5y', interval: '1d' };
 // 일봉은 장중에 마지막 봉만 움직이므로 캐시하고 가끔만 다시 받는다.
 // 현재가는 실시간(네이버)에서 따로 오므로 화면은 30초마다 그대로 갱신된다.
 const DAILY_TTL = 30 * 60 * 1000;
-const dailyCache = {}; // symbol -> { at, price, closes, times, currency, week52High, week52Low }
+const dailyCache = {}; // symbol -> { at, price, closes, times, currency, week52High, week52Low, retryAt? }
+// 일봉을 받지 못한 종목이 다시 받기까지 쉬는 시간. main.js 의 CLOSE_RETRY 와 같다.
+// 쉬지 않으면 야후가 바로 거절(429)할 때 30초마다 전 종목 5년치를 다시 보낸다.
+const DAILY_RETRY = 5 * 60 * 1000;
+// 갱신 한 차례(refreshAll)에 일봉이 하나라도 실패하면 캐시가 있는 나머지는 그 차례를 건너뛴다.
+// 야후가 응답을 멈추면 종목마다 8초씩(FETCH_TIMEOUT) 기다려 갱신 한 번이 1분을 넘기고,
+// 그동안 ↻ 도 먹지 않는다 — 한 차례에 한 번만 기다린다.
+let dailyRound = 0;
+let dailyFailRound = -1;
 
 // 야후 한국 시세가 늦게 오는 분. 실측에서 세 종목 모두 기준 시각이 정확히 20분 전이었다
 // (docs/DEVELOPMENT.md "왜 나눠 쓰는가"). 그래서 분봉은 개장 20분 뒤부터 들어온다.
@@ -449,10 +457,13 @@ function renderUpdated() {
   const time = validFetched
     ? `${p(fetched.getHours())}:${p(fetched.getMinutes())}:${p(fetched.getSeconds())}` : '';
   const delayed = q && !q.error && q.price != null && q.live === false;
+  // 야후까지 실패해 캐시 값을 보이는 중이면 시각은 실제로 받은 때다(fetchedAt) — 지금 시각을 붙이면
+  // 몇 시간 묵은 가격이 정상적인 20분 지연 시세처럼 보인다.
+  const stale = delayed && q.stale;
   el.innerHTML = `<span class="${q && q.live ? SESSION_CLASS[session] : 'delay'}">`
-    + `${delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
+    + `${stale ? '갱신 실패' : delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
   const source = q && !q.error && q.price != null
-    ? `${q.live ? '실시간' : '20분지연'} · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
+    ? `${q.live ? '실시간' : stale ? '마지막으로 받은 값' : '20분지연'} · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
     : '확인 불가';
   el.title = `소스: ${source}${q && q.market ? ` · ${q.market}` : ''}`
     + `\n세션: ${SESSION_TEXT[session]}`
@@ -1108,13 +1119,24 @@ function quoteErrText() {
 
 // 일봉 1년치로 현재가/전일종가/RSI를 만든다.
 // meta.chartPreviousClose는 "range 시작 직전" 종가라 일간 등락에 쓸 수 없다 → closes[len-2] 사용.
-// 일봉 시리즈를 캐시에서 꺼낸다. 만료됐으면 다시 받고, 실패하면 있던 캐시를 그대로 쓴다.
+// 일봉 시리즈를 캐시에서 꺼낸다. 만료됐으면 다시 받는다. 받지 못하면 있던 캐시를 쓰되
+// 낡았다고 표시한다(stale) — 몇 시간 전 값일 수 있다. 그 종목은 DAILY_RETRY 동안 쉬고, 이번
+// 차례에 다른 종목이 실패했어도 건너뛴다. 캐시가 없는 종목은 쉬지 않는다 — 그 줄은 오류라
+// 다음 갱신에 바로 다시 해 봐야 한다.
 async function dailyFor(symbol, ttl) {
   const cached = dailyCache[symbol];
   if (cached && Date.now() - cached.at < ttl) return cached;
+  if (cached && (Date.now() < (cached.retryAt || 0) || dailyFailRound === dailyRound)) {
+    return { ...cached, stale: true };
+  }
 
   const r = await api.fetchChart({ symbol, ...DAILY });
-  if (!r.ok) return cached || { error: r.error };
+  if (!r.ok) {
+    dailyFailRound = dailyRound;
+    if (!cached) return { error: r.error };
+    cached.retryAt = Date.now() + DAILY_RETRY;
+    return { ...cached, stale: true };
+  }
 
   const last = r.closes.length - 1;
   dailyCache[symbol] = {
@@ -1161,6 +1183,9 @@ async function loadQuote(item, live) {
     pct: prevClose ? (change / prevClose) * 100 : 0,
     rsi: calcRSI(closes),
     live: !!live,
+    // 실시간 없이 야후도 실패해 캐시로 만든 가격 — 받은 시각과 함께 "갱신 실패" 로 보인다(renderUpdated).
+    // 실시간이 있으면 가격은 새것이다. 낡은 일봉은 RSI · 이동평균 · 52주에만 쓰인다.
+    stale: !live && !!r.stale,
     open: !!(live && live.open),
     session: live ? quoteSession(live) : 'unknown',
     priceSession: priceSessionOf(live),
@@ -1173,7 +1198,7 @@ async function loadQuote(item, live) {
     source: live && live.source || (live ? 'Naver' : 'Yahoo'),
     tradedAt: live && live.tradedAt || null,
     openTime: live && live.openTime || null, // 정규장 시작 'HHMM' — 분봉이 언제 들어오는지 알릴 때 쓴다
-    fetchedAt: Date.now(),
+    fetchedAt: !live && r.stale ? r.at : Date.now(),
     // 장후 가격의 검증된 당일 정규장 종가 대비 이동폭. 종료 후에도 유지한다.
     // 0 도 뜻이 있는 값이라(움직이지 않음) || 로 뭉개면 안 된다.
     fromClose: live && live.fromClose != null ? live.fromClose : null,
@@ -1441,6 +1466,7 @@ async function loadChart() {
 async function refreshAll() {
   if (busy) return;
   busy = true;
+  dailyRound++; // 일봉 실패를 차례 단위로 센다(dailyFor)
   try {
     const indexNow = await loadIndices();
 

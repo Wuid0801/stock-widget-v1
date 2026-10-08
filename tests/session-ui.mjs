@@ -869,6 +869,86 @@ await test('drag zoom needs 6px of real mouse travel, so a jittery click on dens
   assert.equal(drawn.length, 1);
 });
 
+// 일봉(야후)을 실제 refreshAll · loadQuote · dailyFor 로 받는다. 시계는 테스트가 돌린다.
+function dailyRun({ yahoo, live = () => ({}) }) {
+  const h = harness(['refreshAll', 'loadQuote', 'dailyFor']);
+  let clock = NOW;
+  h.c.Date = class extends Date {
+    constructor(...a) { super(...(a.length ? a : [clock])); }
+    static now() { return clock; }
+  };
+  const calls = [];
+  h.c.api.fetchChart = async ({ symbol, range }) => {
+    calls.push(symbol);
+    return yahoo(symbol, range);
+  };
+  Object.assign(h.c, {
+    loadIndices: async () => [], fetchLive: async () => live(),
+    renderList() {}, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderFolio: async () => {}, loadChart: async () => {},
+  });
+  return { ...h, calls, at: (sec) => { clock = NOW + sec * 1000; }, refresh: () => h.c.refreshAll() };
+}
+const daily = (price) => ({ ok: true, price, closes: [price - 1000, price], times: [NOW - 86400000, NOW],
+  opens: [price, price], highs: [price, price], lows: [price, price], currency: 'KRW' });
+
+// 야후가 응답을 멈추면(8초씩 기다림) 갱신 한 번이 종목 수 × 8초가 되고, 바로 거절(429)하면
+// 30초마다 전 종목 5년치를 다시 보낸다. 실패한 종목은 5분 쉬고, 한 차례에 하나가 실패하면
+// 캐시가 있는 나머지는 그 차례를 건너뛴다.
+await test('a failing Yahoo daily fetch is retried at most once per refresh, and each symbol rests 5 minutes', async () => {
+  let up = true;
+  const d = dailyRun({ yahoo: (s) => (up ? daily(100000) : { ok: false, error: 'HTTP 429' }) });
+  d.run(`state.watchlist = [{symbol:'005930.KS',name:'삼성전자'},{symbol:'000660.KS',name:'SK하이닉스'},
+    {symbol:'035420.KS',name:'NAVER'}];`);
+  await d.refresh(); // 0초 — 다 받는다(종목 3 + 지수 2)
+  assert.equal(d.calls.length, 5);
+  up = false;
+  d.calls.length = 0;
+  for (const sec of [120, 150, 180, 210]) { d.at(sec); await d.refresh(); } // 캐시 만료(60초) 뒤 네 번
+  assert.equal(d.calls.length, 4, `one request per refresh, not 5 — got ${d.calls.join(',')}`);
+  assert.equal(new Set(d.calls).size, 4, 'each refresh tries a different symbol — the failed ones rest');
+  up = true;
+  d.calls.length = 0;
+  d.at(210 + 301); await d.refresh(); // 마지막 실패에서 5분 지남 — 모두 다시 받는다
+  assert.equal(d.calls.length, 5, 'after the rest every symbol fetches again');
+  assert.ok(!d.run("quotes['005930.KS'].stale"), 'fresh again');
+});
+
+// 네트워크가 끊기면 dailyFor 는 몇 시간 전 캐시를 돌려준다. 그 값을 "20분지연 <지금 시각>" 으로
+// 보여 주면 묵은 가격이 정상 지연 시세처럼 보인다 — 실제로 받은 시각과 함께 "갱신 실패" 로 보인다.
+// 실시간(네이버)이 있으면 가격은 새것이라 그대로다(일봉은 RSI · 이동평균 · 52주에만 쓴다).
+await test('a cached price shown because Yahoo failed says so, with the time it was actually fetched', async () => {
+  let up = true;
+  let naver = false;
+  const d = dailyRun({
+    yahoo: () => (up ? daily(250000) : { ok: false, error: 'fetch failed' }),
+    live: () => (naver ? { '005930': { price: 251000, prevClose: 249000, open: true, session: 'regular',
+      priceSession: 'regular', isTrading: true, source: 'Naver' } } : {}),
+  });
+  d.run("state.watchlist = [{symbol:'005930.KS',name:'삼성전자'}];");
+  await d.refresh(); // 18:30:00 KST 에 받음
+  up = false;
+  d.at(3 * 3600); // 세 시간 뒤, 네트워크 끊김
+  await d.refresh();
+  const q = d.run("quotes['005930.KS']");
+  assert.equal(q.price, 250000);
+  assert.equal(q.stale, true);
+  assert.equal(q.fetchedAt, NOW, 'fetchedAt is when the cache was filled, not now');
+  d.c.renderUpdated();
+  const header = d.elements.get('updated');
+  assert.match(header.innerHTML, /갱신 실패<\/span> 18:30:00/, header.innerHTML);
+  assert.match(header.title, /마지막으로 받은 값/);
+
+  naver = true; // 네이버는 되고 야후만 안 될 때
+  d.at(3 * 3600 + 30);
+  await d.refresh();
+  const q2 = d.run("quotes['005930.KS']");
+  assert.equal(q2.price, 251000);
+  assert.ok(!q2.stale, 'a live price is fresh even if the daily series is old');
+  d.c.renderUpdated();
+  assert.doesNotMatch(header.innerHTML, /갱신 실패/);
+});
+
 // 설정 패널을 Esc 로 닫으면 패널만 닫혀야 한다. 패널의 Esc 처리가 이벤트를 문서까지 올려
 // 보내면, 문서 쪽 단축키는 그때 이미 패널이 닫혀 있어 Esc 를 "위젯 접기" 로 처리한다.
 // 입력칸은 문서 쪽이 원래 무시하므로 버튼(다크 · 라이트)에 포커스가 있을 때 생긴다.
