@@ -3,6 +3,7 @@
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
 const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
 const { normalizeQuote, confirmedRegularClose, overFromClose,
@@ -33,8 +34,15 @@ const rawFetch = FAIL_URLS.length
 // 기다리는데, 그동안 렌더러의 갱신이 끝나지 않아 자동 갱신과 ↻ 가 같이 멈춘다.
 // tests/net-timeout.mjs 가 핸들러마다 확인한다.
 const FETCH_TIMEOUT = 8000;
+// 인터넷이 끊기거나 서버에 닿지 못하면 Node fetch 는 영어 'fetch failed'(TypeError)를 던진다 —
+// 화면에 그대로 뜨면("삼성전자 차트: fetch failed") 원인을 알기 어렵다. 원인 코드(cause.code)는
+// 상황마다 달라(DNS 실패 ENOTFOUND, 연결 거부는 없음) 한 문구로 묶는다.
 const netFetch = (url, opt = {}) => rawFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT), ...opt })
-  .catch((e) => { throw e?.name === 'TimeoutError' ? new Error('응답 시간 초과') : e; });
+  .catch((e) => {
+    if (e?.name === 'TimeoutError') throw new Error('응답 시간 초과');
+    if (e instanceof TypeError && e.message === 'fetch failed') throw new Error('네트워크 연결 실패');
+    throw e;
+  });
 
 // 'regular' | 'pre' | 'after' | 'closed' 로 장 상태를 고정한다.
 // 실제 장 시간에 기대면 밤·주말에는 폴링 간격 검증을 돌릴 수 없다.
@@ -49,7 +57,7 @@ const DEFAULT_WATCHLIST = [
   { symbol: '035420.KS', name: 'NAVER' },
 ];
 
-const store = new Store({
+const storeOptions = {
   // electron-store 는 기본적으로 app.getName() 기준 폴더에 저장한다.
   // productName 을 붙이면 저장 위치가 바뀌어 기존 설정이 통째로 사라지므로 경로를 고정한다.
   //
@@ -74,7 +82,25 @@ const store = new Store({
     maStyles: {}, // 이동평균선별로 바꾼 색 · 굵기 { [기간]: { color, width } } — 바꾼 것만
     chartMode: 'candle', // 'candle' | 'line'
   },
-});
+  // 메모장 · PowerShell 이 붙인 UTF-8 BOM 은 떼고 읽는다 — JSON.parse 는 BOM 에서 SyntaxError 를 낸다.
+  deserialize: (text) => JSON.parse(text.replace(/^\uFEFF/, '')),
+};
+
+// 설정 파일이 깨졌으면(손으로 고치다 남긴 끝 쉼표, PowerShell 5.1 의 '{}' > 가 만든 UTF-16 등)
+// Store 를 만드는 순간 SyntaxError 가 나서 창 코드가 하나도 돌지 않았다 — 위젯이 아예 뜨지 않는다.
+// 지우지 않고 이름을 바꿔 두고(평단가는 이 파일에만 있다) 기본값으로 시작하고, 창이 뜬 뒤 알린다.
+let brokenConfig = null; // 옮겨 둔 깨진 설정 파일 경로
+function openStore() {
+  try {
+    return new Store(storeOptions);
+  } catch (e) {
+    if (!(e instanceof SyntaxError)) throw e;
+    brokenConfig = path.join(storeOptions.cwd, `config.broken-${Date.now()}.json`);
+    fs.renameSync(path.join(storeOptions.cwd, 'config.json'), brokenConfig);
+    return new Store(storeOptions);
+  }
+}
+const store = openStore();
 
 let win = null;
 let compact = false;      // 우하단 축소 모드 — 이때의 창 크기는 저장하지 않는다
@@ -344,7 +370,6 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
 // 코스피/코스닥 지수 (실시간). 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
 ipcMain.handle('quote:indices', async () => {
   const url = 'https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ';
-  const num = (v) => Number(String(v ?? '').replace(/,/g, ''));
   // 지수 헤더용 값. 빠진 값은 0 이 아니라 null — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
   const opt = (v) => {
     const s = String(v ?? '').replace(/,/g, '').trim();
@@ -361,16 +386,17 @@ ipcMain.handle('quote:indices', async () => {
     const items = (json.datas || []).map((d) => ({
       code: d.itemCode,
       name: d.stockName,
-      value: num(d.closePriceRaw ?? d.closePrice),
+      value: opt(d.closePriceRaw ?? d.closePrice),
       // 지수도 종목처럼 내리면 음수다(2026-10-02 코스닥 -1.00 실측)
       change: opt(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice),
-      pct: num(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
+      pct: opt(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
       open: opt(d.openPriceRaw ?? d.openPrice),
       high: opt(d.highPriceRaw ?? d.highPrice),
       low: opt(d.lowPriceRaw ?? d.lowPrice),
       isOpen: d.marketStatus === 'OPEN',
       tradedAt: d.localTradedAt || null,
-    })).filter((i) => Number.isFinite(i.value) && Number.isFinite(i.pct));
+    // 종가 · 등락률이 비면 그 지수는 뺀다 — 0 으로 읽으면 지수 줄에 "코스피 0.00" 이 뜬다.
+    })).filter((i) => i.value > 0 && i.pct != null);
 
     return items.length ? { ok: true, items } : { ok: false, error: '빈 응답' };
   } catch (err) {
@@ -556,6 +582,13 @@ if (!app.requestSingleInstanceLock()) {
     if (app.isPackaged) Menu.setApplicationMenu(null);
     createWindow();
     registerToggle();
+    // 깨진 설정을 옮겨 두고 처음 상태로 떴다 — 목록이 비어 보이는 까닭과 원래 파일 자리를 알린다
+    if (brokenConfig && Notification.isSupported()) {
+      new Notification({
+        title: '설정 파일을 읽지 못했습니다',
+        body: `처음 상태로 시작했습니다. 원래 파일은 ${path.basename(brokenConfig)} 로 옮겨 두었습니다.`,
+      }).show();
+    }
   });
 }
 

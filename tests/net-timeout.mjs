@@ -23,6 +23,7 @@ const electron = {
 const modules = {
   electron,
   'electron-store': class { get() {} set() {} },
+  fs,
   path,
   './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
 };
@@ -73,6 +74,22 @@ for (const [name, out] of results) {
 const chart = results.find(([n]) => n === 'yf:chart')[1];
 check('시간 초과는 한글로 알린다', chart && chart.error === '응답 시간 초과', JSON.stringify(chart));
 check('제한 시간은 8초다', limits.length > 0 && limits.every((ms) => ms === 8000), limits.join(','));
+
+// 인터넷이 끊기면 Node fetch 는 영어 'fetch failed'(TypeError)를 던진다. 화면에 그대로 뜨면
+// ("삼성전자 차트: fetch failed") 나머지가 다 한글인 곳에서 원인을 알기 어렵다.
+// 원인 코드(cause.code)는 상황마다 달라(DNS 실패 ENOTFOUND, 연결 거부는 없음) 한 문구로 묶는다.
+for (const cause of [{ code: 'ENOTFOUND' }, undefined]) {
+  const offline = async () => { throw new TypeError('fetch failed', cause ? { cause } : undefined); };
+  new Function('require', 'process', 'fetch', 'AbortSignal', src)(
+    require, { env: {}, platform: 'test' }, offline, AbortSignal);
+  const off = await Promise.all(Object.entries(CALLS).map(async ([name, args]) => [name, await handlers[name]({}, ...args)]));
+  const english = off.filter(([, o]) => JSON.stringify(o).includes('fetch failed'));
+  const tag = cause ? cause.code : '원인 코드 없음';
+  check(`인터넷이 끊겨도(${tag}) 영어 "fetch failed" 를 내보내지 않는다`, english.length === 0,
+    english.map(([n, o]) => `${n} ${JSON.stringify(o)}`).join(' / '));
+  const offChart = off.find(([n]) => n === 'yf:chart')[1];
+  check(`네트워크 실패(${tag})는 한글로 알린다`, offChart.error === '네트워크 연결 실패', JSON.stringify(offChart));
+}
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

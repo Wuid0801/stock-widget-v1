@@ -16,13 +16,17 @@ let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 
 // gotLock: 이 프로세스가 잠금을 얻었는가(= 첫 번째 실행인가), packaged: 설치본으로 실행했는가
-// screen: 저장된 창 위치(bounds)와 지금 연결된 모니터들(displays — 각자 workArea)
-async function launch(gotLock, packaged = false, screen = {}) {
+// env: 저장된 창 위치(bounds), 지금 연결된 모니터들(displays — 각자 workArea),
+//      설정 파일이 깨져 첫 읽기가 실패하는가(brokenConfig)
+async function launch(gotLock, packaged = false, env = {}) {
   const log = [];
   const menus = [];
+  const stores = []; // Store 를 만들 때 넘긴 옵션
+  const renames = [];
+  const notes = [];
   const appEvents = {};
   const ipc = {};
-  let displays = screen.displays || [{ workArea: { x: 0, y: 0, width: 1920, height: 1040 } }];
+  let displays = env.displays || [{ workArea: { x: 0, y: 0, width: 1920, height: 1040 } }];
   let win = null;
   class FakeWindow {
     constructor(o) {
@@ -64,15 +68,26 @@ async function launch(gotLock, packaged = false, screen = {}) {
         return { d, area: Math.max(0, w) * Math.max(0, h) };
       }).sort((p, q) => q.area - p.area)[0].d,
     },
-    Notification: {},
+    Notification: class {
+      static isSupported() { return true; }
+      constructor(o) { notes.push(o); }
+      show() {}
+    },
   };
   const modules = {
     electron,
     'electron-store': class {
-      constructor(o) { this.d = structuredClone(o.defaults); if (screen.bounds) this.d.bounds = screen.bounds; }
+      constructor(o) {
+        stores.push(o);
+        // conf 는 읽지 못한 JSON 을 SyntaxError 로 그대로 던진다(clearInvalidConfig 기본 false)
+        if (env.brokenConfig && stores.length === 1) throw new SyntaxError('Unexpected token } in JSON at position 31');
+        this.d = structuredClone(o.defaults);
+        if (env.bounds) this.d.bounds = env.bounds;
+      }
       get(k) { return this.d[k]; } set(k, v) { this.d[k] = v; }
     },
     path,
+    fs: { renameSync: (from, to) => renames.push([from, to]) },
     './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
   };
   const require = (m) => {
@@ -82,7 +97,7 @@ async function launch(gotLock, packaged = false, screen = {}) {
   new Function('require', 'process', 'fetch', 'AbortSignal', '__dirname', src)(
     require, { env: {}, platform: 'test' }, () => Promise.reject(new Error('네트워크 없음')), AbortSignal, ROOT);
   await new Promise((r) => setImmediate(r)); // whenReady().then(...) 가 돌 때까지
-  return { log, appEvents, menus, ipc, get win() { return win; }, setDisplays(d) { displays = d; } };
+  return { log, appEvents, menus, ipc, stores, renames, notes, get win() { return win; }, setDisplays(d) { displays = d; } };
 }
 
 {
@@ -167,6 +182,25 @@ const placed = async (bounds, displays = [MAIN]) => {
   const out = app.win.sets.at(-1);
   check('접은 채 모니터를 떼고 펴면 남은 화면 오른쪽 아래에 편다',
     out.x === 1920 - 340 - 12 && out.y === 1040 - 520 - 12 && out.width === 340 && out.height === 520, JSON.stringify(out));
+}
+
+// 설정 파일이 깨지면(손으로 고치다 남긴 끝 쉼표, PowerShell 5.1 '{}' > 가 만든 UTF-16 등) Store 를
+// 만드는 순간 SyntaxError 가 나서 창이 아예 안 떴다. 지우지 않고 이름을 바꿔 두고(평단가가 이 파일
+// 에만 있다) 기본값으로 시작한 뒤, 무슨 일이 있었는지 알림으로 한 번 알린다.
+{
+  const broken = await launch(true, false, { brokenConfig: true });
+  check('설정 파일이 깨져도 창이 뜬다', broken.win !== null && broken.stores.length === 2, `Store ${broken.stores.length}번`);
+  const [from, to] = broken.renames[0] || [];
+  check('깨진 파일은 지우지 않고 config.broken-<시각>.json 으로 옮겨 둔다', broken.renames.length === 1
+    && path.basename(from) === 'config.json' && /^config\.broken-\d+\.json$/.test(path.basename(to || ''))
+    && path.dirname(from) === path.dirname(to), JSON.stringify(broken.renames));
+  check('옮겨 둔 파일 이름을 알림으로 알린다', broken.notes.length === 1 && broken.notes[0].body.includes(path.basename(to || '?')),
+    JSON.stringify(broken.notes));
+  const fine = await launch(true);
+  check('멀쩡하면 옮기지도 알리지도 않는다', fine.renames.length === 0 && fine.notes.length === 0);
+  // 메모장 · PowerShell 이 붙인 UTF-8 BOM 은 깨진 게 아니다 — 읽을 때 떼어 낸다
+  const read = fine.stores[0].deserialize;
+  check('BOM 이 붙은 설정도 그대로 읽는다', typeof read === 'function' && read('\uFEFF{"a":1}').a === 1 && read('{"a":2}').a === 2);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

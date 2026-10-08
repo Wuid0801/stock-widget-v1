@@ -25,6 +25,7 @@ const electron = {
 const modules = {
   electron,
   'electron-store': class { get() {} set() {} },
+  fs,
   path,
   './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
 };
@@ -80,6 +81,22 @@ const partial = await handlers['quote:indices']({});
 const p = partial.items?.[0];
 check('빠진 값은 null 이다', p && p.open === null && p.change === null && p.value === 7003.74, JSON.stringify(p));
 check('장이 열려 있으면 isOpen', p?.isOpen === true, JSON.stringify(p));
+
+// 종가 · 등락률이 비면 그 지수는 뺀다. 숫자로 바꾸면 0 이 되어 지수 줄에 "코스피 0.00" 이 떴다
+// (헤더 · 차트는 indexLive 가 이미 막는다 — 6f6af8c). 하나만 비면 나머지 지수는 그대로 보인다.
+for (const [label, blank] of [
+  ['종가가 빈', { closePrice: '', closePriceRaw: undefined }],
+  ['종가가 0 인', { closePrice: '0', closePriceRaw: '0' }], // 지수가 0 일 수는 없다
+  ['등락률이 빈', { fluctuationsRatio: '', fluctuationsRatioRaw: undefined }],
+]) {
+  indexBody = { datas: [{ ...fixture.datas[0], ...blank }, fixture.datas[1]] };
+  const out = await handlers['quote:indices']({});
+  check(`${label} 지수는 빼고 나머지는 보인다`,
+    out.ok === true && out.items.length === 1 && out.items[0].code === 'KOSDAQ', JSON.stringify(out).slice(0, 160));
+}
+indexBody = { datas: fixture.datas.map((d) => ({ ...d, closePrice: '', closePriceRaw: undefined })) };
+const none = await handlers['quote:indices']({});
+check('둘 다 비면 빈 응답이다(지수 줄이 숨는다)', none.ok === false, JSON.stringify(none));
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);
