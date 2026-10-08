@@ -2,7 +2,7 @@
 // 역할: 프레임리스/반투명/항상위 위젯 창 생성, 창 상태 저장·복원,
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const { normalizeQuote, confirmedRegularClose, overFromClose,
@@ -519,6 +519,10 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     // Windows에서 알림이 뜨려면 AppUserModelID가 필요하다
     if (process.platform === 'win32') app.setAppUserModelId('com.wuid0801.kr-stock-widget');
+    // 설치본에서는 Electron 기본 메뉴를 없앤다. 테두리 없는 창이라 메뉴줄은 안 보여도 단축키는
+    // 살아 있어서 Ctrl+W 는 앱을 끄고(알림도 끊긴다) Ctrl+M 은 작업표시줄 버튼 없는 창을 숨기고
+    // Ctrl+R 은 접힌 상태를 어긋나게 한다. 개발 실행은 새로고침 · 개발자 도구를 쓰도록 둔다.
+    if (app.isPackaged) Menu.setApplicationMenu(null);
     createWindow();
     registerToggle();
   });

@@ -15,9 +15,10 @@ const src = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 
-// gotLock: 이 프로세스가 잠금을 얻었는가(= 첫 번째 실행인가)
-async function launch(gotLock) {
+// gotLock: 이 프로세스가 잠금을 얻었는가(= 첫 번째 실행인가), packaged: 설치본으로 실행했는가
+async function launch(gotLock, packaged = false) {
   const log = [];
+  const menus = [];
   const appEvents = {};
   let win = null;
   class FakeWindow {
@@ -37,7 +38,9 @@ async function launch(gotLock) {
       on: (e, fn) => { appEvents[e] = fn; },
       getPath: () => '',
       setAppUserModelId() {},
+      isPackaged: packaged,
     },
+    Menu: { setApplicationMenu: (m) => menus.push(m) },
     BrowserWindow: FakeWindow,
     ipcMain: { handle() {}, on() {} },
     globalShortcut: { register: () => true },
@@ -56,7 +59,7 @@ async function launch(gotLock) {
   new Function('require', 'process', 'fetch', 'AbortSignal', '__dirname', src)(
     require, { env: {}, platform: 'test' }, () => Promise.reject(new Error('네트워크 없음')), AbortSignal, ROOT);
   await new Promise((r) => setImmediate(r)); // whenReady().then(...) 가 돌 때까지
-  return { log, appEvents, get win() { return win; } };
+  return { log, appEvents, menus, get win() { return win; } };
 }
 
 {
@@ -77,6 +80,18 @@ async function launch(gotLock) {
   check('떠 있는 창을 되살린다', first.win.visible === true && first.win.minimized === false,
     `visible=${first.win.visible} minimized=${first.win.minimized}`);
   check('앞으로 가져온다', first.log.includes('focus'), first.log.join(','));
+}
+
+// 설치본에서는 Electron 기본 메뉴를 없앤다. 테두리 없는 창이라 메뉴줄은 안 보여도 단축키는 살아
+// 있어서, 위젯을 누른 채 Ctrl+W 면 앱이 꺼지고(목표가 알림도 끊긴다) Ctrl+M 은 작업표시줄 버튼
+// 없는 창을 최소화해 숨기고 Ctrl+R 은 화면을 새로 띄워 접힌 상태를 어긋나게 한다.
+// 개발 실행(npm start)은 새로고침 · 개발자 도구 단축키를 쓰도록 그대로 둔다.
+{
+  const installed = await launch(true, true);
+  check('설치본은 기본 메뉴(와 그 단축키)를 없앤다', installed.menus.length === 1 && installed.menus[0] === null,
+    JSON.stringify(installed.menus));
+  const dev = await launch(true, false);
+  check('개발 실행은 기본 메뉴를 그대로 둔다', dev.menus.length === 0, JSON.stringify(dev.menus));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
