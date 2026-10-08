@@ -84,14 +84,33 @@ let normalBounds = null;  // 접기 직전의 창 위치/크기 (펼 때 되돌�
 const MIN_W = 280;
 const MIN_H = 380;
 
+// 창 위치를 지금 화면에서 잡을 수 있는가 — 위쪽 끌기 막대(높이 약 30px)가 어느 모니터의
+// 작업 영역과 가로 40px · 세로 20px 이상 겹치면 된다. 외부 모니터에 둔 채 끄고 그 모니터
+// 없이 켜면 저장된 위치는 화면 밖인데, Windows 는 지정한 좌표의 창을 화면 안으로 옮겨 주지
+// 않고 작업표시줄 버튼도 없어서(skipTaskbar) 되살릴 길이 마땅치 않다.
+const BAR_H = 30;
+function reachable(b, displays) {
+  return displays.some(({ workArea: a }) => {
+    const w = Math.min(b.x + b.width, a.x + a.width) - Math.max(b.x, a.x);
+    const h = Math.min(b.y + BAR_H, a.y + a.height) - Math.max(b.y, a.y);
+    return w >= 40 && h >= 20;
+  });
+}
+
 function createWindow() {
   const b = store.get('bounds');
+  const width = b.width || 340;
+  const height = b.height || 520;
+  // 저장된 위치가 지금 어느 화면에서도 잡히지 않으면(외부 모니터를 뗀 채 실행) 위치는 버리고
+  // 크기만 쓴다 — 첫 실행처럼 OS 가 가운데에 놓는다.
+  const placed = Number.isInteger(b.x) && Number.isInteger(b.y)
+    && reachable({ x: b.x, y: b.y, width, height }, screen.getAllDisplays());
 
   win = new BrowserWindow({
-    x: b.x,
-    y: b.y,
-    width: b.width || 340,
-    height: b.height || 520,
+    x: placed ? b.x : undefined,
+    y: placed ? b.y : undefined,
+    width,
+    height,
     minWidth: MIN_W,
     minHeight: MIN_H,
     frame: false,
@@ -112,7 +131,7 @@ function createWindow() {
   // Windows 고배율(예: 150%) 환경에서는 생성자의 x/y/height가 어긋나게 적용된다
   // (640,210 요청 → 54,352 배치). setBounds는 정확하므로 저장된 위치를 다시 잡아준다.
   // 최초 실행에는 저장된 좌표가 없으므로 OS가 알아서 중앙 배치한다.
-  if (Number.isInteger(b.x) && Number.isInteger(b.y)) {
+  if (placed) {
     win.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
   }
 
@@ -179,6 +198,7 @@ ipcMain.on('win:close', () => win && win.close());
 ipcMain.on('win:dock', (_e, on, height) => {
   if (!win) return;
   compact = on;
+  const margin = 12; // 화면 가장자리 여백 — 접을 자리와, 펼 자리를 고칠 때 같이 쓴다
   if (on) {
     // store의 bounds에는 창을 한 번도 옮기지 않았으면 x/y가 없다.
     // 그 값으로 되돌리면 크기만 바뀌고 우하단에 머무르므로 직접 기억해 둔다.
@@ -186,7 +206,6 @@ ipcMain.on('win:dock', (_e, on, height) => {
     const b = win.getBounds();
     if (!normalBounds) normalBounds = b;
     const area = screen.getDisplayMatching(b).workArea; // 작업표시줄을 피한 영역
-    const margin = 12;
     const width = normalBounds.width; // 펼친 폭과 어긋나지 않도록 기준값을 쓴다
     // 최소 높이(MIN_H)를 먼저 낮추지 않으면 접힌 높이가 그대로 클램프된다
     win.setMinimumSize(MIN_W, height);
@@ -198,7 +217,19 @@ ipcMain.on('win:dock', (_e, on, height) => {
     });
   } else {
     win.setMinimumSize(MIN_W, MIN_H);
-    if (normalBounds) win.setBounds(normalBounds);
+    if (!normalBounds) return;
+    // 접은 채 외부 모니터를 떼면 펼 자리(normalBounds)가 없는 화면을 가리킨다. 접힌 창은
+    // Windows 가 남은 화면으로 옮기지만 펼 자리는 그대로라, 크기만 살려 지금 화면의
+    // 오른쪽 아래에 편다.
+    if (!reachable(normalBounds, screen.getAllDisplays())) {
+      const area = screen.getDisplayMatching(win.getBounds()).workArea;
+      normalBounds = {
+        ...normalBounds,
+        x: area.x + area.width - normalBounds.width - margin,
+        y: area.y + area.height - normalBounds.height - margin,
+      };
+    }
+    win.setBounds(normalBounds);
   }
 });
 
