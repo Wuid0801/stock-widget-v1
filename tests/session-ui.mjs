@@ -1532,4 +1532,27 @@ await test('holdings: folio names its numbers and steps through total and each h
   assert.equal(box.hidden, true);
 });
 
+// 상세의 보유 · 52주 · 추세 점검 세 줄은 손잡이 한 줄로 접고 편다. 저장돼 다시 켜도 그대로다.
+await test('info fold: the toggle folds hold · 52-week · trend lines and saves the choice', () => {
+  const { c, run, elements } = harness(['applyInfoOpen', 'toggleInfo']);
+  const saved = [];
+  c.save = () => saved.push(run('state.infoOpen'));
+  run('state.infoOpen = true;');
+  c.applyInfoOpen();
+  const btn = elements.get('infoToggle');
+  assert.equal(btn.className, 'infotoggle');
+  assert.equal(btn.ariaExpanded, 'true');
+  assert.equal(btn.title, '보유 · 52주 · 추세 점검 접기');
+  c.toggleInfo();
+  assert.equal(run('state.infoOpen'), false);
+  assert.deepEqual(saved, [false]);
+  assert.equal(btn.className, 'infotoggle off', '.off 가 붙으면 CSS 가 세 줄을 숨긴다 (dom-contract)');
+  assert.equal(btn.ariaExpanded, 'false');
+  assert.equal(btn.title, '보유 · 52주 · 추세 점검 펴기');
+  c.toggleInfo();
+  assert.equal(run('state.infoOpen'), true);
+  assert.deepEqual(saved, [false, true]);
+  assert.equal(btn.className, 'infotoggle');
+});
+
 console.log(`PASS: ${passed} session UI test groups`);

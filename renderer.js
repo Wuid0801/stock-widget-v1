@@ -606,6 +606,7 @@ function renderDetail() {
   closeEl.hidden = !(q && q.fromClose != null);
   closeEl.textContent = q && q.fromClose != null ? `종가대비 ${signedMoney(q.fromClose, cur)}` : '';
 
+  document.getElementById('infoToggle').hidden = !item; // 고른 것이 없으면 접을 것도 없다
   renderHolding(item && item.symbol, q && q.price);
   renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur);
   renderTrendCheck(item);
@@ -1807,6 +1808,7 @@ const save = () => api.setState({
   maPeriods: state.maPeriods,
   maStyles: state.maStyles,
   chartMode: state.chartMode,
+  infoOpen: state.infoOpen,
 });
 
 // 저장된 선택이 관심종목도 지수도 아니면 첫 관심종목. 관심종목이 비어 있으면 null —
@@ -1996,6 +1998,21 @@ document.addEventListener('keydown', (e) => {
 
   if (e.key === 'Escape') setCompact(!compact);
 });
+
+// --- 보유 · 52주 · 추세 점검 접기 ---------------------------------------------------
+// 세 줄의 hidden 은 각자 그리는 함수가 정하므로 손잡이의 .off 만 바꾸고, 숨기는 것은 CSS 형제 선택자다.
+function applyInfoOpen() {
+  const btn = document.getElementById('infoToggle');
+  btn.className = state.infoOpen ? 'infotoggle' : 'infotoggle off';
+  btn.ariaExpanded = String(state.infoOpen);
+  btn.title = `보유 · 52주 · 추세 점검 ${state.infoOpen ? '접기' : '펴기'}`;
+}
+
+function toggleInfo() {
+  state.infoOpen = !state.infoOpen;
+  save();
+  applyInfoOpen();
+}
 
 // --- 접기/펴기 ---------------------------------------------------------------------
 let compact = false;
@@ -2619,6 +2636,10 @@ async function refreshNow() {
     : [5, 20, 60];
   // 저장값에 없거나 모르는 값이면 캔들로 시작한다
   state.chartMode = state.chartMode === 'line' ? 'line' : 'candle';
+  // 보유 · 52주 · 추세 점검은 접었다고 저장된 때만 접는다
+  state.infoOpen = state.infoOpen !== false;
+  applyInfoOpen();
+  document.getElementById('infoToggle').onclick = toggleInfo;
   // 이동평균 색 · 굵기 — 잘못된 값은 버리고 기본으로 그린다(applyTheme 가 칩을 그리기 전에)
   state.maStyles = cleanMaStyles(state.maStyles);
   applyTheme(state.theme);

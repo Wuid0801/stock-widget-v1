@@ -68,5 +68,17 @@ const trendCss = /\.trendchk\s*\{([^}]*)\}/.exec(html);
 check('.trendchk 는 한 줄로 자르고 말줄임한다 (줄이 늘면 차트가 밀린다)',
   !!trendCss && /white-space:\s*nowrap/.test(trendCss[1]) && /text-overflow:\s*ellipsis/.test(trendCss[1]));
 
+// --- 보유 · 52주 · 추세 점검 접기 ---------------------------------------------------
+// 세 줄은 저마다 hidden 으로 보일지 정한다. 접기는 그 값을 건드리지 않고 앞의 손잡이(#infoToggle)의
+// .off 와 형제 선택자로만 숨긴다 — 그래서 손잡이가 세 줄보다 앞에, 같은 부모 안에 있어야 한다.
+const toggleTag = html.indexOf('id="infoToggle"');
+const holdTag = html.indexOf('id="hold"');
+check('#infoToggle 이 보유 줄 바로 위에 있다', toggleTag >= 0 && toggleTag < holdTag
+  && !/<\/div>/.test(html.slice(toggleTag, holdTag)), '사이에 닫는 태그가 있으면 형제가 아니다');
+for (const id of ['hold', 'w52', 'trendCheck']) {
+  check(`접으면 #${id} 가 숨는다`, new RegExp(`\\.infotoggle\\.off\\s*~\\s*#${id}\\b[^{]*\\{[^}]*display:\\s*none`).test(html)
+    || new RegExp(`\\.infotoggle\\.off\\s*~\\s*#${id}\\s*,`).test(html));
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

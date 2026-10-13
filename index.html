@@ -427,6 +427,17 @@
   /* 알림이 꺼져 있으면 입력은 되지만 동작하지 않음을 시각적으로 알린다 */
   #alerts.off #alertRows { opacity: .45; }
 
+  /* 보유 · 52주 · 추세 점검 접기 손잡이. 접히면(.off) 뒤의 세 줄을 숨긴다 */
+  .infotoggle {
+    display: block; margin-top: 7px; padding: 0; border: 0; background: transparent;
+    font: inherit; font-size: 9px; color: var(--faint); cursor: pointer; text-align: left;
+  }
+  .infotoggle[hidden] { display: none; }
+  .infotoggle::before { content: '▾ '; }
+  .infotoggle.off::before { content: '▸ '; }
+  .infotoggle:hover { color: var(--text-2); }
+  .infotoggle.off ~ #hold, .infotoggle.off ~ #w52, .infotoggle.off ~ #trendCheck { display: none; }
+
   /* 상세의 보유 자리 — 보유/평가손익 줄과 ✎, 보유가 없으면 "＋ 보유 입력", 입력 중이면 칸 둘과 버튼 */
   .hold {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px;
@@ -612,7 +623,12 @@
       <!-- 이동평균선 범례. 차트 안에 넣으면 높이를 잡아먹어 밖으로 뺐다. -->
       <div class="malegend" id="maLegend" hidden></div>
 
-      <!-- 보유 수량 · 평가손익 (설정에서 입력한 경우에만) -->
+      <!-- 보유 · 52주 · 추세 점검 세 줄을 접고 펴는 손잡이. 접으면 .off 가 붙고 CSS 형제 선택자가
+           아래 세 줄을 숨긴다 — 세 줄의 hidden 은 각자 그리는 함수가 정하므로 건드리지 않는다.
+           그래서 세 줄과 같은 부모 안, 그 앞에 있어야 한다(tests/dom-contract.mjs). -->
+      <button type="button" class="infotoggle" id="infoToggle" hidden>보유 · 52주 · 추세 점검</button>
+
+      <!-- 보유 수량 · 평가손익, 없으면 "＋ 보유 입력" -->
       <div class="hold" id="hold" hidden></div>
 
       <!-- 52주 최저~최고 구간에서 현재가의 위치 -->
