@@ -495,6 +495,52 @@ const INTERVALS = new Set(['5m', '30m', '1d']);
 // 지수는 야후 기호가 ^ 로 시작한다(^KS11 코스피 · ^KQ11 코스닥). 맨 앞 한 번만 받는다.
 const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
 
+// 야후는 국내 종목 일봉을 가끔 하루 통째로 비워 준다(종가 · 거래량 null). 2025-09-19 · 2026-10-12 는
+// 모든 국내 종목이 비었고 1년이 지나도 채워지지 않았다(2026-10-13 확인). 비운 채 두면 차트에서 그날이
+// 빠지고 이동평균 · RSI · 추세 점검이 그날 없이 계산된다 — 그날만 네이버 일봉으로 채운다.
+// 네이버 종가는 야후와 한 틱쯤 다른 날이 있다(최근 석 달의 25~30%). 채운 날만 네이버 값이다.
+// 지난 날은 바뀌지 않으므로 받은 봉(네이버에도 없던 날은 null)을 '코드:YYYYMMDD' 로 기억해 다시 묻지 않는다.
+// 오늘 칸은 채우지 않는다 — 오늘 봉은 renderer 가 실시간 값으로 맞춘다(loadQuote).
+const naverDays = new Map();
+const kstDay = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
+
+async function fillGaps(symbol, stamps, q) {
+  const m = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol);
+  if (!m || !Array.isArray(q.close)) return;
+  const code = m[1];
+  const today = kstDay(Date.now());
+  const gaps = [];
+  stamps.forEach((t, i) => {
+    const d = kstDay(t * 1000);
+    if (q.close[i] == null && d < today) gaps.push({ i, d });
+  });
+  const ask = gaps.filter((g) => !naverDays.has(`${code}:${g.d}`));
+  if (ask.length) {
+    const url = `https://api.stock.naver.com/chart/domestic/item/${code}/day`
+      + `?startDateTime=${ask[0].d}0000&endDateTime=${ask[ask.length - 1].d}2359`;
+    try {
+      const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' } });
+      if (res.ok) {
+        const rows = await res.json();
+        const byDay = new Map((Array.isArray(rows) ? rows : []).map((x) => [String(x.localDate), x]));
+        for (const g of ask) {
+          const x = byDay.get(g.d);
+          naverDays.set(`${code}:${g.d}`, x && Number(x.closePrice) > 0 ? {
+            close: Number(x.closePrice), open: Number(x.openPrice), high: Number(x.highPrice),
+            low: Number(x.lowPrice), volume: Number(x.accumulatedTradingVolume) || 0,
+          } : null);
+        }
+      }
+    } catch { /* 지금처럼 그날을 뺀다. 기억하지 않으므로 다음 요청에서 다시 묻는다 */ }
+  }
+  for (const g of gaps) {
+    const bar = naverDays.get(`${code}:${g.d}`);
+    if (!bar) continue;
+    for (const k of ['open', 'high', 'low', 'volume']) if (!Array.isArray(q[k])) q[k] = [];
+    q.close[g.i] = bar.close; q.open[g.i] = bar.open; q.high[g.i] = bar.high; q.low[g.i] = bar.low; q.volume[g.i] = bar.volume;
+  }
+}
+
 ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
   if (!SYMBOL_RE.test(String(symbol ?? '')) || !RANGES.has(range) || !INTERVALS.has(interval)) {
     return { ok: false, error: '잘못된 요청' };
@@ -508,6 +554,7 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
     const json = await res.json();
     const result = json?.chart?.result?.[0];
     if (!result) return { ok: false, error: json?.chart?.error?.description || '데이터 없음' };
+    if (interval === '1d') await fillGaps(symbol, result.timestamp || [], result.indicators?.quote?.[0] || {});
 
     // close 배열에는 실제로 null이 섞여 나온다 → timestamp와 짝을 맞춰 제거
     const rawCloses = result.indicators?.quote?.[0]?.close || [];

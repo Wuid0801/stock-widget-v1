@@ -1,0 +1,159 @@
+// 야후 국내 일봉의 빈 날을 네이버 일봉으로 채우는지 — 앱을 띄우지 않고 가짜 electron 으로 main.js 를 불러 본다.
+//
+// 야후는 국내 종목 일봉을 가끔 하루 통째로 비워 준다(종가 · 거래량 null). 2025-09-19 와 2026-10-12 는
+// 모든 국내 종목이 비었고, 1년이 지나도 채워지지 않았다(2026-10-13 확인). 그대로 두면 차트에서 그날이
+// 빠지고 이동평균 · RSI · 추세 점검이 그날 없이 계산된다.
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+
+const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+
+let fails = 0;
+const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+const handlers = {};
+const electron = {
+  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
+  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
+  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
+};
+const modules = {
+  electron,
+  'electron-store': class { get() {} set() {} },
+  fs,
+  path,
+  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
+};
+const require = (m) => {
+  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
+  return modules[m];
+};
+
+// 지금 = 2026-10-13 10:00 KST. 야후 국내 일봉 시각은 그날 09:00 KST(00:00 UTC)다.
+const NOW = Date.parse('2026-10-13T01:00:00Z');
+class FixedDate extends Date {
+  constructor(...a) { super(...(a.length ? a : [NOW])); }
+  static now() { return NOW; }
+}
+const day = (d) => Date.parse(`${d}T00:00:00Z`) / 1000;
+
+// 야후 응답: 날짜와 종가(null 이면 빈 날). 시 · 고 · 저 · 거래량도 같이 비운다.
+const yahoo = (rows) => ({
+  chart: { result: [{
+    timestamp: rows.map(([d]) => day(d)),
+    indicators: { quote: [{
+      close: rows.map(([, c]) => c),
+      open: rows.map(([, c]) => (c == null ? null : c + 50)),
+      high: rows.map(([, c]) => (c == null ? null : c + 100)),
+      low: rows.map(([, c]) => (c == null ? null : c - 100)),
+      volume: rows.map(([, c]) => (c == null ? null : 1000)),
+    }] },
+    meta: { regularMarketPrice: 30850, currency: 'KRW' },
+  }] },
+});
+// 네이버 일봉 응답 한 줄 (실제 응답 모양 — 2026-10-13 카카오 10/12)
+const naverRow = (d, close) => ({ localDate: d, openPrice: close + 450, highPrice: close + 600,
+  lowPrice: close - 200, closePrice: close, accumulatedTradingVolume: 1799763, foreignRetentionRate: 30.1 });
+
+let yahooBody = null;
+let naverReply = () => ({ ok: true, status: 200, body: [] });
+const naverCalls = [];
+const fakeFetch = async (url, opt = {}) => {
+  url = String(url);
+  if (url.includes('api.stock.naver.com')) {
+    naverCalls.push({ url, headers: opt.headers || {} });
+    const r = naverReply(url);
+    if (r instanceof Error) throw r;
+    return { ok: r.ok, status: r.status, json: async () => r.body };
+  }
+  return { ok: true, status: 200, json: async () => yahooBody };
+};
+
+new Function('require', 'process', 'fetch', 'AbortSignal', 'Date', src)(
+  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal, FixedDate);
+
+const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, range: '1mo', interval });
+
+// --- 1. 빈 날을 네이버 값으로 채운다 -------------------------------------------
+{
+  yahooBody = yahoo([['2026-10-08', 32300], ['2026-10-12', null], ['2026-10-13', 30850]]);
+  naverReply = () => ({ ok: true, status: 200, body: [naverRow('20261012', 31900)] });
+  const r = await chart('035720.KS');
+  check('빈 날이 채워져 봉 수가 그대로다', r.ok && r.closes.length === 3, JSON.stringify(r.closes));
+  check('채운 날의 종가 · 시 · 고 · 저 · 거래량은 네이버 값',
+    same([r.closes[1], r.opens[1], r.highs[1], r.lows[1], r.volumes[1]], [31900, 32350, 32500, 31700, 1799763]),
+    JSON.stringify([r.closes[1], r.opens[1], r.highs[1], r.lows[1], r.volumes[1]]));
+  check('채운 날의 시각은 야후 시각 그대로', r.times[1] === day('2026-10-12') * 1000);
+  check('다른 날은 야후 값 그대로', r.closes[0] === 32300 && r.closes[2] === 30850);
+  const call = naverCalls.at(-1);
+  check('네이버 일봉을 빈 날 하루만 묻는다',
+    naverCalls.length === 1 && call.url === 'https://api.stock.naver.com/chart/domestic/item/035720/day'
+      + '?startDateTime=202610120000&endDateTime=202610122359', call && call.url);
+  check('네이버 요청은 기존처럼 Referer 를 단다', call && call.headers.Referer === 'https://m.stock.naver.com/');
+
+  await chart('035720.KS');
+  check('같은 날은 다시 묻지 않는다 (지난 날은 바뀌지 않는다)', naverCalls.length === 1, `${naverCalls.length}번`);
+}
+
+// --- 2. 빈 날이 여럿이면 한 번에 묻는다 ----------------------------------------
+{
+  naverCalls.length = 0;
+  yahooBody = yahoo([['2025-09-18', 64700], ['2025-09-19', null], ['2025-09-22', 66400],
+    ['2026-10-08', 32300], ['2026-10-12', null], ['2026-10-13', 30850]]);
+  naverReply = () => ({ ok: true, status: 200, body: [naverRow('20250918', 64700), naverRow('20250919', 67000),
+    naverRow('20250922', 66400), naverRow('20261012', 31900)] });
+  const r = await chart('005930.KS');
+  check('가장 이른 빈 날 ~ 가장 늦은 빈 날을 한 번에 묻는다',
+    naverCalls.length === 1 && naverCalls[0].url.endsWith('/005930/day?startDateTime=202509190000&endDateTime=202610122359'),
+    naverCalls.map((c) => c.url).join(' '));
+  check('두 빈 날이 모두 채워진다', r.ok && same(r.closes, [64700, 67000, 66400, 32300, 31900, 30850]), JSON.stringify(r.closes));
+}
+
+// --- 3. 네이버가 그날을 모르거나 실패하면 지금처럼 그날만 뺀다 ----------------------
+{
+  naverCalls.length = 0;
+  yahooBody = yahoo([['2026-10-08', 100], ['2026-10-12', null], ['2026-10-13', 110]]);
+  naverReply = () => ({ ok: true, status: 200, body: [] });
+  let r = await chart('000660.KS');
+  check('네이버에도 없는 날은 뺀다', r.ok && same(r.closes, [100, 110]), JSON.stringify(r.closes));
+  await chart('000660.KS');
+  check('네이버에도 없던 날은 다시 묻지 않는다', naverCalls.length === 1, `${naverCalls.length}번`);
+
+  naverCalls.length = 0;
+  naverReply = () => new TypeError('fetch failed');
+  r = await chart('035420.KS');
+  check('네이버 요청이 실패해도 차트는 나온다 (그날만 빠진다)', r.ok && same(r.closes, [100, 110]), JSON.stringify(r));
+  naverReply = () => ({ ok: false, status: 500, body: null });
+  r = await chart('035420.KS');
+  check('실패는 기억하지 않고 다음에 다시 묻는다', naverCalls.length === 2 && r.ok && same(r.closes, [100, 110]),
+    `${naverCalls.length}번`);
+  naverReply = () => ({ ok: true, status: 200, body: [naverRow('20261012', 105)] });
+  r = await chart('035420.KS');
+  check('다음 요청에서 받으면 채운다', naverCalls.length === 3 && same(r.closes, [100, 105, 110]), JSON.stringify(r.closes));
+}
+
+// --- 4. 네이버를 묻지 않는 경우 -------------------------------------------------
+{
+  naverCalls.length = 0;
+  naverReply = () => ({ ok: true, status: 200, body: [naverRow('20261012', 999)] });
+  yahooBody = yahoo([['2026-10-08', 100], ['2026-10-12', null], ['2026-10-13', 110]]);
+  for (const s of ['AAPL', '^KS11', 'BRK-B']) await chart(s);
+  check('해외 종목 · 지수는 묻지 않는다', naverCalls.length === 0, naverCalls.map((c) => c.url).join(' '));
+  await chart('051910.KS', '30m');
+  check('일봉이 아니면 묻지 않는다', naverCalls.length === 0);
+
+  yahooBody = yahoo([['2026-10-08', 100], ['2026-10-12', 105], ['2026-10-13', 110]]);
+  await chart('051910.KS');
+  check('빈 날이 없으면 묻지 않는다', naverCalls.length === 0);
+
+  // 장 전에는 야후가 오늘 칸만 비워 두기도 한다. 오늘 봉은 renderer 가 실시간 값으로 덧붙인다.
+  yahooBody = yahoo([['2026-10-08', 100], ['2026-10-12', 105], ['2026-10-13', null]]);
+  const r = await chart('051910.KS');
+  check('오늘 칸이 비어 있으면 채우지 않고 뺀다', naverCalls.length === 0 && same(r.closes, [100, 105]),
+    JSON.stringify(r.closes));
+}
+
+console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
+process.exit(fails === 0 ? 0 : 1);

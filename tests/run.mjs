@@ -42,6 +42,7 @@ const ORDER = [
   'net-timeout.mjs',
   'single-instance.mjs',
   'index-main.mjs',
+  'chart-fill.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',

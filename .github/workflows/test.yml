@@ -1,6 +1,6 @@
 # 앱을 띄우지 않는 스위트만 푸시마다 돌린다.
 #
-# 이 열세 개는 Node 내장 모듈과 앱 파일(indicators.js · backtest.js · quote-session.cjs ·
+# 이 열네 개는 Node 내장 모듈과 앱 파일(indicators.js · backtest.js · quote-session.cjs ·
 # renderer.js · index.html · main.js)만 쓴다. node_modules 가 필요 없어서 설치 단계가
 # 없고, 전부 합쳐 10초 안에 끝난다. 대부분은 backtest 다(무작위 주가 수백 개로 판정 보정을 본다).
 #
@@ -28,7 +28,7 @@ jobs:
           node-version: '20'
       - name: 앱을 띄우지 않는 스위트
         run: |
-          for f in rsi cross candle zoom trend backtest quote-session session-ui dom-contract state-contract net-timeout single-instance index-main; do
+          for f in rsi cross candle zoom trend backtest quote-session session-ui dom-contract state-contract net-timeout single-instance index-main chart-fill; do
             echo "--- $f"
             node "tests/$f.mjs"
           done
