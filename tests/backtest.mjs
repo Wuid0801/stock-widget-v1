@@ -225,10 +225,16 @@ function walk(seed, n = 1231, vol = 0.02) {
     JSON.stringify(B.trendCheck('005930.KS', moved.c, moved.t, opts)) === JSON.stringify(a));
   check('결과에 판단 배열을 싣지 않는다 (캐시가 가볍게)', a.rule.want === undefined);
 
-  const t0 = performance.now();
-  B.trendCheck('000660.KS', w.c, w.t, opts);
-  const ms = performance.now() - t0;
-  check('1,230봉 한 종목이 200ms 안 (실측 약 55ms)', ms < 200, `${ms.toFixed(0)}ms`);
+  // 한 번만 재면 기계가 잠깐 바쁠 때 튄다 — 2026-10-13 에 221~383ms 가 나왔고 이전 커밋도 나란히 그만큼 느렸다.
+  // 위 세 번으로 데운 뒤 다섯 번 재서 가장 빠른 값을 본다. 튀는 건 한두 번이지만 느려진 코드는 다섯 번 다 느리다.
+  // 문턱 300ms 는 실측의 6~7배 — 열 배 느려진 코드(실측 510ms 대)는 잡고, 몇 배 느려진 기계는 넘긴다.
+  let ms = Infinity;
+  for (let i = 0; i < 5; i++) {
+    const t0 = performance.now();
+    B.trendCheck('000660.KS', w.c, w.t, opts);
+    ms = Math.min(ms, performance.now() - t0);
+  }
+  check('1,230봉 한 종목이 300ms 안 (다섯 번 중 가장 빠른 값, 실측 약 45ms)', ms < 300, `${ms.toFixed(0)}ms`);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
