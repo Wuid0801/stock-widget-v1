@@ -498,10 +498,16 @@ const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
 // 야후는 국내 종목 일봉을 가끔 하루 통째로 비워 준다(종가 · 거래량 null). 2025-09-19 · 2026-10-12 는
 // 모든 국내 종목이 비었고 1년이 지나도 채워지지 않았다(2026-10-13 확인). 비운 채 두면 차트에서 그날이
 // 빠지고 이동평균 · RSI · 추세 점검이 그날 없이 계산된다 — 그날만 네이버 일봉으로 채운다.
-// 네이버 종가는 야후와 한 틱쯤 다른 날이 있다(최근 석 달의 25~30%). 채운 날만 네이버 값이다.
-// 지난 날은 바뀌지 않으므로 받은 봉(네이버에도 없던 날은 null)을 '코드:YYYYMMDD' 로 기억해 다시 묻지 않는다.
-// 오늘 칸은 채우지 않는다 — 오늘 봉은 renderer 가 실시간 값으로 맞춘다(loadQuote).
+// 네이버는 증자 · 분할 · 분배금을 지난 가격에 반영하고(수정주가) 야후 close 는 액면분할만 반영한다. 그런 종목은
+// 두 값의 기준이 다르다(2026-10-13 실측: 삼성바이오로직스 2025-09-19 야후/네이버 1.053, KODEX 200 1.03~1.10).
+// 그대로 넣으면 그날만 움푹 꺼지므로 빈 날 앞뒤로 가까운 날 5일씩의 야후/네이버 종가 비율 중앙값을 곱한다.
+// 중앙값이라 빈 날 바로 앞날처럼 야후 값이 어긋난 하루에 끌리지 않는다. 1% 안쪽은 기준 차이가 아니라
+// 날마다 한두 틱 다른 잡음이라(같은 날 국내 60종목 0.995~1.008) 거래소 종가인 네이버 값을 그대로 둔다.
+// 지난 날은 바뀌지 않으므로 받은 봉(네이버에도 없던 빈 날은 null)을 '코드:YYYYMMDD' 로 기억해 다시 묻지 않는다.
+// 오늘 칸은 채우지도 비율에 쓰지도 않는다 — 장중에 움직이고, renderer 가 실시간 값으로 맞춘다(loadQuote).
 const naverDays = new Map();
+const NAVER_NEAR = 5;            // 비율을 볼 빈 날 앞뒤 날 수
+const NAVER_SCALE_MIN = 0.01;    // 이보다 작은 비율 차이는 잡음으로 본다
 const kstDay = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
 
 async function fillGaps(symbol, stamps, q) {
@@ -509,36 +515,57 @@ async function fillGaps(symbol, stamps, q) {
   if (!m || !Array.isArray(q.close)) return;
   const code = m[1];
   const today = kstDay(Date.now());
+  const days = stamps.map((t) => kstDay(t * 1000));
   const gaps = [];
-  stamps.forEach((t, i) => {
-    const d = kstDay(t * 1000);
-    if (q.close[i] == null && d < today) gaps.push({ i, d });
-  });
-  const ask = gaps.filter((g) => !naverDays.has(`${code}:${g.d}`));
+  days.forEach((d, i) => { if (q.close[i] == null && d < today) gaps.push(i); });
+  const ask = gaps.filter((i) => !naverDays.has(`${code}:${days[i]}`));
   if (ask.length) {
+    // 비율을 볼 앞뒤 날까지 한 번에 받는다
+    const from = days[Math.max(0, ask[0] - 2 * NAVER_NEAR)];
+    const to = days[Math.min(days.length - 1, ask[ask.length - 1] + 2 * NAVER_NEAR)];
     const url = `https://api.stock.naver.com/chart/domestic/item/${code}/day`
-      + `?startDateTime=${ask[0].d}0000&endDateTime=${ask[ask.length - 1].d}2359`;
+      + `?startDateTime=${from}0000&endDateTime=${to}2359`;
     try {
       const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' } });
       if (res.ok) {
         const rows = await res.json();
-        const byDay = new Map((Array.isArray(rows) ? rows : []).map((x) => [String(x.localDate), x]));
-        for (const g of ask) {
-          const x = byDay.get(g.d);
-          naverDays.set(`${code}:${g.d}`, x && Number(x.closePrice) > 0 ? {
+        for (const x of Array.isArray(rows) ? rows : []) {
+          const d = String(x.localDate);
+          if (d < today && Number(x.closePrice) > 0) naverDays.set(`${code}:${d}`, {
             close: Number(x.closePrice), open: Number(x.openPrice), high: Number(x.highPrice),
             low: Number(x.lowPrice), volume: Number(x.accumulatedTradingVolume) || 0,
-          } : null);
+          });
         }
+        for (const i of ask) if (!naverDays.has(`${code}:${days[i]}`)) naverDays.set(`${code}:${days[i]}`, null);
       }
     } catch { /* 지금처럼 그날을 뺀다. 기억하지 않으므로 다음 요청에서 다시 묻는다 */ }
   }
-  for (const g of gaps) {
-    const bar = naverDays.get(`${code}:${g.d}`);
-    if (!bar) continue;
+  // 비율은 채우기 전에 구한다 — 채운 날이 다른 빈 날의 비율에 섞이지 않게
+  const ratio = (j) => {
+    const bar = q.close[j] != null && naverDays.get(`${code}:${days[j]}`);
+    return bar ? q.close[j] / bar.close : null;
+  };
+  const scales = gaps.map((i) => {
+    const rs = [];
+    for (const step of [-1, 1]) {
+      for (let j = i + step, k = 0; k < NAVER_NEAR && Math.abs(j - i) <= 2 * NAVER_NEAR; j += step) {
+        const r = ratio(j);
+        if (r) { rs.push(r); k++; }
+      }
+    }
+    if (!rs.length) return 1;
+    rs.sort((a, b) => a - b);
+    const h = rs.length >> 1;
+    const mid = rs.length % 2 ? rs[h] : (rs[h - 1] + rs[h]) / 2;
+    return Math.abs(mid - 1) < NAVER_SCALE_MIN ? 1 : mid;
+  });
+  gaps.forEach((i, g) => {
+    const bar = naverDays.get(`${code}:${days[i]}`);
+    if (!bar) return;
+    const s = scales[g];
     for (const k of ['open', 'high', 'low', 'volume']) if (!Array.isArray(q[k])) q[k] = [];
-    q.close[g.i] = bar.close; q.open[g.i] = bar.open; q.high[g.i] = bar.high; q.low[g.i] = bar.low; q.volume[g.i] = bar.volume;
-  }
+    q.close[i] = bar.close * s; q.open[i] = bar.open * s; q.high[i] = bar.high * s; q.low[i] = bar.low * s; q.volume[i] = bar.volume;
+  });
 }
 
 ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {

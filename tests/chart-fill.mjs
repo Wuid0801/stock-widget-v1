@@ -88,9 +88,9 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   check('채운 날의 시각은 야후 시각 그대로', r.times[1] === day('2026-10-12') * 1000);
   check('다른 날은 야후 값 그대로', r.closes[0] === 32300 && r.closes[2] === 30850);
   const call = naverCalls.at(-1);
-  check('네이버 일봉을 빈 날 하루만 묻는다',
+  check('네이버 일봉을 빈 날과 그 앞뒤 날까지 한 번 묻는다 (비율을 보려고)',
     naverCalls.length === 1 && call.url === 'https://api.stock.naver.com/chart/domestic/item/035720/day'
-      + '?startDateTime=202610120000&endDateTime=202610122359', call && call.url);
+      + '?startDateTime=202610080000&endDateTime=202610132359', call && call.url);
   check('네이버 요청은 기존처럼 Referer 를 단다', call && call.headers.Referer === 'https://m.stock.naver.com/');
 
   await chart('035720.KS');
@@ -105,8 +105,8 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   naverReply = () => ({ ok: true, status: 200, body: [naverRow('20250918', 64700), naverRow('20250919', 67000),
     naverRow('20250922', 66400), naverRow('20261012', 31900)] });
   const r = await chart('005930.KS');
-  check('가장 이른 빈 날 ~ 가장 늦은 빈 날을 한 번에 묻는다',
-    naverCalls.length === 1 && naverCalls[0].url.endsWith('/005930/day?startDateTime=202509190000&endDateTime=202610122359'),
+  check('가장 이른 빈 날 ~ 가장 늦은 빈 날(과 그 앞뒤 날)을 한 번에 묻는다',
+    naverCalls.length === 1 && naverCalls[0].url.endsWith('/005930/day?startDateTime=202509180000&endDateTime=202610132359'),
     naverCalls.map((c) => c.url).join(' '));
   check('두 빈 날이 모두 채워진다', r.ok && same(r.closes, [64700, 67000, 66400, 32300, 31900, 30850]), JSON.stringify(r.closes));
 }
@@ -153,6 +153,42 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   const r = await chart('051910.KS');
   check('오늘 칸이 비어 있으면 채우지 않고 뺀다', naverCalls.length === 0 && same(r.closes, [100, 105]),
     JSON.stringify(r.closes));
+}
+
+// --- 5. 가격 기준이 다른 종목은 야후 기준으로 맞춘다 -----------------------------
+// 네이버는 증자 · 분할 · 분배금을 지난 가격에 반영하고(수정주가) 야후 close 는 액면분할만 반영한다.
+// 삼성바이오로직스 2025-09-19 는 야후/네이버가 1.053 이라 그대로 넣으면 그날만 5% 꺼졌다(2026-10-13 실측).
+{
+  naverCalls.length = 0;
+  // 야후 = 네이버 × 1.0625. 빈 날 바로 앞날(09-18)만 야후 값이 어긋나 있다 — 실측에서도 빈 날 앞날은 자주 어긋났다.
+  yahooBody = yahoo([['2025-09-15', 3400], ['2025-09-16', 3417], ['2025-09-17', 3434], ['2025-09-18', 3551],
+    ['2025-09-19', null], ['2025-09-22', 3485], ['2025-09-23', 3502]]);
+  naverReply = () => ({ ok: true, status: 200, body: [['20250915', 3200], ['20250916', 3216], ['20250917', 3232],
+    ['20250918', 3248], ['20250919', 3264], ['20250922', 3280], ['20250923', 3296]].map(([d, c]) => naverRow(d, c)) });
+  let r = await chart('207940.KS');
+  const filled = (x) => [x.closes[4], x.opens[4], x.highs[4], x.lows[4], x.volumes[4]];
+  check('앞뒤 날 야후/네이버 비율의 중앙값을 곱해 채운다 (거래량은 그대로)',
+    r.ok && same(filled(r), [3468, 3946.125, 4105.5, 3255.5, 1799763]), JSON.stringify(filled(r)));
+  check('비율을 볼 앞뒤 날까지 같이 묻는다',
+    naverCalls.length === 1 && naverCalls[0].url.endsWith('/207940/day?startDateTime=202509150000&endDateTime=202509232359'),
+    naverCalls.map((c) => c.url).join(' '));
+  r = await chart('207940.KS');
+  check('다시 그릴 때도 기억한 앞뒤 날로 같은 값을 채운다 (다시 묻지 않는다)',
+    naverCalls.length === 1 && same(filled(r), [3468, 3946.125, 4105.5, 3255.5, 1799763]), JSON.stringify(filled(r)));
+
+  // 1% 안쪽은 기준 차이가 아니라 날마다 한두 틱 다른 잡음이다 — 거래소 종가(네이버)를 그대로 둔다.
+  yahooBody = yahoo([['2026-10-06', 10050], ['2026-10-07', 10150], ['2026-10-08', 10250], ['2026-10-12', null], ['2026-10-13', 9000]]);
+  naverReply = () => ({ ok: true, status: 200, body: [naverRow('20261006', 10000), naverRow('20261007', 10100),
+    naverRow('20261008', 10200), naverRow('20261012', 10100)] });
+  r = await chart('000270.KS');
+  check('비율이 1% 안이면 네이버 값 그대로', r.ok && r.closes[3] === 10100, JSON.stringify(r.closes));
+
+  // 오늘 봉은 장중에 움직이므로 비율에 쓰지 않는다.
+  yahooBody = yahoo([['2026-10-08', 10000], ['2026-10-12', null], ['2026-10-13', 9000]]);
+  naverReply = () => ({ ok: true, status: 200, body: [naverRow('20261008', 10000), naverRow('20261012', 9900),
+    naverRow('20261013', 6000)] });
+  r = await chart('034730.KS');
+  check('오늘 봉은 비율에 쓰지 않는다', r.ok && r.closes[1] === 9900, JSON.stringify(r.closes));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
