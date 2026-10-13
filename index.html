@@ -225,17 +225,20 @@
     background: var(--sel); box-shadow: inset 2px 0 0 var(--accent); border-radius: 0;
   }
 
-  /* 보유 종목 전체 합계. 보유가 하나도 없으면 줄 자체가 사라진다. */
+  /* 보유 종목 전체 합계. 보유가 하나도 없으면 줄 자체가 사라진다.
+     보유가 둘 이상이면 합계 → 종목마다 한 줄씩 위로 넘어간다(.fline.in). */
   .folio {
-    flex: 0 0 auto; display: flex; gap: 6px; align-items: baseline; padding: 5px 11px;
+    flex: 0 0 auto; display: flex; padding: 5px 11px; overflow: hidden;
     font-size: 10px; border-bottom: 1px solid var(--line);
     font-variant-numeric: tabular-nums;
   }
   .folio[hidden] { display: none; }
-  .folio .fn { color: var(--mute); }
-  .folio .fv { color: var(--text-2); }
-  .folio .fp { margin-left: auto; font-weight: 700; }
-  .folio .fx { color: var(--faint); font-size: 9px; }
+  .folio .fline { flex: 1 1 auto; min-width: 0; display: flex; gap: 6px; align-items: baseline; }
+  .folio .fline.in { animation: folio-in .35s ease-out; }
+  @keyframes folio-in { from { transform: translateY(80%); opacity: 0; } }
+  .folio .fn { color: var(--mute); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .folio .fv { color: var(--text-2); flex: 0 0 auto; white-space: nowrap; }
+  .folio .fp { margin-left: auto; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
 
   /* --- 본문 (리스트 + 상세, 검색 오버레이의 기준) --- */
   .body { flex: 1 1 auto; display: flex; flex-direction: column; position: relative; min-height: 0; }
@@ -255,7 +258,14 @@
   /* 순서 변경 드래그 */
   .row.dragging { opacity: .35; }
   .row.dropto { box-shadow: inset 0 2px 0 var(--accent); }
-  .row .name { font-size: 12px; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  /* 이름 칸. 보유 종목은 이름 아래 작은 줄(.hsub)이 붙는다 — "10주 · 손익 +12.50%" */
+  .row .nm { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .row .name { font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .row .hsub {
+    margin-top: 1px; font-size: 9.5px; color: var(--mute); font-variant-numeric: tabular-nums;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .row .hsub b { font-weight: 600; }
   .row .px { font-size: 12px; font-variant-numeric: tabular-nums; }
   .row .chg { font-size: 10px; width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
   /* 삭제 버튼은 자리를 항상 차지하되 hover에서만 보인다 (행 폭이 흔들리지 않게) */
@@ -398,24 +408,40 @@
   #alertList::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 3px; }
   .arow { display: flex; align-items: center; gap: 5px; padding: 5px 11px; }
   .arow .aname { flex: 1 1 auto; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .arow input {
+  .arow input, .hold input {
     width: 68px; flex: 0 0 auto; user-select: text;
     background: var(--hit-hover); border: 1px solid var(--field-border);
     border-radius: 5px; padding: 3px 5px; color: var(--text); font-size: 10px;
     font-family: inherit; outline: none; text-align: right;
   }
-  .arow input:focus { border-color: var(--accent); }
-  .arow input::placeholder { color: var(--faint); }
+  .arow input:focus, .hold input:focus { border-color: var(--accent); }
+  .arow input::placeholder, .hold input::placeholder { color: var(--faint); }
+  .arow .hdel {
+    width: 18px; height: 18px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; color: var(--faint); cursor: pointer; font-size: 10px;
+  }
+  .arow .hdel:hover { color: var(--text); background: var(--hover); }
+  #holdRows .ohint { color: #e8862a; } /* 보유를 잘못 넣었을 때 안내 — 상세의 .hmsg 와 같은 색 */
   .arow input.up:focus { border-color: #e24b4a; }
   .arow input.dn:focus { border-color: #185fa5; }
   /* 알림이 꺼져 있으면 입력은 되지만 동작하지 않음을 시각적으로 알린다 */
   #alerts.off #alertRows { opacity: .45; }
 
-  /* 상세의 보유/평가손익 줄 */
-  .hold { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; font-size: 10px; color: var(--dim); }
+  /* 상세의 보유 자리 — 보유/평가손익 줄과 ✎, 보유가 없으면 "＋ 보유 입력", 입력 중이면 칸 둘과 버튼 */
+  .hold {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px;
+    font-size: 10px; color: var(--dim);
+  }
   .hold[hidden] { display: none; }
   .hold .hpl { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; }
   .hold .hqty { font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .hold button {
+    padding: 1px 5px; border: 0; border-radius: 4px; background: transparent;
+    color: var(--mute); font: inherit; cursor: pointer;
+  }
+  .hold button:hover { color: var(--text); background: var(--hover); }
+  .hold .hadd { padding-left: 0; }
+  .hold .hmsg { flex-basis: 100%; color: #e8862a; }
 
   /* --- 하단 상세 + 차트 --- */
   .detail { flex: 0 0 auto; border-top: 1px solid var(--line-2); padding: 9px 11px 10px; }

@@ -80,6 +80,13 @@ const dailyCache = {}; // symbol -> { at, price, closes, times, currency, week52
 // 추세 점검 결과 — symbol -> { key, result }. 5년치를 수백 번 다시 돌리는 계산이라(종목당 약 50ms)
 // 30초 갱신마다 하지 않고, 계산에 쓰는 마지막 확정 봉이 바뀔 때만 다시 한다(renderTrendCheck).
 const trendCache = {};
+// 보유 화면 상태. renderHolding · renderFolio 가 읽으므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
+// 마커 앞)에 있어야 한다.
+let holdEdit = null;      // 상세에서 입력 중인 보유 { symbol, qty, avg, msg } — 입력 칸의 글자 그대로
+let holdFormFor = null;   // 입력 칸을 그려 둔 종목. 30초 갱신이 칸을 다시 그려 치던 값을 지우지 않게
+let folioView = [];       // 합계 줄에 차례로 보일 줄(HTML). 보유가 둘 이상이면 첫 줄이 합계
+let folioAt = 0;          // 지금 보이는 차례
+let folioHover = false;   // 마우스가 올라가 있으면 넘기지 않는다
 // 일봉을 받지 못한 종목이 다시 받기까지 쉬는 시간. main.js 의 CLOSE_RETRY 와 같다.
 // 쉬지 않으면 야후가 바로 거절(429)할 때 30초마다 전 종목 5년치를 다시 보낸다.
 const DAILY_RETRY = 5 * 60 * 1000;
@@ -172,8 +179,6 @@ function levelOf(rsi) {
 const fmt = (v) => v == null ? '—'
   : v.toLocaleString('ko-KR', { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
 
-const signed = (v) => (v > 0 ? '+' : '') + fmt(v);
-
 // 해외 종목은 통화가 다르다. 원화는 정수, 그 외(USD 등)는 소수 2자리로 보여준다.
 // 지수는 통화가 아니라 포인트다. money 는 원화가 아니면 소수 둘째 자리로 쓰므로 'pt' 를 주면
 // 헤더 · 오늘 캔들 안내 · 52주 · 차트 축 · 툴팁이 상단 지수 줄처럼 7,003.74 로 나온다.
@@ -261,7 +266,7 @@ function renderList() {
 
     row.innerHTML = `
       <span class="dot" style="background:${lv.color}"></span>
-      <span class="name">${esc(item.name)}</span>
+      <span class="nm"><span class="name">${esc(item.name)}</span>${holdSub(item.symbol)}</span>
       <span class="px" style="color:${color}">${q && q.price != null ? money(q.price, curOf(item.symbol)) : '—'}</span>
       <span class="chg" style="color:${color}">${
         q && q.pct != null ? fmtPct(q.pct) : (q && q.error ? '오류' : '')
@@ -338,6 +343,63 @@ function renderIndices() {
   }).join('');
 }
 
+// --- 보유 종목 ---------------------------------------------------------------------
+// 입력 칸의 글자 → 숫자. 쉼표 · 공백은 지운다. 숫자가 아니면 NaN.
+function parseAmount(text) {
+  const s = String(text ?? '').replace(/[,\s]/g, '');
+  return s === '' ? NaN : Number(s);
+}
+
+// 입력 칸에 다시 넣을 글자 — 천 단위 쉼표, 소수는 있는 만큼(해외 평단가 182.35 · 소수 주 0.5).
+function amountText(v) {
+  return v.toLocaleString('en-US', { maximumFractionDigits: 4 });
+}
+
+// 수량 · 평단가 글자로 저장할 보유를 만든다. 둘 다 0보다 큰 유한한 수여야 한다 — 아니면 null.
+function holdingFrom(qtyText, avgText) {
+  const qty = parseAmount(qtyText);
+  const avg = parseAmount(avgText);
+  return Number.isFinite(qty) && qty > 0 && Number.isFinite(avg) && avg > 0 ? { qty, avg } : null;
+}
+
+// 한 종목의 평가금액 · 손익 · 수익률. 현재가가 없으면 null.
+function holdingPl(h, price) {
+  if (!h || price == null) return null;
+  const cost = h.qty * h.avg;
+  const value = h.qty * price;
+  return { value, pl: value - cost, pct: cost ? ((value - cost) / cost) * 100 : 0 };
+}
+
+function plColor(pl) {
+  return pl === 0 ? cssVar('--flat') : (pl > 0 ? UP : DOWN);
+}
+
+// 목록 줄의 보유 표시 — 이름 아래 작은 줄 "10주 · 손익 +12.50%". 보유가 아니면 빈 문자열.
+// 목록만 봐서는 무엇을 들고 있는지 알 수 없었다.
+function holdSub(symbol) {
+  const h = state.holdings[symbol];
+  if (!h) return '';
+  const q = quotes[symbol];
+  const r = holdingPl(h, q && q.price);
+  return `<span class="hsub">${fmt(h.qty)}주${r ? ` · <b style="color:${plColor(r.pl)}">손익 ${fmtPct(r.pct)}</b>` : ''}</span>`;
+}
+
+// 보유를 저장하거나(h) 지우고(null) 보유를 보여 주는 곳을 모두 다시 그린다.
+// 차트의 평단 점선은 loadChart 의 서명에 들어 있어 다시 그려진다.
+function setHolding(symbol, h) {
+  if (h) state.holdings[symbol] = h; else delete state.holdings[symbol];
+  save();
+  renderList();
+  renderDetail();
+  renderFolio().catch(console.error); // 환율을 받을 수 있어 async 다 — 띄워만 둔다
+  if (symbol === state.selected) loadChart().catch(console.error);
+}
+
+function clearHolding(symbol) {
+  holdEdit = null;
+  setHolding(symbol, null);
+}
+
 // --- 보유 종목 합계 ---------------------------------------------------------------
 // 달러 종목이 섞이면 그냥 더할 수 없어 원화로 환산한다. 환율은 천천히 움직이므로 30분 캐시.
 let fxRate = null;
@@ -351,6 +413,43 @@ async function usdKrw() {
   return fxRate; // 실패하면 직전 값(없으면 null)
 }
 
+// 합계 줄에 차례로 보일 줄들과 툴팁. 보유가 둘 이상이면 합계 → 종목마다 한 줄(목록 순서),
+// 하나뿐이면 그 종목 줄만 — "보유 1종목" 으로는 무엇을 들고 있는지 모른다. 종목 줄은 그 종목 통화로 쓴다.
+function folioLines(held, rate) {
+  // 툴팁(title)은 글자 그대로 나오므로 종목명은 HTML 쪽에서만 이스케이프한다
+  const line = (name, value, pl, pct, cur) => ({
+    html: `<span class="fn">${esc(name)}</span><span class="fv">평가 ${money(value, cur)}</span>`
+      + `<span class="fp" style="color:${plColor(pl)}">손익 ${signedMoney(pl, cur)} (${fmtPct(pct)})</span>`,
+    text: `${name} · 평가 ${money(value, cur)} · 손익 ${signedMoney(pl, cur)} (${fmtPct(pct)})`,
+  });
+  const stocks = held.map(({ i, h, q }) => {
+    const r = holdingPl(h, q.price);
+    return line(`${i.name} ${fmt(h.qty)}주`, r.value, r.pl, r.pct, curOf(i.symbol));
+  });
+  if (held.length === 1) return { lines: [stocks[0].html], tip: stocks[0].text };
+
+  const total = `보유 ${held.length}종목`;
+  const foreign = held.some((x) => curOf(x.i.symbol) !== 'KRW');
+  if (foreign && !rate) {
+    // 환율을 못 받으면 합계가 틀린 값이 되므로 숫자를 내놓지 않는다
+    return { lines: [`<span class="fn">${total}</span><span class="fv">환율을 받지 못해 합계를 낼 수 없습니다</span>`,
+      ...stocks.map((s) => s.html)], tip: stocks.map((s) => s.text).join('\n') };
+  }
+  let value = 0; let cost = 0;
+  for (const { i, h, q } of held) {
+    const k = curOf(i.symbol) === 'KRW' ? 1 : rate;
+    value += q.price * h.qty * k;
+    cost += h.avg * h.qty * k;
+  }
+  const gain = Math.round(value - cost);
+  const sum = line(total, Math.round(value), gain, cost > 0 ? ((value - cost) / cost) * 100 : 0, 'KRW');
+  return {
+    lines: [sum.html, ...stocks.map((s) => s.html)],
+    tip: [sum.text, ...stocks.map((s) => s.text),
+      ...(foreign ? [`환율 ${fmt(rate)}원/$ (미국 주식은 이 값으로 합계에 넣음)`] : [])].join('\n'),
+  };
+}
+
 async function renderFolio() {
   const box = document.getElementById('folio');
 
@@ -359,33 +458,28 @@ async function renderFolio() {
     .map((i) => ({ i, h: state.holdings[i.symbol], q: quotes[i.symbol] }))
     .filter((x) => x.h && x.h.qty > 0 && x.h.avg > 0 && x.q && x.q.price != null);
 
-  if (!held.length) { box.hidden = true; return; }
+  if (!held.length) { box.hidden = true; folioView = []; return; }
 
-  const foreign = held.some((x) => curOf(x.i.symbol) !== 'KRW');
-  const rate = foreign ? await usdKrw() : null;
-  if (foreign && !rate) {
-    // 환율을 못 받으면 합계가 틀린 값이 되므로 숫자를 내놓지 않는다
-    box.hidden = false;
-    box.innerHTML = '<span class="fn">보유</span><span class="fv">환율을 받지 못해 합계를 낼 수 없습니다</span>';
-    return;
-  }
-
-  let value = 0; let cost = 0;
-  for (const { i, h, q } of held) {
-    const k = curOf(i.symbol) === 'KRW' ? 1 : rate;
-    value += q.price * h.qty * k;
-    cost += h.avg * h.qty * k;
-  }
-
-  const gain = value - cost;
-  const pct = cost > 0 ? (gain / cost) * 100 : 0;
-  const color = gain === 0 ? cssVar('--flat') : (gain > 0 ? UP : DOWN);
-
+  // 환율은 둘 이상을 더할 때만 필요하다
+  const rate = held.length > 1 && held.some((x) => curOf(x.i.symbol) !== 'KRW') ? await usdKrw() : null;
+  const { lines, tip } = folioLines(held, rate);
+  folioView = lines;
+  if (folioAt >= lines.length) folioAt = 0; // 30초 갱신에도 보던 차례를 지킨다
   box.hidden = false;
-  box.innerHTML = `<span class="fn">보유 ${held.length}종목</span>`
-    + `<span class="fv">${fmt(Math.round(value))}</span>`
-    + (foreign ? `<span class="fx">$${fmt(Math.round(rate))}</span>` : '')
-    + `<span class="fp" style="color:${color}">${signed(Math.round(gain))} (${fmtPct(pct)})</span>`;
+  box.title = tip;
+  showFolio(false);
+}
+
+function showFolio(animate) {
+  document.getElementById('folio').innerHTML = `<div class="fline${animate ? ' in' : ''}">${folioView[folioAt]}</div>`;
+}
+
+// FOLIO_MS 마다 다음 줄로. 한 줄뿐이거나 마우스가 올라가 있으면 그대로 둔다.
+const FOLIO_MS = 4000;
+function tickFolio() {
+  if (folioHover || folioView.length < 2) return;
+  folioAt = (folioAt + 1) % folioView.length;
+  showFolio(true);
 }
 
 // --- 업종 -----------------------------------------------------------------------
@@ -522,24 +616,69 @@ function renderDetail() {
   badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : cssVar('--chip');
 }
 
-// 보유 수량·평단가를 입력해 둔 종목이면 평가손익을 보여준다.
+// 상세의 보유 자리. 보유 중이면 수량 · 평단 · 평가 · 손익과 고치기(✎), 아니면 "＋ 보유 입력".
+// 입력 중이면 수량 · 평단가 칸을 그리고, 30초 갱신은 그 칸을 다시 그리지 않는다(치던 값이 날아간다).
+// 버튼 · Enter · Esc 는 init 에서 #hold 에 한 번 단다.
 function renderHolding(symbol, price) {
   const el = document.getElementById('hold');
-  const h = state.holdings[symbol];
-  if (!h || price == null) { el.hidden = true; return; }
-
-  const cost = h.qty * h.avg;
-  const value = h.qty * price;
-  const pl = value - cost;
-  const pct = cost ? (pl / cost) * 100 : 0;
-  const color = pl === 0 ? cssVar('--flat') : (pl > 0 ? UP : DOWN);
-
+  if (!symbol || isIndex(symbol)) { el.hidden = true; holdFormFor = null; return; } // 지수는 보유할 수 없다
   el.hidden = false;
+  if (holdEdit && holdEdit.symbol !== symbol) holdEdit = null; // 다른 종목을 고르면 입력은 취소된다
+  if (holdEdit) {
+    if (holdFormFor !== symbol) { el.innerHTML = holdForm(); holdFormFor = symbol; }
+    return;
+  }
+  holdFormFor = null;
+
+  const h = state.holdings[symbol];
+  if (!h) { el.innerHTML = '<button type="button" class="hadd" data-act="edit">＋ 보유 입력</button>'; return; }
   const cur = curOf(symbol);
-  el.innerHTML = `<span class="hqty">${fmt(h.qty)}주</span>`
-    + `<span>평단 ${money(h.avg, cur)}</span>`
-    + `<span>평가 ${money(value, cur)}</span>`
-    + `<span class="hpl" style="color:${color}">${signedMoney(pl, cur)} (${fmtPct(pct)})</span>`;
+  const r = holdingPl(h, price);
+  el.innerHTML = `<span class="hqty">${fmt(h.qty)}주</span><span>평단 ${money(h.avg, cur)}</span>`
+    + (r ? `<span>평가 ${money(r.value, cur)}</span>`
+      + `<span class="hpl" style="color:${plColor(r.pl)}">${signedMoney(r.pl, cur)} (${fmtPct(r.pct)})</span>` : '')
+    + '<button type="button" class="hedit" data-act="edit" title="보유 고치기">✎</button>';
+}
+
+// 입력 칸. 값은 holdEdit 의 글자 그대로 — 저장에 실패해 다시 그려도 친 값이 남는다.
+function holdForm() {
+  const e = holdEdit;
+  const input = (cls, ph, v) => `<input class="${cls}" type="text" inputmode="decimal" placeholder="${ph}" value="${esc(v)}" />`;
+  return input('hq', '수량', e.qty) + input('ha', '평단가', e.avg)
+    + '<button type="button" data-act="save">저장</button><button type="button" data-act="cancel">취소</button>'
+    + (state.holdings[e.symbol] ? '<button type="button" data-act="del">삭제</button>' : '')
+    + (e.msg ? `<span class="hmsg">${e.msg}</span>` : '');
+}
+
+function redrawHolding() {
+  const q = quotes[state.selected];
+  renderHolding(state.selected, q && q.price);
+}
+
+function startHoldEdit(symbol) {
+  const h = state.holdings[symbol];
+  holdEdit = { symbol, qty: h ? amountText(h.qty) : '', avg: h ? amountText(h.avg) : '', msg: '' };
+  holdFormFor = null;
+  redrawHolding();
+}
+
+// 둘 중 하나라도 비었거나 0 이하면 저장하지 않고 알린다 — 예전에는 말없이 보유가 지워졌다.
+function saveHoldEdit(qtyText, avgText) {
+  const h = holdingFrom(qtyText, avgText);
+  if (!h) {
+    holdEdit = { ...holdEdit, qty: qtyText, avg: avgText, msg: '수량과 평단가를 모두 0보다 큰 숫자로 넣어 주세요' };
+    holdFormFor = null;
+    redrawHolding();
+    return;
+  }
+  const { symbol } = holdEdit;
+  holdEdit = null;
+  setHolding(symbol, h);
+}
+
+function cancelHoldEdit() {
+  holdEdit = null;
+  redrawHolding();
 }
 
 // 52주 저점~고점 사이에서 현재가가 어디쯤인지. Yahoo meta 값이라 추가 요청이 없다.
@@ -2101,11 +2240,13 @@ function renderAlerts() {
   }
 
   // 두 섹션 모두 "종목명 + 숫자 입력 2칸" 형태라 한 함수로 만든다.
+  // 보유 칸은 쉼표를 보이려고 글자 칸(text)이다 — number 칸은 "206,000" 을 받지 않는다.
   const buildRow = (item, fields, onSave) => {
     const row = document.createElement('div');
     row.className = 'arow';
     row.innerHTML = `<span class="aname">${esc(item.name)}</span>`
-      + fields.map((f) => `<input class="${f.cls}" type="number" placeholder="${f.ph}"`
+      + fields.map((f) => `<input class="${f.cls}" type="${f.text ? 'text' : 'number'}"`
+        + `${f.text ? ' inputmode="decimal"' : ''} placeholder="${f.ph}"`
         + ` value="${f.value != null ? f.value : ''}" />`).join('');
     for (const f of fields) row.querySelector(`.${f.cls}`).onchange = onSave(row);
     return row;
@@ -2126,25 +2267,43 @@ function renderAlerts() {
       else delete state.alerts.targets[item.symbol];
       save();
     }));
-
-    const h = state.holdings[item.symbol] || {};
-    holdBox.appendChild(buildRow(item, [
-      { cls: 'qty', ph: '수량', value: h.qty },
-      { cls: 'avg', ph: '평단가', value: h.avg },
-    ], (row) => () => {
-      const qty = parseFloat(row.querySelector('.qty').value);
-      const avg = parseFloat(row.querySelector('.avg').value);
-      // 수량과 평단가가 모두 있어야 평가손익을 낼 수 있다
-      if (Number.isFinite(qty) && qty > 0 && Number.isFinite(avg) && avg > 0) {
-        state.holdings[item.symbol] = { qty, avg };
-      } else {
-        delete state.holdings[item.symbol];
-      }
-      save();
-      renderDetail();
-      renderFolio().catch(console.error); // 동기 콜백이라 await 할 수 없다
-    }));
   }
+
+  // 보유는 들고 있는 종목만 고치고 지운다. 새로 넣는 것은 상세 화면의 "＋ 보유 입력" 이다 —
+  // 관심종목 전부를 늘어놓으면 무엇을 들고 있는지 알 수 없었다.
+  const held = state.watchlist.filter((i) => state.holdings[i.symbol]);
+  if (!held.length) {
+    holdBox.innerHTML = '<div class="empty">종목을 고른 뒤 상세 화면의 ＋ 보유 입력으로 넣으세요</div>';
+    return;
+  }
+  const msg = document.createElement('div');
+  msg.className = 'ohint';
+  for (const item of held) {
+    const h = state.holdings[item.symbol];
+    const row = buildRow(item, [
+      { cls: 'qty', ph: '수량', value: amountText(h.qty), text: true },
+      { cls: 'avg', ph: '평단가', value: amountText(h.avg), text: true },
+    ], (r) => () => {
+      const qEl = r.querySelector('.qty');
+      const aEl = r.querySelector('.avg');
+      const next = holdingFrom(qEl.value, aEl.value);
+      // 잘못 넣으면 지우지 않는다 — 예전에는 칸 하나를 비우면 말없이 보유가 지워졌다
+      const keep = next || state.holdings[item.symbol];
+      qEl.value = amountText(keep.qty);
+      aEl.value = amountText(keep.avg);
+      msg.textContent = next ? '' : '수량과 평단가를 모두 0보다 큰 숫자로 넣어 주세요';
+      if (next) setHolding(item.symbol, next);
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'hdel';
+    del.title = '보유 지우기';
+    del.textContent = '✕';
+    del.onclick = () => { setHolding(item.symbol, null); renderAlerts(); };
+    row.appendChild(del);
+    holdBox.appendChild(row);
+  }
+  holdBox.appendChild(msg);
 }
 
 // 목표가 "통과" 시에만 알린다. 이전 가격이 없는 첫 갱신은 기준만 잡고 넘어가므로
@@ -2362,6 +2521,38 @@ async function refreshNow() {
 
   document.getElementById('bell').onclick = () => (alertsEl.hidden ? openAlerts() : closeAlerts());
   document.getElementById('alertClose').onclick = closeAlerts;
+
+  // 상세의 보유 자리 — 칸과 버튼은 renderHolding 이 그리고, 누름 · 키는 여기서 한 번만 받는다.
+  // Esc 는 입력 칸 안이라 문서의 Esc(위젯 접기)가 무시한다.
+  const holdEl = document.getElementById('hold');
+  const holdSave = () => {
+    saveHoldEdit(holdEl.querySelector('.hq').value, holdEl.querySelector('.ha').value);
+    if (holdEdit) holdEl.querySelector('.hq').focus(); // 안내와 함께 다시 그렸다 — 이어서 고치게
+  };
+  holdEl.onclick = (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'edit') { startHoldEdit(state.selected); holdEl.querySelector('.hq').focus(); }
+    else if (act === 'save') holdSave();
+    else if (act === 'cancel') cancelHoldEdit();
+    else if (act === 'del') clearHolding(state.selected);
+  };
+  holdEl.onkeydown = (e) => {
+    if (!e.target.matches('input')) return;
+    if (e.key === 'Enter') holdSave();
+    else if (e.key === 'Escape') cancelHoldEdit();
+  };
+  // 칸을 벗어나면 쉼표를 붙여 보인다
+  holdEl.onfocusout = (e) => {
+    if (!e.target.matches('input')) return;
+    const v = parseAmount(e.target.value);
+    if (Number.isFinite(v)) e.target.value = amountText(v);
+  };
+
+  // 합계 줄은 보유가 둘 이상이면 합계 → 종목마다 차례로 넘어간다. 마우스를 올리면 멈춘다.
+  const folioEl = document.getElementById('folio');
+  folioEl.onmouseenter = () => { folioHover = true; };
+  folioEl.onmouseleave = () => { folioHover = false; };
+  setInterval(tickFolio, FOLIO_MS);
   for (const b of document.querySelectorAll('#themeSeg button')) {
     b.onclick = () => { applyTheme(b.dataset.theme); save(); };
   }

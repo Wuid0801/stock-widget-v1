@@ -1322,4 +1322,155 @@ await test('trend check: real backtest on a steady climb says 정배열 and 표�
   assert.ok(el.title.includes('진입 1회 — 적어서 판정하지 않음'));
 });
 
+// 보유 — 어떤 종목을 들고 있는지 목록에서 보이고, 상세에서 바로 넣고 고치며, 합계 줄이 무엇의 합인지 말한다.
+// 이 하네스에는 진짜 DOM 이 없다. 그리는 글자와 상태만 보고, 버튼 · 키 연결은 tests/holdings.mjs(앱)가 본다.
+const HOLD_FNS = ['parseAmount', 'amountText', 'holdingFrom', 'holdingPl', 'plColor', 'holdSub', 'renderHolding',
+  'holdForm', 'startHoldEdit', 'saveHoldEdit', 'cancelHoldEdit', 'clearHolding', 'setHolding', 'redrawHolding'];
+const holdHarness = (extra = []) => {
+  const h = harness([...HOLD_FNS, ...extra]);
+  h.run(formatting);
+  const saved = [];
+  Object.assign(h.c, { cssVar: () => '#888888', esc: String, save: () => saved.push(1), renderList() {},
+    renderDetail: () => h.c.redrawHolding(), loadChart: async () => {} });
+  if (!extra.includes('renderFolio')) h.c.renderFolio = async () => {};
+  return { ...h, saved };
+};
+
+await test('holdings: amounts accept commas; both quantity and average price must be positive', () => {
+  const { c } = holdHarness();
+  assert.equal(c.parseAmount('206,000'), 206000);
+  assert.equal(c.parseAmount(' 1,234.5 '), 1234.5);
+  assert.ok(Number.isNaN(c.parseAmount('')));
+  assert.ok(Number.isNaN(c.parseAmount('abc')));
+  assert.deepEqual({ ...c.holdingFrom('10', '206,000') }, { qty: 10, avg: 206000 });
+  assert.deepEqual({ ...c.holdingFrom('0.5', '182.35') }, { qty: 0.5, avg: 182.35 });
+  for (const [q, a] of [['10', ''], ['', '100'], ['0', '100'], ['-1', '100'], ['1e400', '100'], ['10', '0']]) {
+    assert.equal(c.holdingFrom(q, a), null, `${q} / ${a}`);
+  }
+  assert.equal(c.amountText(206000), '206,000');
+  assert.equal(c.amountText(182.35), '182.35');
+  assert.equal(c.amountText(0.5), '0.5');
+});
+
+await test('holdings: list row shows quantity and my return only for held stocks', () => {
+  const { c, run } = holdHarness();
+  run(`state.holdings = { '005930.KS': { qty: 10, avg: 200000 } }; quotes['005930.KS'] = { price: 225000 };`);
+  assert.equal(c.holdSub('005930.KS'), '<span class="hsub">10주 · <b style="color:#e24b4a">손익 +12.50%</b></span>');
+  assert.equal(c.holdSub('000660.KS'), '', '보유가 아니면 아무것도 붙이지 않는다');
+  run(`quotes['005930.KS'] = {};`);
+  assert.equal(c.holdSub('005930.KS'), '<span class="hsub">10주</span>', '현재가가 없으면 수량만');
+});
+
+await test('holdings: detail adds, validates, edits, cancels and deletes; refresh keeps typed values', () => {
+  const { c, run, elements, saved } = holdHarness();
+  run(`quotes['005930.KS'] = { price: 225000 }; quotes['000660.KS'] = { price: 1520000 };`);
+  c.renderHolding('005930.KS', 225000);
+  const el = elements.get('hold');
+  assert.equal(el.hidden, false);
+  assert.equal(el.innerHTML, '<button type="button" class="hadd" data-act="edit">＋ 보유 입력</button>');
+  c.renderHolding('^KS11', 7000);
+  assert.equal(el.hidden, true, '지수는 보유할 수 없다');
+
+  run(`state.selected = '005930.KS';`);
+  c.startHoldEdit('005930.KS');
+  assert.equal(el.hidden, false);
+  for (const s of ['class="hq"', 'placeholder="수량" value=""', 'class="ha"', 'placeholder="평단가" value=""',
+    'data-act="save">저장', 'data-act="cancel">취소']) assert.ok(el.innerHTML.includes(s), s);
+  assert.ok(!el.innerHTML.includes('삭제'), '새로 넣을 때는 지울 것이 없다');
+
+  // 30초 갱신이 칸을 다시 그리면 치던 값이 날아간다
+  el.innerHTML = 'TYPED';
+  c.renderHolding('005930.KS', 226000);
+  assert.equal(el.innerHTML, 'TYPED');
+
+  c.saveHoldEdit('10', '');
+  assert.equal(run(`state.holdings['005930.KS']`), undefined, '평단가가 없으면 저장하지 않는다');
+  assert.equal(saved.length, 0);
+  assert.ok(el.innerHTML.includes('<span class="hmsg">수량과 평단가를 모두 0보다 큰 숫자로 넣어 주세요</span>'));
+  assert.ok(el.innerHTML.includes('placeholder="수량" value="10"'), '친 값은 남긴다');
+
+  c.saveHoldEdit('10', '200,000');
+  assert.deepEqual({ ...run(`state.holdings['005930.KS']`) }, { qty: 10, avg: 200000 });
+  assert.equal(saved.length, 1);
+  assert.equal(el.innerHTML, '<span class="hqty">10주</span><span>평단 200,000</span><span>평가 2,250,000</span>'
+    + '<span class="hpl" style="color:#e24b4a">+250,000 (+12.50%)</span>'
+    + '<button type="button" class="hedit" data-act="edit" title="보유 고치기">✎</button>');
+
+  c.startHoldEdit('005930.KS');
+  assert.ok(el.innerHTML.includes('placeholder="수량" value="10"') && el.innerHTML.includes('placeholder="평단가" value="200,000"'));
+  assert.ok(el.innerHTML.includes('data-act="del">삭제'));
+  c.saveHoldEdit('0', '200,000');
+  assert.deepEqual({ ...run(`state.holdings['005930.KS']`) }, { qty: 10, avg: 200000 }, '잘못 넣어도 있던 보유는 지우지 않는다');
+  assert.equal(saved.length, 1);
+  c.cancelHoldEdit();
+  assert.ok(el.innerHTML.startsWith('<span class="hqty">10주</span>'), 'Esc · 취소는 그대로 둔다');
+
+  // 다른 종목을 고르면 입력은 취소된다
+  c.startHoldEdit('005930.KS');
+  c.renderHolding('000660.KS', 1520000);
+  assert.equal(el.innerHTML, '<button type="button" class="hadd" data-act="edit">＋ 보유 입력</button>');
+  c.renderHolding('005930.KS', 225000);
+  assert.ok(el.innerHTML.startsWith('<span class="hqty">'), '돌아와도 입력 칸이 아니다');
+
+  c.clearHolding('005930.KS');
+  assert.equal(run(`state.holdings['005930.KS']`), undefined);
+  assert.equal(el.innerHTML, '<button type="button" class="hadd" data-act="edit">＋ 보유 입력</button>');
+});
+
+await test('holdings: folio names its numbers and steps through total and each holding', async () => {
+  const { c, run, elements } = holdHarness(['folioLines', 'renderFolio', 'showFolio', 'tickFolio']);
+  c.usdKrw = async () => 1380;
+  run(`state.watchlist.push({ symbol: 'AAPL', name: 'AAPL' });
+    state.holdings = { '005930.KS': { qty: 10, avg: 200000 }, '000660.KS': { qty: 2, avg: 1600000 }, AAPL: { qty: 5, avg: 180 } };
+    quotes['005930.KS'] = { price: 225000 }; quotes['000660.KS'] = { price: 1520000 };
+    quotes.AAPL = { price: 200, currency: 'USD' };`);
+  await c.renderFolio();
+  const box = elements.get('folio');
+  const line = (cls, fn, fv, color, fp) => `<div class="${cls}"><span class="fn">${fn}</span><span class="fv">평가 ${fv}</span>`
+    + `<span class="fp" style="color:${color}">손익 ${fp}</span></div>`;
+  const UP = '#e24b4a', DOWN = '#185fa5';
+  // 6,670,000 = 2,250,000 + 3,040,000 + $1,000 × 1,380 · 손익 228,000 / 6,442,000
+  assert.equal(box.hidden, false);
+  assert.equal(box.innerHTML, line('fline', '보유 3종목', '6,670,000', UP, '+228,000 (+3.54%)'));
+  assert.equal(box.title, ['보유 3종목 · 평가 6,670,000 · 손익 +228,000 (+3.54%)',
+    '삼성전자 10주 · 평가 2,250,000 · 손익 +250,000 (+12.50%)',
+    'SK하이닉스 2주 · 평가 3,040,000 · 손익 -160,000 (-5.00%)',
+    'AAPL 5주 · 평가 1,000.00 · 손익 +100.00 (+11.11%)',
+    '환율 1,380원/$ (미국 주식은 이 값으로 합계에 넣음)'].join('\n'));
+
+  c.tickFolio();
+  assert.equal(box.innerHTML, line('fline in', '삼성전자 10주', '2,250,000', UP, '+250,000 (+12.50%)'));
+  c.tickFolio();
+  assert.equal(box.innerHTML, line('fline in', 'SK하이닉스 2주', '3,040,000', DOWN, '-160,000 (-5.00%)'));
+  c.tickFolio();
+  assert.equal(box.innerHTML, line('fline in', 'AAPL 5주', '1,000.00', UP, '+100.00 (+11.11%)'), '해외 종목은 달러로');
+  c.tickFolio();
+  assert.ok(box.innerHTML.includes('보유 3종목'), '다시 합계');
+
+  run('folioHover = true;');
+  c.tickFolio();
+  assert.ok(box.innerHTML.includes('보유 3종목'), '마우스가 올라가 있으면 넘기지 않는다');
+  run('folioHover = false;');
+  c.tickFolio();
+  await c.renderFolio(); // 30초 갱신
+  assert.equal(box.innerHTML, line('fline', '삼성전자 10주', '2,250,000', UP, '+250,000 (+12.50%)'), '갱신해도 차례를 지킨다');
+
+  // 하나뿐이면 그 종목 줄만 — "보유 1종목" 으로는 무엇을 들고 있는지 모른다
+  run(`state.holdings = { '005930.KS': { qty: 10, avg: 200000 } };`);
+  await c.renderFolio();
+  assert.equal(box.innerHTML, line('fline', '삼성전자 10주', '2,250,000', UP, '+250,000 (+12.50%)'));
+  c.tickFolio();
+  assert.equal(box.innerHTML, line('fline', '삼성전자 10주', '2,250,000', UP, '+250,000 (+12.50%)'));
+
+  run(`state.holdings = { '005930.KS': { qty: 10, avg: 200000 }, AAPL: { qty: 5, avg: 180 } };`);
+  c.usdKrw = async () => null;
+  await c.renderFolio();
+  assert.equal(box.innerHTML, '<div class="fline"><span class="fn">보유 2종목</span>'
+    + '<span class="fv">환율을 받지 못해 합계를 낼 수 없습니다</span></div>', '틀린 합계를 내놓지 않는다');
+
+  run('state.holdings = {};');
+  await c.renderFolio();
+  assert.equal(box.hidden, true);
+});
+
 console.log(`PASS: ${passed} session UI test groups`);
