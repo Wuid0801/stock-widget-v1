@@ -272,4 +272,9 @@ await test('regular open time comes from the exchange metadata; malformed values
   const bad = row({ stockExchangeType: { ...after.datas[0].stockExchangeType, startTime: '9:00' } });
   assert.equal(normalizeQuote(bad, { now }).openTime, null);
 });
+await test('regular close time comes from the exchange metadata too (1D chart close point label)', () => {
+  assert.equal(normalizeQuote(paused.datas[0], { now }).closeTime, '1530');
+  const bad = row({ stockExchangeType: { ...after.datas[0].stockExchangeType, endTime: '15:30' } });
+  assert.equal(normalizeQuote(bad, { now }).closeTime, null);
+});
 console.log(`\nPASS: ${count} deterministic session cases`);

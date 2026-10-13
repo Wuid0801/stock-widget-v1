@@ -1469,6 +1469,7 @@ async function loadQuote(item, live) {
     source: live && live.source || (live ? 'Naver' : 'Yahoo'),
     tradedAt: live && live.tradedAt || null,
     openTime: live && live.openTime || null, // 정규장 시작 'HHMM' — 분봉이 언제 들어오는지 알릴 때 쓴다
+    closeTime: live && live.closeTime || null, // 정규장 끝 'HHMM' — 1D 차트의 종가 점 이름표(intradayEnd)
     fetchedAt: !live && r.stale ? r.at : Date.now(),
     // 장후 가격의 검증된 당일 정규장 종가 대비 이동폭. 종료 후에도 유지한다.
     // 0 도 뜻이 있는 값이라(움직이지 않음) || 로 뭉개면 안 된다.
@@ -1548,6 +1549,35 @@ async function fetchChartCached(symbol, tf) {
 
 let lastDrawSig = null; // 내용이 그대로면 다시 그리지 않는다
 
+// 1D 차트의 끝. 야후 5분봉은 20분 늦어 차트 끝이 위에 보이는 가격보다 뒤처진다.
+//  - 장중(정규장 거래 중): 현재가를 지금 시각에 덧붙인다.
+//  - 정규장이 끝나 확인된 종가가 있으면(지수는 마감 뒤 값이 곧 종가): 종가로 끝낸다. 15:30 뒤 가격은 NXT
+//    애프터마켓에서 오고(세션 애프터마켓) 야후 종가 봉(거래량 0)은 15:50쯤 와서, 예전에는 그사이 차트가 20분 전
+//    봉에서 멈췄다(2026-10-13). 야후 종가 봉이 이미 있으면 점을 더하지 않고 그 봉 값을 거래소 종가로 맞춘다 —
+//    둘이 한 틱 다르면 끝이 두 개가 된다. 이름표는 거래소가 알려 준 종료 시각(closeTime)이다.
+//  - 단일가 · 일시정지처럼 정규장 가격이 멈춰 있고 아직 종가가 없으면: 그 가격을 지금 시각에 덧붙인다.
+//  - 애프터 · 프리 가격은 정규장 차트에 넣지 않는다(애프터 · 프리 점선이 따로 있다). 오늘 가격이 아니면(장 전 ·
+//    휴일) 아무것도 하지 않는다.
+// 돌려주는 값: null | { value, replace: true }(마지막 봉 값을 바꾼다) | { value, at }(at 시각에 덧붙인다)
+function intradayEnd(q, lastVolume, nowMs) {
+  if (!q || !q.live || q.price == null) return null;
+  if (q.open && q.session === 'regular') return { value: q.price, at: nowMs };
+  const kstDay = (ms) => Math.floor((ms + 9 * 3600000) / 86400000);
+  if (!q.tradedAt || kstDay(Date.parse(q.tradedAt)) !== kstDay(nowMs)) return null;
+  const close = q.regularClose != null ? q.regularClose : q.priceSession === 'closed' ? q.price : null;
+  if (close != null) {
+    return lastVolume === 0 ? { value: close, replace: true } : { value: close, at: kstClockMs(q.closeTime, nowMs) ?? nowMs };
+  }
+  return q.priceSession === 'regular' ? { value: q.price, at: nowMs } : null;
+}
+
+// 오늘(한국 시간) 'HHMM' 의 시각(ms). 형식이 아니면 null.
+function kstClockMs(hhmm, nowMs) {
+  if (!/^\d{4}$/.test(hhmm || '')) return null;
+  const midnight = Math.floor((nowMs + 9 * 3600000) / 86400000) * 86400000 - 9 * 3600000;
+  return midnight + (Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(2))) * 60000;
+}
+
 // 분봉이 들어오기 시작하는 시각(한국 시간 'HH:MM')과 거기까지 남은 분(지났으면 0 이하).
 // 야후 국내 시세는 늦게 오므로 개장 시각 + delayMin 이다. openTime 은 네이버가 주는
 // 'HHMM' — 수능일처럼 늦게 여는 날은 1000 이 온다. 없으면 평소 개장(09:00)으로 본다.
@@ -1614,11 +1644,13 @@ async function loadChart() {
   const closes = r.closes.slice();
   const times = r.times.slice();
 
-  // Yahoo 1D 봉은 20분 전에서 끊긴다. 장중 실시간이면 현재가를 끝점으로 이어붙여
-  // 차트 끝과 위에 표시된 현재가가 어긋나 보이지 않게 한다.
-  if (state.timeframe === '1D' && q && q.live && q.open && q.session === 'regular') {
-    closes.push(q.price);
-    times.push(Date.now());
+  // Yahoo 1D 봉은 20분 전에서 끊긴다. 끝점을 이어붙이거나(장중 현재가 · 장 마감 뒤 종가)
+  // 야후 종가 봉을 거래소 종가로 맞춰 차트 끝과 위에 표시된 가격이 어긋나 보이지 않게 한다.
+  const end = state.timeframe === '1D' ? intradayEnd(q, r.volumes && r.volumes[r.volumes.length - 1], Date.now()) : null;
+  if (end && end.replace) closes[closes.length - 1] = end.value;
+  else if (end) {
+    closes.push(end.value);
+    times.push(end.at);
   }
 
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.

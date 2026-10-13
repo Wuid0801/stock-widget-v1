@@ -157,6 +157,8 @@ function normalizeQuote(data, { now = Date.now(), regularClose = null, nxt = nul
     // Regular open as the exchange reports it (HHMM). Late-open days (e.g. the college
     // entrance exam) say 1000; the empty-intraday hint uses it to tell when bars arrive.
     openTime: /^\d{4}$/.test(data?.stockExchangeType?.startTime || '') ? data.stockExchangeType.startTime : null,
+    // Regular close (HHMM). The 1D chart labels its close point with it while Yahoo's close bar is still late.
+    closeTime: /^\d{4}$/.test(data?.stockExchangeType?.endTime || '') ? data.stockExchangeType.endTime : null,
   };
 }
 

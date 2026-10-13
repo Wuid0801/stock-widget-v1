@@ -46,7 +46,7 @@ function harness(extra = []) {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -165,7 +165,8 @@ await test('loadQuote carries metadata, zero close delta, timestamp, and delayed
   const { c, run } = harness(['loadQuote']);
   c.dailyFor = async () => ({price:99,closes:[90,100,99],times:[1,2,3],currency:'KRW'});
   const live = {price:102,prevClose:100,change:2,open:false,session:'closed',priceSession:'after',
-    isTrading:false,regularClose:102,fromClose:0,market:'NXT',source:'Naver',tradedAt:'2026-09-10T09:29:00Z'};
+    isTrading:false,regularClose:102,fromClose:0,market:'NXT',source:'Naver',tradedAt:'2026-09-10T09:29:00Z',
+    closeTime:'1530'};
   await c.loadQuote({symbol:'005930.KS'}, live);
   const q = run("quotes['005930.KS']");
   for (const field of Object.keys(live)) assert.equal(q[field], live[field], field);
@@ -270,6 +271,64 @@ await test('1D appends only active regular; pre/after lines retain price origin 
   await c.loadChart();
   assert.equal(draws.at(-1).closes.length, 2);
   assert.equal(draws.at(-1).hLines.length, 0);
+});
+
+// 15:30 에 정규장이 끝나면 KRX 는 휴지(OPEN + break)이고 가격은 NXT 애프터마켓에서 온다(세션 애프터마켓).
+// 야후는 종가를 거래량 0 인 마지막 봉으로 싣는데 20분 늦어 15:50쯤 온다(2026-10-13 실측: regularMarketTime
+// 15:30:12). 예전에는 그사이 1D 차트가 20분 전 봉에서 멈췄다 — 확인된 종가로 끝낸다.
+await test('1D ends at the verified close until Yahoo\'s close bar arrives; never at an after price', async () => {
+  const { c, run } = harness(['loadChart']);
+  const draws = [];
+  const bars = { ok: true, closes: [98, 100], times: [1, 2], volumes: [10, 20], highs: [99, 101], lows: [97, 99] };
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
+    renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+  });
+  run('let lastDrawSig = null;');
+  // 하네스 시각은 2026-09-10 18:30 KST. 15:56 은 tests/fixtures/naver-break-20260915.json 과 같은 상태다.
+  const quote = (patch = {}) => run(`lastDrawSig = null; quotes['005930.KS'] = ${JSON.stringify({ price: 102, prevClose: 95,
+    change: 7, live: true, open: false, session: 'after', priceSession: 'after', isTrading: true,
+    tradedAt: '2026-09-10T15:56:03+09:00', regularClose: 101, closeTime: '1530', ...patch })};`);
+  const draw = async (patch) => { quote(patch); await c.loadChart(); return draws.at(-1); };
+
+  let d = await draw();
+  assert.deepEqual(d.closes, [98, 100, 101], '종가로 끝난다 (애프터 가격 102 가 아니다)');
+  assert.equal(d.times.at(-1), Date.parse('2026-09-10T15:30:00+09:00'), '이름표는 거래소가 알려 준 종료 시각');
+  assert.equal(d.volumes.length, 3);
+  assert.equal(d.hLines.find((l) => l.varName === '--over-line')?.value, 102, '애프터 가격은 점선 그대로');
+  d = await draw({ closeTime: null });
+  assert.equal(d.times.at(-1), NOW, '종료 시각을 모르면 지금');
+
+  // 야후 종가 봉(거래량 0)이 들어오면 점을 더하지 않고 그 봉을 거래소 종가로 맞춘다 — 틱 차이로 끝이 둘이 되지 않게
+  Object.assign(bars, { closes: [98, 100, 100.5], times: [1, 2, 3], volumes: [10, 20, 0], highs: [99, 101, 100.5],
+    lows: [97, 99, 100.5] });
+  d = await draw();
+  assert.deepEqual(d.closes, [98, 100, 101]);
+  assert.deepEqual(d.times, [1, 2, 3]);
+  assert.deepEqual(bars.closes, [98, 100, 100.5], '받은 봉은 그대로');
+  // ETF 는 애프터마켓이 없어 15:30 뒤 장마감이다 — 가격이 정규장 것이어도 확인된 종가가 있으면 같은 규칙
+  d = await draw({ price: 101, session: 'closed', priceSession: 'regular', isTrading: false });
+  assert.deepEqual(d.closes, [98, 100, 101], 'ETF: 종가 봉이 한 번만');
+
+  Object.assign(bars, { closes: [98, 100], times: [1, 2], volumes: [10, 20], highs: [99, 101], lows: [97, 99] });
+  // 단일가 · 일시정지처럼 정규장 가격이 멈춰 있고 아직 종가가 없으면 그 가격으로 끝낸다
+  d = await draw({ price: 99, session: 'closed', priceSession: 'regular', isTrading: false, regularClose: null,
+    tradedAt: '2026-09-10T15:25:00+09:00' });
+  assert.deepEqual(d.closes, [98, 100, 99]);
+  assert.equal(d.times.at(-1), NOW);
+  // 지수에는 애프터마켓이 없다 — 마감 뒤 값이 곧 종가다
+  d = await draw({ price: 103, session: 'closed', priceSession: 'closed', isTrading: false, regularClose: null,
+    closeTime: null, tradedAt: '2026-09-10T15:30:05+09:00' });
+  assert.deepEqual(d.closes, [98, 100, 103]);
+
+  // 종가를 모르는 애프터 · 프리 가격, 어제 가격(장 전 · 휴일), 지연 시세는 붙이지 않는다
+  for (const patch of [{ regularClose: null }, { session: 'pre', priceSession: 'pre', regularClose: null },
+    { tradedAt: '2026-09-09T15:56:03+09:00' }, { session: 'closed', priceSession: 'closed', tradedAt: '2026-09-09T15:30:05+09:00' },
+    { live: false }, { tradedAt: null }]) {
+    assert.deepEqual((await draw(patch)).closes, [98, 100], JSON.stringify(patch));
+  }
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른
