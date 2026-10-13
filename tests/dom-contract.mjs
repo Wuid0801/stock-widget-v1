@@ -49,5 +49,24 @@ if (indicatorsTag >= 0 && rendererTag >= 0) {
     `indicators ${indicatorsTag} vs renderer ${rendererTag}`);
 }
 
+// backtest.js 는 indicators.js 의 sma 를 전역으로 쓰고, renderer.js 가 trendCheck 를 부른다.
+const backtestTag = html.indexOf('src="./backtest.js"');
+check('index.html 이 backtest.js 를 싣는다', backtestTag >= 0);
+if (backtestTag >= 0 && indicatorsTag >= 0 && rendererTag >= 0) {
+  check('backtest.js 가 indicators.js 뒤, renderer.js 앞에 온다',
+    indicatorsTag < backtestTag && backtestTag < rendererTag);
+}
+
+// --- 추세 점검 줄 ----------------------------------------------------------------
+// 52주 줄과 차트 사이. 차트 아래로 가면 관심종목 목록과 붙어 종목 정보로 읽히지 않는다.
+const w52Tag = html.indexOf('id="w52"');
+const trendTag = html.indexOf('id="trendCheck"');
+const chartTag = html.indexOf('class="chartbox"');
+check('#trendCheck 가 있다', trendTag >= 0);
+check('#trendCheck 는 52주 줄과 차트 사이에 있다', w52Tag >= 0 && w52Tag < trendTag && trendTag < chartTag);
+const trendCss = /\.trendchk\s*\{([^}]*)\}/.exec(html);
+check('.trendchk 는 한 줄로 자르고 말줄임한다 (줄이 늘면 차트가 밀린다)',
+  !!trendCss && /white-space:\s*nowrap/.test(trendCss[1]) && /text-overflow:\s*ellipsis/.test(trendCss[1]));
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

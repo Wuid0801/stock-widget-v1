@@ -77,6 +77,9 @@ const DAILY = { range: '5y', interval: '1d' };
 // 현재가는 실시간(네이버)에서 따로 오므로 화면은 30초마다 그대로 갱신된다.
 const DAILY_TTL = 30 * 60 * 1000;
 const dailyCache = {}; // symbol -> { at, price, closes, times, currency, week52High, week52Low, retryAt? }
+// 추세 점검 결과 — symbol -> { key, result }. 5년치를 수백 번 다시 돌리는 계산이라(종목당 약 50ms)
+// 30초 갱신마다 하지 않고, 계산에 쓰는 마지막 확정 봉이 바뀔 때만 다시 한다(renderTrendCheck).
+const trendCache = {};
 // 일봉을 받지 못한 종목이 다시 받기까지 쉬는 시간. main.js 의 CLOSE_RETRY 와 같다.
 // 쉬지 않으면 야후가 바로 거절(429)할 때 30초마다 전 종목 5년치를 다시 보낸다.
 const DAILY_RETRY = 5 * 60 * 1000;
@@ -511,6 +514,7 @@ function renderDetail() {
 
   renderHolding(item && item.symbol, q && q.price);
   renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur);
+  renderTrendCheck(item);
 
   const lv = levelOf(q && q.rsi);
   badge.textContent = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
@@ -551,6 +555,109 @@ function renderW52(low, high, price, cur) {
   box.title = `52주 최저 ${money(low, cur)} · 최고 ${money(high, cur)}\n`
     + `현재 ${money(price, cur)} — 저점 대비 ${fmtPct(((price - low) / low) * 100)}, `
     + `고점 대비 ${fmtPct(((price - high) / high) * 100)}`;
+}
+
+// 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과(backtest.js). 기간 탭과 상관없이
+// 선택한 종목의 일봉 원본(dailyCache)으로 계산한다. quotes[].daily 는 마지막 봉을 현재가로
+// 덮은 사본이라 쓰지 않는다. 계산에 쓰는 마지막 확정 봉(끝에서 두 번째)이 바뀔 때만 다시 계산한다.
+function renderTrendCheck(item) {
+  const el = document.getElementById('trendCheck');
+  const d = item && dailyCache[item.symbol];
+  if (!d || !d.closes) { el.hidden = true; return; }
+  const n = d.closes.length;
+  const key = `${n}:${d.times[n - 2]}`;
+  let hit = trendCache[item.symbol];
+  if (!hit || hit.key !== key) {
+    hit = { key, result: trendCheck(item.symbol, d.closes, d.times,
+      { domestic: isDomestic(item.symbol), cost: costOf(item.symbol) }) };
+    trendCache[item.symbol] = hit;
+  }
+  const r = hit.result;
+  el.hidden = !r;
+  if (!r) return;
+  if (r.error) {
+    el.textContent = '추세 점검: 데이터 확인 필요';
+    el.title = '하루에 35% 넘게 움직인 봉이 있습니다. 국내 가격제한폭(±30%) 밖이라 액면분할 같은 데이터 이상으로 보고\n'
+      + '그 뒤만 쓰려 했지만 2년(500봉)이 남지 않아 계산하지 않았습니다.';
+    return;
+  }
+  el.innerHTML = trendCheckText(r);
+  el.title = trendCheckTip(r, item.symbol);
+}
+
+// 추세 점검의 왕복 비용. 국내 종목은 매도세가 붙어 0.25%, 해외 종목과 지수(ETF 로 따라간다고 본다)는 0.10%.
+function costOf(symbol) {
+  return isDomestic(symbol) ? 0.0025 : 0.001;
+}
+
+function verdictText(v) {
+  return { better: '나음', worse: '못함', same: '구분 안 됨', few: '표본 부족' }[v];
+}
+
+// 줄 한 줄. 판정 조각만 색을 입힌다 — 나음 빨강, 못함 파랑, 나머지는 줄 색(회색) 그대로.
+// 글자는 전부 이 함수가 만든 고정 문구라 innerHTML 로 넣어도 된다.
+function trendCheckText(r) {
+  const g = r.regime;
+  const v = r.rule.verdict;
+  const color = v === 'better' ? UP : v === 'worse' ? DOWN : '';
+  const regime = `${g.cls === 'up' ? '정배열' : g.cls === 'down' ? '역배열' : '혼조'}·20선${g.up ? '↑' : '↓'}`;
+  const state = `20/60 ${r.rule.on ? '보유' : '정리'} ${daysAgo(r.rule.since)}일째`;
+  // 실제로 쓴 기간. 5년치를 받아도 60일선이 생기기까지를 빼면 약 4.7년이라 "5년" 이 되고,
+  // 상장 2~5년 종목이나 이상 봉 뒤부터 쓴 종목은 그 길이대로 "2년" · "3년" 이 된다.
+  const years = Math.round((r.rule.to - r.rule.from) / (365.25 * 86400000));
+  return `${regime} · ${state} · ${years}년: <span${color ? ` style="color:${color}"` : ''}>${verdictText(v)}</span>`;
+}
+
+// 툴팁. 모든 숫자를 비교 대상(그냥 보유 · 평소)과 우연의 범위(가짜 타이밍 · 가짜 주가) 옆에 둔다.
+function trendCheckTip(r, symbol) {
+  const p = (x) => (x > 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
+  const pp = (x) => (x > 0 ? '+' : '') + (x * 100).toFixed(1) + '%p';
+  const ymd = (ms) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const { rule, fast, regime: g } = r;
+  const cost = costOf(symbol);
+  const lines = [
+    '20/60 규칙 — 20일선이 60일선 위면 보유, 아래면 정리',
+    `종가로 판단 → 다음 날 종가에 체결 · 왕복 비용 ${(cost * 100).toFixed(2)}%${isIndex(symbol) ? ' (지수는 ETF 로 따라간다고 봄)' : ''}`,
+    `기간 ${ymd(rule.from)} ~ ${ymd(rule.to)}${r.cut ? ' (하루 35% 넘게 움직인 봉 뒤부터)' : ''}`,
+    `규칙: 누적 ${p(rule.strat.total)} · 연 ${p(rule.strat.cagr)} · 최대 낙폭 ${p(-rule.strat.mdd)} · 보유 ${Math.round(rule.strat.inShare * 100)}%`,
+    `그냥 보유: 누적 ${p(rule.hold.total)} · 연 ${p(rule.hold.cagr)} · 최대 낙폭 ${p(-rule.hold.mdd)}`,
+  ];
+  if (rule.verdict === 'few') {
+    lines.push(`진입 ${rule.strat.entries}회 — 적어서 판정하지 않음`);
+  } else {
+    const top = Math.round((1 - rule.pct) * 100);
+    lines.push(
+      `시점만 밀어 만든 가짜 타이밍 ${rule.count}개 중 상위 ${top < 1 ? '1% 안' : `${top}%`} → ${verdictText(rule.verdict)}`,
+      `가짜 타이밍의 최대 낙폭 중앙값 ${p(-rule.nullMdd)} (낙폭이 작은 건 덜 들고 있어서일 수 있음)`,
+      `진입 ${rule.strat.entries}회`,
+    );
+  }
+  lines.push(`5/20 같은 규칙: 진입 ${fast.entries}회 · 비용 합계 약 ${(fast.trades * cost * 50).toFixed(0)}% · 누적 ${p(fast.total)}`, '');
+
+  const cls = { up: '정배열(5>20>60>120)', down: '역배열(5<20<60<120)',
+    mixUp: '혼조(20일선이 60일선 위)', mixDown: '혼조(20일선이 60일선 아래)' }[g.cls];
+  lines.push(`지금: ${cls} · 20일선 ${g.up ? '상승' : '하락'} — ${ymd(g.at).slice(5).replace('-', '/')} 종가 기준`);
+  if (g.fallback) lines.push('같은 배열·방향인 날이 적어 배열만으로 봄');
+  // 표본이 얼마나 작았는지는 판정하지 않을 때도 보인다 — 빼는 것은 차이 · 범위 줄뿐이다.
+  const sample = [`같은 상태였던 날 ${g.days}일 (${g.episodes}구간 · 겹치지 않는 20일 묶음 ${g.windows}개)`];
+  if (g.days) sample.push(`20거래일 뒤 중앙값 ${p(g.med)} · 오른 비율 ${Math.round(g.rise * 100)}% (다음 날 종가 매수, 비용 차감)`);
+  if (g.verdict === 'few') {
+    lines.push('같은 상태였던 날이 적어 판정하지 않음', ...sample);
+  } else {
+    const out = g.lo != null && (g.diff < g.lo || g.diff > g.hi);
+    lines.push(
+      ...sample,
+      `평소: ${p(g.allMed)} · ${Math.round(g.allRise * 100)}% → 차이 ${pp(g.diff)}`,
+      g.lo == null ? '가짜 주가가 모자라 판정하지 않음'
+        : `가짜 주가 ${g.paths}개의 차이 범위 ${pp(g.lo)} ~ ${pp(g.hi)} ${out ? '밖' : '안'} → ${verdictText(g.verdict)}`
+          + (out && g.verdict === 'same' ? ' (앞·뒤 절반의 방향이 달라)' : ''),
+    );
+  }
+  lines.push('', '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다');
+  return lines.join('\n');
 }
 
 // 선택 구간의 수익률 배지. 1D는 위의 일간 등락과 같은 값이라 표시하지 않는다.

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as indicators from '../indicators.js';
+import * as backtest from '../backtest.js';
 
 const source = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
 const prelude = source.slice(0, source.indexOf('// 과열도 5단계'));
@@ -41,7 +42,7 @@ function harness(extra = []) {
   // ReferenceError 가 나고 목록을 손으로 늘려야 한다.
   // daysAgo 만 기본 인자를 하네스 시각으로 묶는다. 주입된 함수는 vm 밖에서
   // 만들어져 Date.now() 가 FixedDate 가 아니라 진짜 지금을 읽는다.
-  Object.assign(c, indicators, {
+  Object.assign(c, indicators, backtest, {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'pollingIsOpen', 'priceSessionOf',
@@ -195,7 +196,7 @@ await test('selected detail updates header, independent of aggregate; quote and 
   Object.assign(c, {
     curOf: () => 'KRW', money: (v) => v == null ? '—' : String(v),
     sectors: new Map([['005930.KS',''],['000660.KS','']]),
-    renderHolding: () => {}, renderW52: () => {}, candleTag: () => '',
+    renderHolding: () => {}, renderW52: () => {}, renderTrendCheck: () => {}, candleTag: () => '',
     levelOf: () => ({label:'—',color:'#000000'}), cssVar: () => '#000000',
   });
   run(`quotes['005930.KS'] = {price:102, live:true, session:'closed', priceSession:'after',
@@ -689,7 +690,7 @@ await test('index detail: points with two decimals, no currency tag, no sector l
   let lookups = 0;
   Object.assign(c, {
     sectors: new Map(), loadSector: () => { lookups++; return Promise.resolve(); },
-    renderHolding: () => {}, renderW52: () => {}, candleTag: () => '',
+    renderHolding: () => {}, renderW52: () => {}, renderTrendCheck: () => {}, candleTag: () => '',
     levelOf: () => ({ label: '—', color: '#000000' }), cssVar: () => '#000000',
   });
   run(`state.selected = '^KS11'; quotes['^KS11'] = { price: 7003.74, change: 32.39, pct: 0.46,
@@ -1155,6 +1156,144 @@ await test('trend badges: convergence counts up from the last bar, hides when pa
   assert.equal(brk.hidden, false);
   assert.equal(brk.textContent, '저항 돌파 +5.23% · 3일 전');
   assert.deepEqual(toggled.at(-1), ['breakout', 'sup', false]);
+});
+
+// 추세 점검 줄 — 계산은 backtest.js(tests/backtest.mjs), 여기서는 그리기 · 캐시 · 숨김만 본다.
+// 결과 모양을 고정하려고 trendCheck 를 바꿔 끼운다. 마지막 묶음만 진짜 계산을 돌린다.
+const TREND = () => ({
+  cut: false,
+  rule: { start: 59, strat: { total: 0.41, cagr: 0.074, mdd: 0.18, entries: 12, trades: 24, inShare: 0.52 },
+    hold: { total: 0.63, cagr: 0.108, mdd: 0.39 }, on: true, since: Date.parse('2026-08-07T00:00:00Z'),
+    from: Date.parse('2022-01-04T00:00:00Z'), to: Date.parse('2026-09-09T00:00:00Z'),
+    pct: 0.62, verdict: 'same', nullMdd: 0.21, count: 200 },
+  fast: { entries: 41, trades: 82, total: 0.12 },
+  regime: { cls: 'up', up: true, at: Date.parse('2026-09-09T00:00:00Z'), fallback: false, count: 1000,
+    days: 214, episodes: 9, windows: 10, med: 0.021, rise: 0.61, allMed: 0.008, allRise: 0.53, diff: 0.013,
+    halves: [0.01, 0.02], verdict: 'same', lo: -0.044, hi: 0.036, paths: 200 },
+});
+const trendDaily = (n) => ({ closes: Array.from({ length: n }, (_, i) => 100 * 1.002 ** i),
+  times: Array.from({ length: n }, (_, i) => Date.parse('2024-01-01T00:00:00Z') + i * 86400000) });
+
+await test('trend check: one line + tooltip, verdict colour, hidden without data', () => {
+  const { c, run, elements } = harness(['renderTrendCheck', 'trendCheckText', 'trendCheckTip', 'verdictText', 'costOf']);
+  const el = c.document.getElementById('trendCheck');
+  let result = TREND();
+  c.trendCheck = () => result;
+
+  c.renderTrendCheck(null);
+  assert.equal(el.hidden, true, '선택 없음');
+  c.renderTrendCheck({ symbol: '005930.KS' });
+  assert.equal(el.hidden, true, '일봉을 아직 못 받음');
+
+  run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(600))};`);
+  c.renderTrendCheck({ symbol: '005930.KS' });
+  assert.equal(el.hidden, false);
+  // 08-07 09:00 KST → 09-10 (하네스 시각) = 34일
+  assert.equal(el.innerHTML, '정배열·20선↑ · 20/60 보유 34일째 · 5년: <span>구분 안 됨</span>');
+  const tip = el.title.split('\n');
+  for (const line of [
+    '20/60 규칙 — 20일선이 60일선 위면 보유, 아래면 정리',
+    '종가로 판단 → 다음 날 종가에 체결 · 왕복 비용 0.25%',
+    '기간 2022-01-04 ~ 2026-09-09',
+    '규칙: 누적 +41.0% · 연 +7.4% · 최대 낙폭 -18.0% · 보유 52%',
+    '그냥 보유: 누적 +63.0% · 연 +10.8% · 최대 낙폭 -39.0%',
+    '시점만 밀어 만든 가짜 타이밍 200개 중 상위 38% → 구분 안 됨',
+    '가짜 타이밍의 최대 낙폭 중앙값 -21.0% (낙폭이 작은 건 덜 들고 있어서일 수 있음)',
+    '진입 12회',
+    '5/20 같은 규칙: 진입 41회 · 비용 합계 약 10% · 누적 +12.0%',
+    '지금: 정배열(5>20>60>120) · 20일선 상승 — 09/09 종가 기준',
+    '같은 상태였던 날 214일 (9구간 · 겹치지 않는 20일 묶음 10개)',
+    '20거래일 뒤 중앙값 +2.1% · 오른 비율 61% (다음 날 종가 매수, 비용 차감)',
+    '평소: +0.8% · 53% → 차이 +1.3%p',
+    '가짜 주가 200개의 차이 범위 -4.4%p ~ +3.6%p 안 → 구분 안 됨',
+  ]) assert.ok(tip.includes(line), `툴팁에 "${line}"`);
+  assert.equal(tip.at(-1), '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다');
+
+  // 판정 색 — 나음 빨강(UP), 못함 파랑(DOWN). 새 결과를 보려면 캐시를 비운다.
+  const redraw = (patch) => {
+    result = TREND(); patch(result);
+    run("delete trendCache['005930.KS'];");
+    c.renderTrendCheck({ symbol: '005930.KS' });
+    return el;
+  };
+  assert.match(redraw((r) => { r.rule.verdict = 'better'; r.rule.pct = 0.995; }).innerHTML,
+    /5년: <span style="color:#e24b4a">나음<\/span>$/);
+  assert.match(redraw((r) => { r.rule.verdict = 'worse'; r.rule.pct = 0.004; }).innerHTML,
+    /5년: <span style="color:#185fa5">못함<\/span>$/);
+  assert.ok(el.title.includes('시점만 밀어 만든 가짜 타이밍 200개 중 상위 100% → 못함'));
+  assert.ok(redraw((r) => { r.rule.verdict = 'better'; r.rule.pct = 1; }).title.includes('상위 1% 안 → 나음'));
+
+  // 표본 부족 · 칸 넓히기 · 범위 밖인데 구분 안 됨
+  redraw((r) => { r.rule.verdict = 'few'; r.rule.strat.entries = 4; r.rule.on = false; });
+  assert.equal(el.innerHTML, '정배열·20선↑ · 20/60 정리 34일째 · 5년: <span>표본 부족</span>');
+  assert.ok(el.title.includes('진입 4회 — 적어서 판정하지 않음'));
+  assert.ok(!el.title.includes('가짜 타이밍'));
+  redraw((r) => { r.regime.verdict = 'few'; r.regime.fallback = true; r.regime.cls = 'mixDown'; r.regime.up = false; });
+  assert.ok(el.innerHTML.startsWith('혼조·20선↓ · '));
+  assert.ok(el.title.includes('지금: 혼조(20일선이 60일선 아래) · 20일선 하락 — 09/09 종가 기준'));
+  assert.ok(el.title.includes('같은 배열·방향인 날이 적어 배열만으로 봄'));
+  assert.ok(el.title.includes('같은 상태였던 날이 적어 판정하지 않음'));
+  assert.ok(!el.title.includes('평소:'));
+  // 판정은 빼도 표본이 얼마나 작았는지는 보인다 (스펙: 차이 · 범위 줄만 뺀다)
+  assert.ok(el.title.includes('같은 상태였던 날 214일 (9구간 · 겹치지 않는 20일 묶음 10개)'));
+  assert.ok(el.title.includes('20거래일 뒤 중앙값 +2.1% · 오른 비율 61% (다음 날 종가 매수, 비용 차감)'));
+  assert.ok(!el.title.includes('가짜 주가'));
+  redraw((r) => { Object.assign(r.regime, { verdict: 'few', days: 0, episodes: 0, windows: 0, med: null, rise: null, diff: null }); });
+  assert.ok(el.title.includes('같은 상태였던 날 0일 (0구간 · 겹치지 않는 20일 묶음 0개)'));
+  assert.ok(!el.title.includes('20거래일 뒤 중앙값'), '하루도 없으면 중앙값이 없다');
+  redraw((r) => { r.regime.diff = 0.05; });
+  assert.ok(el.title.includes('밖 → 구분 안 됨 (앞·뒤 절반의 방향이 달라)'));
+
+  // 줄의 기간은 실제로 쓴 기간이다 — 상장 2~5년 종목, 이상 봉 뒤부터 쓴 종목이 "5년" 으로 읽히지 않게
+  assert.ok(redraw((r) => { r.rule.from = Date.parse('2024-09-09T00:00:00Z'); }).innerHTML.endsWith(' · 2년: <span>구분 안 됨</span>'));
+  assert.ok(redraw((r) => { r.rule.from = Date.parse('2023-09-09T00:00:00Z'); }).innerHTML.endsWith(' · 3년: <span>구분 안 됨</span>'));
+  // 문턱은 backtest.js 의 BT_JUMP(35%) — 상한가 · 하한가(±30%)는 자르지 않는다
+  assert.ok(redraw((r) => { r.cut = true; }).title.includes('기간 2022-01-04 ~ 2026-09-09 (하루 35% 넘게 움직인 봉 뒤부터)'));
+
+  // 짧은 종목은 숨기고, 이상 봉은 말한다
+  assert.equal(redraw(() => {}).hidden, false);
+  result = null; run("delete trendCache['005930.KS'];"); c.renderTrendCheck({ symbol: '005930.KS' });
+  assert.equal(el.hidden, true, '500봉 미만');
+  result = { error: 'data' }; run("delete trendCache['005930.KS'];"); c.renderTrendCheck({ symbol: '005930.KS' });
+  assert.equal(el.hidden, false);
+  assert.equal(el.textContent, '추세 점검: 데이터 확인 필요');
+  assert.match(el.title, /^하루에 35% 넘게 움직인 봉이 있습니다/);
+});
+
+await test('trend check: recomputes only when the last confirmed bar changes; cost by market', () => {
+  const { c, run } = harness(['renderTrendCheck', 'trendCheckText', 'trendCheckTip', 'verdictText', 'costOf']);
+  const el = c.document.getElementById('trendCheck');
+  const calls = [];
+  c.trendCheck = (symbol, closes, times, opts) => { calls.push({ symbol, n: closes.length, opts }); return TREND(); };
+  run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(600))};`);
+  c.renderTrendCheck({ symbol: '005930.KS' });
+  c.renderTrendCheck({ symbol: '005930.KS' }); // 30초 갱신
+  run("dailyCache['005930.KS'].closes[599] *= 1.01;"); // 장중에는 마지막 봉만 움직인다
+  c.renderTrendCheck({ symbol: '005930.KS' });
+  assert.equal(calls.length, 1, '마지막 확정 봉이 그대로면 다시 계산하지 않는다');
+  run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(601))};`); // 다음 날 봉이 하나 늘었다
+  c.renderTrendCheck({ symbol: '005930.KS' });
+  assert.equal(calls.length, 2);
+  assert.deepEqual({ ...calls[0].opts }, { domestic: true, cost: 0.0025 });
+
+  run(`dailyCache['^KS11'] = ${JSON.stringify(trendDaily(600))}; dailyCache['AAPL'] = ${JSON.stringify(trendDaily(600))};`);
+  c.renderTrendCheck({ symbol: '^KS11' });
+  assert.deepEqual({ ...calls.at(-1).opts }, { domestic: false, cost: 0.001 });
+  assert.ok(el.title.includes('왕복 비용 0.10% (지수는 ETF 로 따라간다고 봄)'));
+  c.renderTrendCheck({ symbol: 'AAPL' });
+  assert.deepEqual({ ...calls.at(-1).opts }, { domestic: false, cost: 0.001 });
+  assert.ok(el.title.includes('왕복 비용 0.10%') && !el.title.includes('지수는'));
+});
+
+await test('trend check: real backtest on a steady climb says 정배열 and 표본 부족', () => {
+  const { run, c } = harness(['renderTrendCheck', 'trendCheckText', 'trendCheckTip', 'verdictText', 'costOf']);
+  run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(600))};`);
+  c.renderTrendCheck({ symbol: '005930.KS' });
+  const el = c.document.getElementById('trendCheck');
+  // 오르기만 하면 진입이 1회라 판정하지 않는다. 일수는 60일선이 처음 생긴 봉(2024-02-29)부터 하네스 시각까지.
+  // 봉을 달력 하루 간격으로 만들어 쓴 기간이 538일 — 줄에는 "1년" 으로 나온다.
+  assert.equal(el.innerHTML, '정배열·20선↑ · 20/60 보유 924일째 · 1년: <span>표본 부족</span>');
+  assert.ok(el.title.includes('진입 1회 — 적어서 판정하지 않음'));
 });
 
 console.log(`PASS: ${passed} session UI test groups`);

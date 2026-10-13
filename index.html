@@ -492,6 +492,10 @@
     border-radius: 50%; background: var(--w52-mark); box-shadow: 0 0 0 1.5px var(--w52-ring);
   }
 
+  /* 추세 점검 한 줄. 넘치면 말줄임 — 줄이 늘면 차트가 밀린다 */
+  .trendchk { margin-top: 6px; font-size: 9px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trendchk[hidden] { display: none; }
+
   /* 창을 세로로 늘리면 차트도 같이 커진다. 최소 150px(기본 창 높이일 때의 크기)는
      지키고, 300px 를 넘어 관심종목 목록을 다 밀어내지는 않게 한다. */
   .chartbox { height: clamp(150px, 26vh, 300px); margin-top: 7px; position: relative; }
@@ -592,6 +596,9 @@
         <span class="w52v" id="w52hi"></span>
       </div>
 
+      <!-- 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과. 자세한 숫자는 툴팁 -->
+      <div class="trendchk" id="trendCheck" hidden></div>
+
       <div class="chartbox"><canvas id="chart"></canvas><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
       <div class="err" id="err"></div>
     </div>
@@ -653,6 +660,8 @@
   <script src="./node_modules/chart.js/dist/chart.umd.js"></script>
   <!-- 순수 계산. renderer.js 가 전역으로 쓰므로 반드시 먼저 싣는다 -->
   <script src="./indicators.js"></script>
+  <!-- 추세 점검 계산. indicators.js 의 sma 를 쓰고, renderer.js 가 trendCheck 를 부른다 -->
+  <script src="./backtest.js"></script>
   <script src="./renderer.js"></script>
 </body>
 </html>
