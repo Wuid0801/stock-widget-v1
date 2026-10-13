@@ -133,7 +133,8 @@ function rotationVerdict(closes, bt, cost, count = BT_ROTATIONS) {
   const pct = (below + 0.5 * same) / count;
   const verdict = bt.strat.entries < BT_MIN_ENTRIES ? 'few'
     : pct >= 1 - BT_ROT_EDGE ? 'better' : pct <= BT_ROT_EDGE ? 'worse' : 'same';
-  return { pct, verdict, nullMdd: median(mdds), count };
+  // 툴팁은 pct 대신 below(규칙보다 누적이 낮았던 가짜 타이밍 수)를 보인다 — "상위 99%" 가 못함에도 구분 안 됨에도 나왔다
+  return { below, verdict, nullMdd: median(mdds), count };
 }
 
 // 날마다 이평 배열(정배열 up · 역배열 down · 혼조 mixUp/mixDown)과 20일선 방향.
@@ -221,8 +222,8 @@ function regimeStats(closes, times, cost, rng, paths = BT_PATHS) {
   }
   if (diffs.length < BT_MIN_PATHS) return { ...base, verdict: 'same', lo: null, hi: null, paths: diffs.length };
   const sorted = Float64Array.from(diffs).sort();
-  const q = (f) => sorted[Math.min(sorted.length - 1, Math.floor(f * sorted.length))];
-  const lo = q(0.025), hi = q(0.975);
+  const k = Math.floor(0.025 * sorted.length);   // 양쪽 2.5% — 위아래로 같은 개수(200개면 5개씩)를 범위 밖에 둔다
+  const lo = sorted[k], hi = sorted[sorted.length - 1 - k];
   const [h1, h2] = s.halves;
   const verdict = s.diff > hi && h1 > 0 && h2 > 0 ? 'better'
     : s.diff < lo && h1 < 0 && h2 < 0 ? 'worse' : 'same';

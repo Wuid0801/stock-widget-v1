@@ -96,14 +96,19 @@ function walk(seed, n = 1231, vol = 0.02) {
 // --- 4. 회전 판정 --------------------------------------------------------------
 {
   // 무작위 걸음에는 규칙이 쓸모 있을 리 없다 → 판정이 1% 끝(양쪽 2%)에 기대 5% 안팎(실측 30/600)
-  let hits = 0;
+  // 툴팁은 순위를 개수로 보인다("200개 중 규칙보다 낮았던 것 N개"). 판정이 그 개수의 경계(198개 이상 나음 ·
+  // 2개 이하 못함)와 어긋나면 "197개 → 나음" 같은 모순이 화면에 나온다.
+  let hits = 0, offEdge = 0;
+  const edge = Math.floor(B.BT_ROTATIONS * B.BT_ROT_EDGE);
   for (let s = 0; s < 200; s++) {
     const w = walk(1000 + s);
     const u = B.usableSeries(w.c, w.t, false);
     const v = B.rotationVerdict(u.closes, B.ruleBacktest(u.closes, u.times, 20, 60, 0.0025), 0.0025);
     if (v.verdict === 'better' || v.verdict === 'worse') hits++;
+    if (v.verdict !== 'few' && v.verdict !== (v.below >= v.count - edge ? 'better' : v.below <= edge ? 'worse' : 'same')) offEdge++;
   }
   check('무작위 걸음 200개에서 나음/못함이 2 ~ 20개', hits >= 2 && hits <= 20, `${hits}개`);
+  check('판정이 "규칙보다 낮았던 가짜 타이밍 개수" 경계와 맞는다', offEdge === 0, `어긋남 ${offEdge}`);
 
   // 추세가 이어지는 주가(평균 60일마다 오름 ↔ 내림)에서는 규칙이 나음으로 나와야 한다 (실측 16/20).
   // 120일마다면 5년에 진입이 4회 안팎이라 대부분 표본 부족이 된다.
@@ -184,6 +189,22 @@ function walk(seed, n = 1231, vol = 0.02) {
   }
   check('무작위 걸음 60개에서 나음/못함이 8개 이하', hits <= 8, `${hits}개`);
   check('가짜 주가의 차이 범위가 2%p 보다 넓다 (섞어서 다시 잰다)', narrow > 0.02, `가장 좁은 폭 ${(narrow * 100).toFixed(1)}%p`);
+
+  // 범위는 양쪽 2.5% — 가짜 주가 200개면 위아래로 5개씩 밖에 있어야 한다. 위쪽 끝을 97.5% 자리(sorted[195])로
+  // 잡으면 위로는 4개만 밖에 남아 나음이 못함보다 나기 어렵다(신한지주 2026-10-12: 대칭이면 나음).
+  // 같은 시드로 가짜 주가를 다시 만들어 범위 밖 개수를 직접 센다. 경로 100개(위 검사)는 양쪽 2개씩이라 이것을 못 잡는다.
+  const x = walk(5003);
+  const v = B.usableSeries(x.c, x.t, false);
+  const g = B.regimeStats(v.closes, v.times, 0.0025, B.mulberry32(11), 200);
+  const rng = B.mulberry32(11), diffs = [];
+  for (let p = 0; p < 200; p++) {
+    const alt = B.cellStats(B.altPath(v.closes, rng), 0.0025, g.fallback ? g.cls : `${g.cls}${g.up ? '+' : '-'}`, !g.fallback);
+    if (alt.days) diffs.push(alt.diff);
+  }
+  const below = diffs.filter((d) => d < g.lo).length, above = diffs.filter((d) => d > g.hi).length;
+  const k = Math.floor(0.025 * g.paths);
+  check('가짜 주가 차이 범위 밖이 위아래 같은 개수 (200개면 5개씩)',
+    g.paths === diffs.length && g.paths > 150 && below === k && above === k, `경로 ${g.paths} · 아래 ${below} · 위 ${above}`);
 }
 
 // --- 7. 같은 결과 · 마지막 봉 · 속도 --------------------------------------------

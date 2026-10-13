@@ -1165,7 +1165,7 @@ const TREND = () => ({
   rule: { start: 59, strat: { total: 0.41, cagr: 0.074, mdd: 0.18, entries: 12, trades: 24, inShare: 0.52 },
     hold: { total: 0.63, cagr: 0.108, mdd: 0.39 }, on: true, since: Date.parse('2026-08-07T00:00:00Z'),
     from: Date.parse('2022-01-04T00:00:00Z'), to: Date.parse('2026-09-09T00:00:00Z'),
-    pct: 0.62, verdict: 'same', nullMdd: 0.21, count: 200 },
+    below: 124, verdict: 'same', nullMdd: 0.21, count: 200 },
   fast: { entries: 41, trades: 82, total: 0.12 },
   regime: { cls: 'up', up: true, at: Date.parse('2026-09-09T00:00:00Z'), fallback: false, count: 1000,
     days: 214, episodes: 9, windows: 10, med: 0.021, rise: 0.61, allMed: 0.008, allRise: 0.53, diff: 0.013,
@@ -1197,7 +1197,7 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
     '기간 2022-01-04 ~ 2026-09-09',
     '규칙: 누적 +41.0% · 연 +7.4% · 최대 낙폭 -18.0% · 보유 52%',
     '그냥 보유: 누적 +63.0% · 연 +10.8% · 최대 낙폭 -39.0%',
-    '시점만 밀어 만든 가짜 타이밍 200개 중 상위 38% → 구분 안 됨',
+    '시점만 밀어 만든 가짜 타이밍 200개 중 규칙보다 누적이 낮은 것 124개 → 구분 안 됨 (198개 이상이면 나음 · 2개 이하면 못함)',
     '가짜 타이밍의 최대 낙폭 중앙값 -21.0% (낙폭이 작은 건 덜 들고 있어서일 수 있음)',
     '진입 12회',
     '5/20 같은 규칙: 진입 41회 · 비용 합계 약 10% · 누적 +12.0%',
@@ -1207,7 +1207,12 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
     '평소: +0.8% · 53% → 차이 +1.3%p',
     '가짜 주가 200개의 차이 범위 -4.4%p ~ +3.6%p 안 → 구분 안 됨',
   ]) assert.ok(tip.includes(line), `툴팁에 "${line}"`);
-  assert.equal(tip.at(-1), '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다');
+  // 우연과 예측력 — 2026-10-13 재검증: 효과 없는 규칙에서 판정이 4~5% 나오고, 앞 5년 순위로 뒤 5년 순위를 맞히지 못했다
+  assert.deepEqual(tip.slice(-3), [
+    '나음·못함은 규칙이 쓸모없어도 판정마다 20번에 1번꼴로 우연히 나옵니다',
+    '지난 기간의 설명입니다 — 10년치로 해 보니 앞 5년 결과로 뒤 5년을 맞히지 못했습니다',
+    '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다',
+  ]);
 
   // 판정 색 — 나음 빨강(UP), 못함 파랑(DOWN). 새 결과를 보려면 캐시를 비운다.
   const redraw = (patch) => {
@@ -1216,12 +1221,14 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
     c.renderTrendCheck({ symbol: '005930.KS' });
     return el;
   };
-  assert.match(redraw((r) => { r.rule.verdict = 'better'; r.rule.pct = 0.995; }).innerHTML,
+  assert.match(redraw((r) => { r.rule.verdict = 'better'; r.rule.below = 199; }).innerHTML,
     /5년: <span style="color:#e24b4a">나음<\/span>$/);
-  assert.match(redraw((r) => { r.rule.verdict = 'worse'; r.rule.pct = 0.004; }).innerHTML,
+  assert.match(redraw((r) => { r.rule.verdict = 'worse'; r.rule.below = 1; }).innerHTML,
     /5년: <span style="color:#185fa5">못함<\/span>$/);
-  assert.ok(el.title.includes('시점만 밀어 만든 가짜 타이밍 200개 중 상위 100% → 못함'));
-  assert.ok(redraw((r) => { r.rule.verdict = 'better'; r.rule.pct = 1; }).title.includes('상위 1% 안 → 나음'));
+  // 순위는 개수로 — "상위 99%" 가 못함에도 구분 안 됨에도 나왔다
+  assert.ok(el.title.includes('시점만 밀어 만든 가짜 타이밍 200개 중 규칙보다 누적이 낮은 것 1개 → 못함 (198개 이상이면 나음 · 2개 이하면 못함)'));
+  assert.ok(!el.title.includes('상위'));
+  assert.ok(redraw((r) => { r.rule.verdict = 'better'; r.rule.below = 200; }).title.includes('낮은 것 200개 → 나음'));
 
   // 표본 부족 · 칸 넓히기 · 범위 밖인데 구분 안 됨
   redraw((r) => { r.rule.verdict = 'few'; r.rule.strat.entries = 4; r.rule.on = false; });
@@ -1243,6 +1250,25 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
   assert.ok(!el.title.includes('20거래일 뒤 중앙값'), '하루도 없으면 중앙값이 없다');
   redraw((r) => { r.regime.diff = 0.05; });
   assert.ok(el.title.includes('밖 → 구분 안 됨 (앞·뒤 절반의 방향이 달라)'));
+
+  // 차이와 범위 끝이 소수 한 자리로 같게 보이면 왜 안/밖인지 안 보인다 — 그때만 둘째 자리까지.
+  // 신한지주 2026-10-13: 차이 +3.18%p · 위쪽 끝 +3.21%p 가 둘 다 "+3.2%p" 로 나왔다.
+  redraw((r) => { Object.assign(r.regime, { diff: 0.0318, lo: -0.0312, hi: 0.0321 }); });
+  assert.ok(el.title.includes('평소: +0.8% · 53% → 차이 +3.18%p'));
+  assert.ok(el.title.includes('가짜 주가 200개의 차이 범위 -3.12%p ~ +3.21%p 안 → 구분 안 됨'));
+  redraw((r) => { Object.assign(r.regime, { diff: -0.0438, lo: -0.0442 }); });
+  assert.ok(el.title.includes('평소: +0.8% · 53% → 차이 -4.38%p'));
+  assert.ok(el.title.includes('가짜 주가 200개의 차이 범위 -4.42%p ~ +3.60%p 안 → 구분 안 됨'), '아래쪽 끝도');
+
+  // Windows 의 Chromium 은 툴팁을 1024자에서 자른다(ui/views/corewm/tooltip_state_manager.cc kMaxTooltipLength).
+  // 줄이 가장 길어지는 경우(이상 봉 뒤부터 · 배열만으로 봄 · 범위 밖인데 구분 안 됨 · 큰 숫자)에도 끝의 안내까지 보여야 한다.
+  const longest = redraw((r) => {
+    r.cut = true;
+    Object.assign(r.regime, { fallback: true, diff: 0.05 });
+    Object.assign(r.rule.strat, { total: 15.197, cagr: 0.251, mdd: 0.623 });
+    Object.assign(r.rule.hold, { total: 17.664, cagr: 0.349, mdd: 0.541 });
+  }).title;
+  assert.ok(longest.length <= 1024 && longest.endsWith('매매 권유가 아닙니다'), `툴팁 ${longest.length}자`);
 
   // 줄의 기간은 실제로 쓴 기간이다 — 상장 2~5년 종목, 이상 봉 뒤부터 쓴 종목이 "5년" 으로 읽히지 않게
   assert.ok(redraw((r) => { r.rule.from = Date.parse('2024-09-09T00:00:00Z'); }).innerHTML.endsWith(' · 2년: <span>구분 안 됨</span>'));

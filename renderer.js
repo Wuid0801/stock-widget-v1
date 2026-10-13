@@ -611,7 +611,7 @@ function trendCheckText(r) {
 // 툴팁. 모든 숫자를 비교 대상(그냥 보유 · 평소)과 우연의 범위(가짜 타이밍 · 가짜 주가) 옆에 둔다.
 function trendCheckTip(r, symbol) {
   const p = (x) => (x > 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
-  const pp = (x) => (x > 0 ? '+' : '') + (x * 100).toFixed(1) + '%p';
+  const pp = (x, digits = 1) => (x > 0 ? '+' : '') + (x * 100).toFixed(digits) + '%p';
   const ymd = (ms) => {
     const d = new Date(ms);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -628,9 +628,11 @@ function trendCheckTip(r, symbol) {
   if (rule.verdict === 'few') {
     lines.push(`진입 ${rule.strat.entries}회 — 적어서 판정하지 않음`);
   } else {
-    const top = Math.round((1 - rule.pct) * 100);
+    // 순위는 개수로 보인다 — 백분율("상위 99%")은 반올림 때문에 못함에도 구분 안 됨에도 같은 값이 나왔다
+    const edge = Math.floor(rule.count * BT_ROT_EDGE);
     lines.push(
-      `시점만 밀어 만든 가짜 타이밍 ${rule.count}개 중 상위 ${top < 1 ? '1% 안' : `${top}%`} → ${verdictText(rule.verdict)}`,
+      `시점만 밀어 만든 가짜 타이밍 ${rule.count}개 중 규칙보다 누적이 낮은 것 ${rule.below}개 → ${verdictText(rule.verdict)}`
+        + ` (${rule.count - edge}개 이상이면 나음 · ${edge}개 이하면 못함)`,
       `가짜 타이밍의 최대 낙폭 중앙값 ${p(-rule.nullMdd)} (낙폭이 작은 건 덜 들고 있어서일 수 있음)`,
       `진입 ${rule.strat.entries}회`,
     );
@@ -648,15 +650,21 @@ function trendCheckTip(r, symbol) {
     lines.push('같은 상태였던 날이 적어 판정하지 않음', ...sample);
   } else {
     const out = g.lo != null && (g.diff < g.lo || g.diff > g.hi);
+    // 차이와 범위 끝이 소수 한 자리로 같게 보이면(+3.18 · +3.21 → 둘 다 +3.2) 왜 안/밖인지 안 보인다 — 그때만 둘째 자리까지
+    const d = g.lo != null && (pp(g.diff) === pp(g.lo) || pp(g.diff) === pp(g.hi)) ? 2 : 1;
     lines.push(
       ...sample,
-      `평소: ${p(g.allMed)} · ${Math.round(g.allRise * 100)}% → 차이 ${pp(g.diff)}`,
+      `평소: ${p(g.allMed)} · ${Math.round(g.allRise * 100)}% → 차이 ${pp(g.diff, d)}`,
       g.lo == null ? '가짜 주가가 모자라 판정하지 않음'
-        : `가짜 주가 ${g.paths}개의 차이 범위 ${pp(g.lo)} ~ ${pp(g.hi)} ${out ? '밖' : '안'} → ${verdictText(g.verdict)}`
+        : `가짜 주가 ${g.paths}개의 차이 범위 ${pp(g.lo, d)} ~ ${pp(g.hi, d)} ${out ? '밖' : '안'} → ${verdictText(g.verdict)}`
           + (out && g.verdict === 'same' ? ' (앞·뒤 절반의 방향이 달라)' : ''),
     );
   }
-  lines.push('', '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다');
+  // 2026-10-13 재검증: 효과 없는 규칙에서도 판정이 4~5% 나왔고, 10년치에서 앞 5년 순위로 뒤 5년 순위를 맞히지 못했다(상관 -0.02)
+  lines.push('',
+    '나음·못함은 규칙이 쓸모없어도 판정마다 20번에 1번꼴로 우연히 나옵니다',
+    '지난 기간의 설명입니다 — 10년치로 해 보니 앞 5년 결과로 뒤 5년을 맞히지 못했습니다',
+    '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다');
   return lines.join('\n');
 }
 
