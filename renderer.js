@@ -12,10 +12,13 @@ const TF = {
   '1Y': { range: '1y', interval: '1d' },
   // 야후에는 3년 구간이 없다 — 5년치를 받아 loadChart 가 최근 3년만 남긴다(lastYears).
   '3Y': { range: '5y', interval: '1d', years: 3 },
+  // 처음부터 끝까지. 봉 크기는 야후가 기간에 따라 고른다(삼성전자 · 코스피 월봉, 최근 상장주 주봉,
+  // AAPL 분기봉 — 2026-10-14 실측). 일봉이 아니라 이동평균 · 골든/데드 · 추세선 · 확대는 없다.
+  '전체': { range: 'max', interval: '1mo' },
 };
 
 // 축 라벨을 연/월(YY/MM)로 쓰는 기간. 툴팁 제목에는 일까지 붙이고, 확대하면 월/일로 쓴다.
-const YEAR_TF = new Set(['1Y', '3Y']);
+const YEAR_TF = new Set(['1Y', '3Y', '전체']);
 
 // 선택 가능한 이동평균 기간(일)
 const MA_PERIODS = [5, 10, 20, 40, 60, 80, 120, 240, 360];
@@ -1986,7 +1989,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  const tabs = Object.keys(TF); // 1~6 → 1D · 1W · 1M · 3M · 1Y · 3Y
+  const tabs = Object.keys(TF); // 1~7 → 1D · 1W · 1M · 3M · 1Y · 3Y · 전체
   if (e.key >= '1' && e.key <= String(tabs.length)) {
     const key = tabs[Number(e.key) - 1];
     if (key === state.timeframe) return;

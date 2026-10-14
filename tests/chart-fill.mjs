@@ -60,6 +60,7 @@ const naverRow = (d, close) => ({ localDate: d, openPrice: close + 450, highPric
 let yahooBody = null;
 let naverReply = () => ({ ok: true, status: 200, body: [] });
 const naverCalls = [];
+const yahooCalls = [];
 const fakeFetch = async (url, opt = {}) => {
   url = String(url);
   if (url.includes('api.stock.naver.com')) {
@@ -68,6 +69,7 @@ const fakeFetch = async (url, opt = {}) => {
     if (r instanceof Error) throw r;
     return { ok: r.ok, status: r.status, json: async () => r.body };
   }
+  yahooCalls.push(url);
   return { ok: true, status: 200, json: async () => yahooBody };
 };
 
@@ -143,6 +145,14 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   check('해외 종목 · 지수는 묻지 않는다', naverCalls.length === 0, naverCalls.map((c) => c.url).join(' '));
   await chart('051910.KS', '30m');
   check('일봉이 아니면 묻지 않는다', naverCalls.length === 0);
+
+  // 전체 탭: 처음부터 끝까지(max), 봉 크기는 야후가 고른다(월봉 · 주봉 · 분기봉). 1mo 로 물어 일봉용 채우기가 섞이지 않는다.
+  yahooCalls.length = 0;
+  const all = await handlers['yf:chart']({}, { symbol: '005930.KS', range: 'max', interval: '1mo' });
+  check('전체(max · 1mo) 요청을 받는다', all.ok && yahooCalls.at(-1)?.endsWith('?range=max&interval=1mo'), yahooCalls.at(-1));
+  check('전체 탭은 네이버를 묻지 않는다', naverCalls.length === 0);
+  const bad = await handlers['yf:chart']({}, { symbol: '005930.KS', range: 'max', interval: '1wk' });
+  check('허용하지 않은 봉 크기는 그대로 거절한다', bad.ok === false && bad.error === '잘못된 요청', JSON.stringify(bad));
 
   yahooBody = yahoo([['2026-10-08', 100], ['2026-10-12', 105], ['2026-10-13', 110]]);
   await chart('051910.KS');

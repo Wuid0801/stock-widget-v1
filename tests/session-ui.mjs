@@ -822,7 +822,7 @@ await test('saved selection survives restart when it is an index, even with an e
 // TF[...] 에서 undefined 를 읽어 매 갱신 예외로 끝나고 차트가 조용히 비었다. 다른 저장값처럼 거른다.
 await test('a saved timeframe this build does not know falls back to 1D', () => {
   const { c } = harness(['validTimeframe']);
-  for (const tf of ['1D', '1W', '1M', '3M', '1Y', '3Y']) assert.equal(c.validTimeframe(tf), tf);
+  for (const tf of ['1D', '1W', '1M', '3M', '1Y', '3Y', '전체']) assert.equal(c.validTimeframe(tf), tf);
   for (const tf of ['6M', '5Y', '', undefined, null, 'toString', '__proto__']) assert.equal(c.validTimeframe(tf), '1D', String(tf));
 });
 
@@ -925,6 +925,41 @@ await test('3Y fetches five years of daily bars and draws only the last three ca
   assert.equal(draws.at(-1).closes.length, 5);
 });
 
+// 전체 — 야후에 처음부터 끝까지(range=max) 묻는다. 봉 크기는 야후가 기간에 따라 고른다(2026-10-14 실측:
+// 삼성전자 · 코스피 월봉, LG에너지솔루션 주봉, AAPL 분기봉). 일 단위 이동평균 · 골든/데드는 맞지 않아 그리지 않는다.
+await test('전체 asks Yahoo for the whole history and draws it without daily moving averages', async () => {
+  const { c, run } = harness(['loadChart']);
+  const asked = [];
+  const periods = [];
+  const draws = [];
+  const chips = [];
+  const at = (s) => Date.parse(`${s}T00:00:00Z`);
+  const bars = { ok: true, times: ['2000-01-01', '2013-06-01', '2026-10-01'].map(at), closes: [6000, 30000, 237750],
+    opens: [5900, 29000, 230000], highs: [6100, 31000, 240000], lows: [5800, 28000, 229000], volumes: [1, 2, 3] };
+  Object.assign(c, {
+    fetchChartCached: async (symbol, tf) => { asked.push(`${tf.range}/${tf.interval}`); return bars; },
+    err: () => {}, quoteErrText: () => '', renderPeriod: (from, to) => periods.push([from, to]),
+    renderMaChips: () => chips.push(run('chartBars')), renderCrossBadge: () => {}, renderTrendBadges: () => {},
+    curOf: () => 'KRW', drawChart: (data) => draws.push(data),
+    maFor: () => { throw new Error('일 단위 이동평균을 월봉에 그리면 안 된다'); },
+  });
+  run(`let lastDrawSig = null; chartBars = 1219; state.maPeriods = [5, 20, 60]; state.timeframe = '전체';
+    quotes['005930.KS'] = { price: 237750, live: true, session: 'regular', priceSession: 'regular', open: true,
+      candle: { open: 230000, high: 240000, low: 229000 } };`);
+  await c.loadChart();
+  assert.deepEqual(asked, ['max/1mo'], '일봉(1d)으로 물으면 일봉용 네이버 빈 날 채우기가 섞인다');
+  const d = draws.at(-1);
+  assert.deepEqual(d.closes, [6000, 30000, 237750], '받은 봉 그대로 — 끝점을 덧붙이지 않는다(1D 만)');
+  // vm 안에서 만든 배열이라 펼쳐서 비교한다(프로토타입이 달라 [] 끼리도 deepEqual 이 실패한다)
+  assert.deepEqual([...d.mas], [], '이동평균선 없음');
+  assert.deepEqual([...d.crosses], [], '골든/데드 없음');
+  assert.deepEqual([...d.trends], [], '추세선 없음');
+  assert.deepEqual(d.highs, [6100, 31000, 240000], '마지막 봉을 오늘 캔들로 덮지 않는다(일봉만)');
+  assert.equal(run('chartBars'), 0, '이평선 칩은 1D · 1W 처럼 흐려진다');
+  assert.deepEqual(chips, [0]);
+  assert.deepEqual(periods.at(-1), [6000, 237750], '전체 수익률은 첫 봉부터');
+});
+
 // 3Y 는 1Y 처럼 축 라벨이 연/월이다 — 툴팁 제목에는 일까지, 확대하면 월/일 라벨.
 await test('3Y labels read like 1Y: YY/MM axis, full date in the tooltip, MM/DD when zoomed', () => {
   const { c, run } = harness(['drawChart', 'labelFor']);
@@ -949,6 +984,11 @@ await test('3Y labels read like 1Y: YY/MM axis, full date in the tooltip, MM/DD 
   run('zoom = { start: T_[5], end: T_[25] }; drawChart(arg_);');
   cfg = configs.at(-1);
   assert.equal(cfg.data.labels[5], '03/09', 'zoomed 3Y shows month/day like zoomed 1Y');
+  // 전체도 연/월이다 — 26년치를 월/일로 쓰면 해가 바뀌어도 같은 라벨이 된다
+  run("zoom = null; state.timeframe = '전체'; drawChart(arg_);");
+  cfg = configs.at(-1);
+  assert.equal(cfg.data.labels[0], '24/03');
+  assert.equal(cfg.options.plugins.tooltip.callbacks.title([{ dataIndex: 2, label: cfg.data.labels[2] }]), '24/03/06');
 });
 
 // 3Y 는 봉 하나가 약 0.38px 라 5봉이 2px 남짓이다. 끈 봉 수만 보면 클릭할 때의 손떨림이

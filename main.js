@@ -492,8 +492,10 @@ ipcMain.handle('yf:search', async (_e, query) => {
 // 실패: { ok:false, error }  (렌더러에서 그대로 표시)
 // 렌더러가 넘기는 값은 신뢰하지 않고 허용 목록으로 검사한다.
 // (호스트는 고정이지만, 쿼리에 임의 문자열이 그대로 들어가지 않도록)
-const RANGES = new Set(['1d', '5d', '1mo', '3mo', '1y', '5y']);
-const INTERVALS = new Set(['5m', '30m', '1d']);
+// max · 1mo 는 전체 탭이다. 야후는 max 면 묻는 봉 크기와 상관없이 기간에 따라 월봉 · 주봉 · 분기봉을
+// 준다(2026-10-14 실측). 1d 로 묻지 않아야 아래 일봉용 빈 날 채우기(fillGaps)가 끼지 않는다.
+const RANGES = new Set(['1d', '5d', '1mo', '3mo', '1y', '5y', 'max']);
+const INTERVALS = new Set(['5m', '30m', '1d', '1mo']);
 // 지수는 야후 기호가 ^ 로 시작한다(^KS11 코스피 · ^KQ11 코스닥). 맨 앞 한 번만 받는다.
 const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
 
