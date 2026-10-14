@@ -533,6 +533,11 @@ function isDomestic(symbol) {
   return /^[A-Za-z0-9]{1,10}\.(KS|KQ)$/i.test(symbol) || /^\d{6}$/.test(symbol);
 }
 
+// 검색이 국내와 미국만 보이므로 국내도 지수도 아니면 미국 종목이다.
+function isUs(symbol) {
+  return !isDomestic(symbol) && !isIndex(symbol);
+}
+
 function pollingIsOpen(symbols, liveMap) {
   const domestic = symbols.filter(isDomestic);
   // 해외만 있거나 국내 응답이 하나라도 비었으면 짧은 간격으로 재확인한다.
@@ -553,14 +558,17 @@ function renderUpdated() {
   const p = (n) => String(n).padStart(2, '0');
   const time = validFetched
     ? `${p(fetched.getHours())}:${p(fetched.getMinutes())}:${p(fetched.getSeconds())}` : '';
-  const delayed = q && !q.error && q.price != null && q.live === false;
+  const fallback = q && !q.error && q.price != null && q.live === false;
+  // 야후는 국내 종목 · 지수만 20분 늦다. 미국 종목은 늦지 않지만 정규장 가격뿐이라 세션을 모른다.
+  const delayed = fallback && !isUs(state.selected);
   // 야후까지 실패해 캐시 값을 보이는 중이면 시각은 실제로 받은 때다(fetchedAt) — 지금 시각을 붙이면
   // 몇 시간 묵은 가격이 정상적인 20분 지연 시세처럼 보인다.
-  const stale = delayed && q.stale;
+  const stale = fallback && q.stale;
   el.innerHTML = `<span class="${q && q.live ? SESSION_CLASS[session] : 'delay'}">`
     + `${stale ? '갱신 실패' : delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
   const source = q && !q.error && q.price != null
-    ? `${q.live ? '실시간' : stale ? '마지막으로 받은 값' : '20분지연'} · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
+    ? `${q.live ? '실시간' : stale ? '마지막으로 받은 값' : delayed ? '20분지연' : '정규장 가격'}`
+      + ` · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
     : '확인 불가';
   el.title = `소스: ${source}${q && q.market ? ` · ${q.market}` : ''}`
     + `\n세션: ${SESSION_TEXT[session]}`

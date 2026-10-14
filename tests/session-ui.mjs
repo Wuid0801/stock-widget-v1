@@ -45,7 +45,7 @@ function harness(extra = []) {
   Object.assign(c, indicators, backtest, {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
   });
-  const names = ['quoteSession', 'tradingState', 'isDomestic', 'pollingIsOpen', 'priceSessionOf',
+  const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'pollingIsOpen', 'priceSessionOf',
     'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
@@ -332,6 +332,31 @@ await test('1D ends at the verified close until Yahoo\'s close bar arrives; neve
     { tradedAt: '2026-09-09T15:56:03+09:00' }, { session: 'closed', priceSession: 'closed', tradedAt: '2026-09-09T15:30:05+09:00' },
     { live: false }, { tradedAt: null }]) {
     assert.deepEqual((await draw(patch)).closes, [98, 100], JSON.stringify(patch));
+  }
+});
+
+await test('US header: never 20분지연 — the Naver session when live, 확인중 on Yahoo\'s regular price', () => {
+  const { run, elements } = harness();
+  const header = () => elements.get('updated');
+  run(`state.selected = 'SOXL'; quotes['SOXL'] = {price:126.2, live:true, session:'pre', source:'naver-us-over',
+    market:'AMEX', fetchedAt:Date.now()};`);
+  run('renderUpdated()');
+  assert.match(header().innerHTML, /프리마켓/);
+  assert.match(header().title, /소스: 실시간 · naver-us-over · AMEX/);
+  run("quotes['SOXL'] = {price:127.57, live:false, session:'unknown', source:'Yahoo', fetchedAt:Date.now()};");
+  run('renderUpdated()');
+  assert.doesNotMatch(header().innerHTML, /20분지연/);
+  assert.match(header().innerHTML, /확인중/);
+  assert.match(header().title, /소스: 정규장 가격 · Yahoo/);
+  run("quotes['SOXL'].stale = true;");
+  run('renderUpdated()');
+  assert.match(header().innerHTML, /갱신 실패/);
+  assert.match(header().title, /마지막으로 받은 값/);
+  // 국내 종목 · 지수의 야후 값은 그대로 20분지연이다
+  for (const s of ['005930.KS', '^KS11']) {
+    run(`state.selected = '${s}'; quotes['${s}'] = {price:100, live:false, session:'unknown', source:'Yahoo', fetchedAt:Date.now()};`);
+    run('renderUpdated()');
+    assert.match(header().innerHTML, /20분지연/, s);
   }
 });
 
