@@ -43,6 +43,7 @@ const ORDER = [
   'single-instance.mjs',
   'index-main.mjs',
   'chart-fill.mjs',
+  'sector.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',

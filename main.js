@@ -438,21 +438,64 @@ ipcMain.handle('fx:usdkrw', async () => {
   }
 });
 
-// 업종. Yahoo 의 quoteSummary(assetProfile)는 크럼 토큰을 요구해 막히는데,
+// 업종. 네이버 한글 업종을 먼저 쓰고, 네이버에 없으면 야후 영어 업종을 쓴다.
+// 야후 값은 영어이고 검증용 99종목 중 21종목이 비어 있었으며(SK하이닉스 · MSFT …), 국내 분류가
+// 어색했다(삼성전자 Consumer Electronics) — 네이버는 국내 업종 79개(삼성전자 반도체와반도체장비),
+// 미국은 네이버 해외 업종(애플 전화 및 소형 장치)을 준다(2026-10-14 실측).
+// ETF 는 네이버가 "기타" 만 주므로 쓰지 않는다(야후도 값이 없어 지금처럼 비운다).
+// 네이버 요청이 실패하면 실패로 끝낸다 — 야후 영어로 넘어가면 렌더러가 그 값을 세션 내내 캐시한다.
+const naverJson = async (url) => {
+  const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+};
+
+// 네이버 국내 업종 번호 → 이름(79개). 한 번 받으면 앱이 켜져 있는 동안 쓴다.
+let naverIndustryNames = null;
+async function naverIndustryName(no) {
+  if (!naverIndustryNames) {
+    const j = await naverJson('https://m.stock.naver.com/api/stocks/industry?page=1&pageSize=100');
+    naverIndustryNames = new Map((j.groups || []).map((g) => [Number(g.no), g.name]));
+  }
+  return naverIndustryNames.get(Number(no)) || null;
+}
+
+// 네이버 한글 업종. 없으면 null(→ 야후).
+async function naverIndustry(symbol) {
+  const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol);
+  if (kr) {
+    const d = await naverJson(`https://m.stock.naver.com/api/stock/${kr[1]}/integration`);
+    return d.stockEndType === 'stock' && d.industryCode != null ? naverIndustryName(d.industryCode) : null;
+  }
+  // 미국: 앱에는 야후 티커(AAPL)만 있다 — 네이버 검색으로 네이버 코드(AAPL.O)를 찾는다.
+  // 정확히 같은 티커만 쓴다. BRK-B(네이버 BRK.B)처럼 표기가 다르면 못 찾고 야후로 간다.
+  const s = await naverJson('https://m.stock.naver.com/front-api/search/autoComplete'
+    + `?query=${encodeURIComponent(symbol)}&target=stock`);
+  const hit = (s.result?.items || []).find((i) => i.nationCode === 'USA' && i.code === symbol);
+  if (!hit || !hit.reutersCode) return null;
+  const b = await naverJson(`https://api.stock.naver.com/stock/${encodeURIComponent(hit.reutersCode)}/basic`);
+  return b.stockEndType === 'stock' ? b.industryCodeType?.industryGroupKor || null : null;
+}
+
+// 야후 업종(영어). quoteSummary(assetProfile)는 크럼 토큰을 요구해 막히는데,
 // 검색 엔드포인트는 심볼로 조회하면 인증 없이 sector/industry 를 같이 준다.
-// 분류는 GICS 기준이라 한국거래소 업종("전기/전자")과 다르고, ETF 는 값이 없다.
-ipcMain.handle('yf:sector', async (_e, symbol) => {
-  if (!SYMBOL_RE.test(String(symbol ?? ''))) return { ok: false, error: '잘못된 요청' };
+async function yahooIndustry(symbol) {
   const url = 'https://query1.finance.yahoo.com/v1/finance/search'
     + `?q=${encodeURIComponent(symbol)}&quotesCount=1&newsCount=0`;
-  try {
-    const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+  const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const hit = (await res.json())?.quotes?.[0];
+  // 심볼이 정확히 맞을 때만 쓴다. 검색이라 엉뚱한 종목이 1등으로 올 수 있다.
+  if (!hit || hit.symbol !== symbol) return { sector: null, industry: null };
+  return { sector: hit.sectorDisp || null, industry: hit.industryDisp || null };
+}
 
-    const hit = (await res.json())?.quotes?.[0];
-    // 심볼이 정확히 맞을 때만 쓴다. 검색이라 엉뚱한 종목이 1등으로 올 수 있다.
-    if (!hit || hit.symbol !== symbol) return { ok: true, sector: null, industry: null };
-    return { ok: true, sector: hit.sectorDisp || null, industry: hit.industryDisp || null };
+ipcMain.handle('yf:sector', async (_e, symbol) => {
+  if (!SYMBOL_RE.test(String(symbol ?? ''))) return { ok: false, error: '잘못된 요청' };
+  try {
+    const kor = await naverIndustry(symbol);
+    if (kor) return { ok: true, sector: null, industry: kor };
+    return { ok: true, ...(await yahooIndustry(symbol)) };
   } catch (err) {
     return { ok: false, error: err.message || '업종 조회 실패' };
   }

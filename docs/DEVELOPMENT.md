@@ -116,9 +116,9 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 열네 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill`.
+푸시와 PR 마다 **앱을 띄우지 않는 열다섯 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `sector`.
 
-이 열네 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
+이 열다섯 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 
@@ -140,7 +140,7 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 | 거래량 · 고가 · 저가 | Yahoo Finance | 차트 응답에 포함되어 추가 요청 없음 |
 | 원/달러 환율 | Yahoo Finance | `KRW=X`, 30분 캐시. 보유가 둘 이상이고 그중 달러 종목이 있을 때만(합계를 낼 때) |
 | 종목 검색 | Naver 자동완성 | 주식·ETF 한글 검색 |
-| 업종 | Yahoo 검색 | 심볼당 1회, 세션 캐시. ETF 는 값 없음 |
+| 업종 | Naver (국내 업종 · 해외 업종), 없으면 Yahoo 검색 | 심볼당 1회(미국은 2회), 세션 캐시. ETF 는 값 없음 |
 
 ### 왜 나눠 쓰는가
 
@@ -157,31 +157,32 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 
 ### 업종
 
-종목명 옆에 회색 작은 글씨로 붙습니다. **Yahoo 값을 영어 그대로** 씁니다.
+종목명 옆에 회색 작은 글씨로 붙습니다. **네이버 한글 업종을 먼저** 쓰고, 네이버에 없으면 Yahoo 영어 업종을 씁니다(`main.js` `yf:sector`).
 
 ```
-삼성전자 · Consumer Electronics
+삼성전자 · 반도체와반도체장비
 ```
 
-Yahoo 의 `quoteSummary`(assetProfile)는 크럼 토큰을 요구해 `Invalid Crumb` 으로 막히는데, **검색 엔드포인트에 심볼을 넣으면 인증 없이** `sector` · `industry` 를 같이 줍니다. 검색이라 엉뚱한 종목이 1등으로 올 수 있어 **심볼이 정확히 일치할 때만** 씁니다.
+- **국내** — `m.stock.naver.com/api/stock/<코드>/integration` 의 `industryCode` 를 네이버 업종 목록(`/api/stocks/industry`, 79개)에서 이름으로 바꿉니다. 목록은 한 번 받아 앱이 켜져 있는 동안 씁니다.
+- **미국** — 앱에는 야후 티커(`AAPL`)만 있어, 종목 검색과 같은 네이버 자동완성으로 네이버 코드(`AAPL.O`)를 찾고 `api.stock.naver.com/stock/<코드>/basic` 의 `industryCodeType.industryGroupKor` 를 씁니다. 티커가 정확히 같을 때만 씁니다 — `BRK-B`(네이버 `BRK.B`)처럼 표기가 다르면 못 찾고 Yahoo 로 갑니다.
+- **ETF** 는 네이버가 "기타" 만 줘서 쓰지 않습니다(Yahoo 도 값이 없어 비웁니다).
+- **네이버 요청이 실패하면 실패로 끝냅니다.** Yahoo 영어로 넘어가면 렌더러가 그 값을 세션 내내 캐시해 영어로 굳습니다. 실패는 캐시하지 않으므로 다음에 다시 묻습니다.
 
-번역하지 않으므로 11개짜리 `sector` 대신 **150개가 넘는 `industry`** 를 씁니다. `sector` 로는 삼성전자·SK하이닉스가 똑같이 `Technology` 인데, `industry` 로는 `Consumer Electronics` 와 `Semiconductors` 로 갈립니다. `industry` 가 없으면 `sector` 로 내려갑니다.
+예전에는 Yahoo 값만 영어 그대로 썼습니다. 검증용 99종목 중 21종목이 비어 있었고(SK하이닉스 · 삼성전기 · MSFT · TSLA …), 국내 분류가 어색했습니다(삼성전자 `Consumer Electronics`, 한화오션 `Aerospace & Defense`). 바꾼 뒤 지수를 뺀 95종목 중 91종목이 한글, 4종목(ETF)이 비움, 영어 0 입니다(2026-10-14 실측).
 
-업종은 바뀌지 않으므로 세션 캐시에 담습니다. 값이 없는 경우(`null`)도 캐시합니다 — ETF 를 볼 때마다 다시 묻지 않기 위해서입니다. 조회 실패만 캐시하지 않습니다.
-
-> **거래소 업종이 아닙니다.** Yahoo 는 GICS 기준이라 삼성전자가 `Consumer Electronics` 로 애플과 같은 칸에 들어갑니다. 한국거래소 기준으로는 "전기/전자" 입니다.
-
-실측 커버리지 (2026-08-26):
-
-| 종목 | quoteType | 표시 |
+| 종목 | 예전 (Yahoo) | 지금 (네이버) |
 |---|---|---|
-| 삼성전자 | EQUITY | Consumer Electronics |
-| SK하이닉스 | EQUITY | Semiconductors |
-| 알테오젠 (코스닥) | EQUITY | Biotechnology |
-| Apple | EQUITY | Consumer Electronics |
-| KODEX 200 | **ETF** | (비움) |
+| 삼성전자 | Consumer Electronics | 반도체와반도체장비 |
+| SK하이닉스 | (비어 있음) | 반도체와반도체장비 |
+| 한화오션 | Aerospace & Defense | 조선 |
+| Apple | Consumer Electronics | 전화 및 소형 장치 |
+| KODEX 200 | (비움) | (비움) |
 
-영어라 길어질 수 있어(`Semiconductor Equipment & Materials`) 이름 줄을 `text-overflow: ellipsis` 로 자릅니다. 안 자르면 등락률이 오른쪽으로 밀려납니다.
+> 네이버 해외 업종은 Refinitiv(TRBC) 분류라 가끔 낯섭니다 — 아마존 `백화점`, 비자 `경영 지원 서비스`, 마스터카드 `온라인 서비스`.
+
+업종은 바뀌지 않으므로 렌더러가 세션 캐시에 담습니다. 값이 없는 경우(`null`)도 캐시합니다 — ETF 를 볼 때마다 다시 묻지 않기 위해서입니다. 조회 실패만 캐시하지 않습니다.
+
+길어질 수 있어(`오일, 가스 정제 및 마케팅`) 이름 줄을 `text-overflow: ellipsis` 로 자릅니다. 안 자르면 등락률이 오른쪽으로 밀려납니다.
 
 ### 세션 · 시세 소스 · 폴백
 
