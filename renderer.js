@@ -749,7 +749,8 @@ function trendCheckText(r) {
   const v = r.rule.verdict;
   const color = v === 'better' ? UP : v === 'worse' ? DOWN : '';
   const regime = `${g.cls === 'up' ? '정배열' : g.cls === 'down' ? '역배열' : '혼조'}·20선${g.up ? '↑' : '↓'}`;
-  const state = `20/60 ${r.rule.on ? '보유' : '정리'} ${daysAgo(r.rule.since)}일째`;
+  // "20/60 보유" 는 사용자의 실제 보유(목록 · 상세)와 같은 말이라 선의 위치로 쓴다
+  const state = `20선${r.rule.on ? '>' : '<'}60선 ${daysAgo(r.rule.since)}일째`;
   // 실제로 쓴 기간. 5년치를 받아도 60일선이 생기기까지를 빼면 약 4.7년이라 "5년" 이 되고,
   // 상장 2~5년 종목이나 이상 봉 뒤부터 쓴 종목은 그 길이대로 "2년" · "3년" 이 된다.
   const years = Math.round((r.rule.to - r.rule.from) / (365.25 * 86400000));

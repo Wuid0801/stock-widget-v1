@@ -1292,7 +1292,7 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
   c.renderTrendCheck({ symbol: '005930.KS' });
   assert.equal(el.hidden, false);
   // 08-07 09:00 KST → 09-10 (하네스 시각) = 34일
-  assert.equal(el.innerHTML, '정배열·20선↑ · 20/60 보유 34일째 · 5년: <span>구분 안 됨</span>');
+  assert.equal(el.innerHTML, '정배열·20선↑ · 20선>60선 34일째 · 5년: <span>구분 안 됨</span>');
   const tip = el.title.split('\n');
   for (const line of [
     '20/60 규칙 — 20일선이 60일선 위면 보유, 아래면 정리',
@@ -1335,7 +1335,7 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
 
   // 표본 부족 · 칸 넓히기 · 범위 밖인데 구분 안 됨
   redraw((r) => { r.rule.verdict = 'few'; r.rule.strat.entries = 4; r.rule.on = false; });
-  assert.equal(el.innerHTML, '정배열·20선↑ · 20/60 정리 34일째 · 5년: <span>표본 부족</span>');
+  assert.equal(el.innerHTML, '정배열·20선↑ · 20선<60선 34일째 · 5년: <span>표본 부족</span>');
   assert.ok(el.title.includes('진입 4회 — 적어서 판정하지 않음'));
   assert.ok(!el.title.includes('가짜 타이밍'));
   redraw((r) => { r.regime.verdict = 'few'; r.regime.fallback = true; r.regime.cls = 'mixDown'; r.regime.up = false; });
@@ -1440,7 +1440,7 @@ await test('trend check: real backtest on a steady climb says 정배열 and 표�
   const el = c.document.getElementById('trendCheck');
   // 오르기만 하면 진입이 1회라 판정하지 않는다. 일수는 60일선이 처음 생긴 봉(2024-02-29)부터 하네스 시각까지.
   // 봉을 달력 하루 간격으로 만들어 쓴 기간이 538일 — 줄에는 "1년" 으로 나온다.
-  assert.equal(el.innerHTML, '정배열·20선↑ · 20/60 보유 924일째 · 1년: <span>표본 부족</span>');
+  assert.equal(el.innerHTML, '정배열·20선↑ · 20선>60선 924일째 · 1년: <span>표본 부족</span>');
   assert.ok(el.title.includes('진입 1회 — 적어서 판정하지 않음'));
 });
 
@@ -1629,14 +1629,14 @@ await test('info fold: the folded toggle\'s tooltip previews the visible lines',
   const w52 = c.document.getElementById('w52');
   const tc = c.document.getElementById('trendCheck');
   Object.assign(w52, { hidden: false, title: '52주 최저 201,000 · 최고 312,000\n현재 225,000 — 저점 대비 +11.94%, 고점 대비 -27.88%' });
-  Object.assign(tc, { hidden: false, textContent: '혼조·20선↓ · 20/60 보유 378일째 · 5년: 구분 안 됨' });
+  Object.assign(tc, { hidden: false, textContent: '혼조·20선↓ · 20선>60선 378일째 · 5년: 구분 안 됨' });
   c.infoTip();
   const btn = elements.get('infoToggle');
   assert.equal(btn.title, [
     '보유 10주 · 평단 200,000 · 평가 2,250,000 · 손익 +250,000 (+12.50%)',
     '52주 최저 201,000 · 최고 312,000',
     '현재 225,000 — 저점 대비 +11.94%, 고점 대비 -27.88%',
-    '추세 점검 혼조·20선↓ · 20/60 보유 378일째 · 5년: 구분 안 됨',
+    '추세 점검 혼조·20선↓ · 20선>60선 378일째 · 5년: 구분 안 됨',
     '', '누르면 펼칩니다'].join('\n'));
 
   // 숨은 줄은 빼고, 보유가 없으면 보유 줄도 없다. "데이터 확인 필요" 는 머리말이 겹치지 않게.
