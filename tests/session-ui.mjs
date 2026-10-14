@@ -1414,6 +1414,25 @@ await test('trend check: recomputes only when the last confirmed bar changes; co
   assert.ok(el.title.includes('왕복 비용 0.10%') && !el.title.includes('지수는'));
 });
 
+// 추세 점검 계산이 예외를 내면 renderDetail 이 거기서 끊겨 합계 줄 · 차트까지 그 갱신에서 빠졌다.
+// 줄만 숨기고 넘어가며, 같은 봉으로는 30초마다 다시 계산하지 않는다(실패도 캐시).
+await test('trend check: a calculation error hides the line instead of stopping the refresh', () => {
+  const { c, run, errors } = harness(['renderTrendCheck', 'trendCheckText', 'trendCheckTip', 'verdictText', 'costOf']);
+  const el = c.document.getElementById('trendCheck');
+  let calls = 0;
+  c.trendCheck = () => { calls++; throw new Error('boom'); };
+  run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(600))};`);
+  assert.doesNotThrow(() => c.renderTrendCheck({ symbol: '005930.KS' }));
+  assert.equal(el.hidden, true);
+  assert.equal(errors.length, 1, 'console.error 로 남긴다');
+  c.renderTrendCheck({ symbol: '005930.KS' }); // 30초 갱신
+  assert.equal(calls, 1, '같은 확정 봉이면 다시 계산하지 않는다');
+  c.trendCheck = () => TREND();
+  run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(601))};`); // 다음 날 봉
+  c.renderTrendCheck({ symbol: '005930.KS' });
+  assert.equal(el.hidden, false, '새 확정 봉이 오면 다시 해 본다');
+});
+
 await test('trend check: real backtest on a steady climb says 정배열 and 표본 부족', () => {
   const { run, c } = harness(['renderTrendCheck', 'trendCheckText', 'trendCheckTip', 'verdictText', 'costOf']);
   run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(600))};`);

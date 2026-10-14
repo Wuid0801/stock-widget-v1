@@ -50,6 +50,13 @@ function median(xs) {
 // 국내 종목은 가격제한폭 밖으로(BT_JUMP 초과) 움직인 마지막 봉부터 쓴다.
 // 반환: null(짧다 — 줄을 숨긴다) · { error: 'data' }(이상 봉 뒤로 짧다) · { closes, times, cut }
 function usableSeries(closes, times, domestic) {
+  // 0 이하 · 숫자가 아닌 종가는 빠진 봉처럼 버린다. 섞이면 수익률이 Infinity · NaN 이 되어 툴팁이 NaN 으로
+  // 차고 엉뚱한 판정이 난다 — 해외 종목은 아래 이상 봉 검사도 없다. 국내는 0 을 이상 봉으로 잘라 버렸다.
+  const ok = closes.map((_, i) => i).filter((i) => Number.isFinite(closes[i]) && closes[i] > 0);
+  if (ok.length !== closes.length) {
+    times = ok.map((i) => times[i]);
+    closes = ok.map((i) => closes[i]);
+  }
   const end = closes.length - 1;
   if (end < BT_MIN_BARS) return null;
   let from = 0;

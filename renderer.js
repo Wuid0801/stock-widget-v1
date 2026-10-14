@@ -709,8 +709,15 @@ function renderTrendCheck(item) {
   const key = `${n}:${d.times[n - 2]}`;
   let hit = trendCache[item.symbol];
   if (!hit || hit.key !== key) {
-    hit = { key, result: trendCheck(item.symbol, d.closes, d.times,
-      { domestic: isDomestic(item.symbol), cost: costOf(item.symbol) }) };
+    // 계산이 예외를 내면 줄만 숨긴다 — 그대로 두면 renderDetail 이 여기서 끊겨 합계 줄 · 차트까지 그 갱신에서
+    // 빠진다. 실패도 캐시해 같은 확정 봉으로 30초마다 다시 계산하지 않는다(다음 봉에서 다시 해 본다).
+    let result = null;
+    try {
+      result = trendCheck(item.symbol, d.closes, d.times, { domestic: isDomestic(item.symbol), cost: costOf(item.symbol) });
+    } catch (err) {
+      console.error(err);
+    }
+    hit = { key, result };
     trendCache[item.symbol] = hit;
   }
   const r = hit.result;

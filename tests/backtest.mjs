@@ -58,6 +58,24 @@ function walk(seed, n = 1231, vol = 0.02) {
   check('국내: 기준가와 한 틱 어긋난 +30.2% 도 자르지 않는다', limit(27800, 36200)?.cut === false);
   check('국내: 하한가 -30% 도 자르지 않는다', limit(100000, 70000)?.cut === false);
   check('국내: 1:1 무상증자(-50%)는 자른다', limit(100000, 50000)?.cut === true);
+
+  // 0 이하 · 숫자가 아닌 종가는 빠진 봉처럼 버린다. 해외 종목은 이상 봉 검사가 없어 0 이 그대로 들어가
+  // 수익률이 Infinity · NaN 이 되고, 툴팁이 NaN 으로 차며 엉뚱한 "못함" 이 났다(재검증 robust-2).
+  for (const bad of [0, -5, NaN, null]) {
+    const z = walk(7, 801);
+    z.c[300] = bad;
+    const u = B.usableSeries(z.c, z.t, false);
+    check(`해외: 종가 ${bad} 인 봉은 버린다`, u && u.closes.length === 799 && u.closes.every((c) => Number.isFinite(c) && c > 0)
+      && !u.times.includes(z.t[300]), u ? `${u.closes.length}봉` : String(u));
+    const r = B.trendCheck('AAPL', z.c, z.t, { domestic: false, cost: 0.001, rotations: 20, paths: 20 });
+    const nums = [r.rule.strat.total, r.rule.strat.cagr, r.rule.strat.mdd, r.rule.hold.total, r.rule.nullMdd, r.fast.total];
+    check(`해외: 종가 ${bad} 가 섞여도 숫자가 모두 유한하다`, nums.every(Number.isFinite), nums.join(','));
+  }
+  const zd = walk(8, 801);
+  zd.c[300] = 0;
+  const ud = B.usableSeries(zd.c, zd.t, true);
+  check('국내: 종가 0 은 이상 봉으로 자르지 않고 버린다', ud && ud.cut === false && ud.closes.length === 799,
+    JSON.stringify(ud && { 봉: ud.closes?.length, cut: ud.cut, error: ud.error }));
 }
 
 // --- 2. 다음 날 종가 체결 · 비용 (손으로 센 값) ---------------------------------
