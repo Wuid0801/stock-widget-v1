@@ -610,6 +610,7 @@ function renderDetail() {
   renderHolding(item && item.symbol, q && q.price);
   renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur);
   renderTrendCheck(item);
+  infoTip(); // 접혀 있으면 위 세 줄의 새 내용을 손잡이 툴팁에 옮긴다
 
   const lv = levelOf(q && q.rsi);
   badge.textContent = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
@@ -2005,7 +2006,30 @@ function applyInfoOpen() {
   const btn = document.getElementById('infoToggle');
   btn.className = state.infoOpen ? 'infotoggle' : 'infotoggle off';
   btn.ariaExpanded = String(state.infoOpen);
-  btn.title = `보유 · 52주 · 추세 점검 ${state.infoOpen ? '접기' : '펴기'}`;
+  infoTip();
+}
+
+// 손잡이 툴팁. 접혀 있으면 세 줄에 보이던 내용을 글자로 미리 보인다 — 숨은 줄은 뺀다. 52주는 막대의
+// 툴팁 글자를 그대로 쓴다(막대에 올렸을 때와 같은 말). renderDetail 이 갱신마다 다시 쓴다.
+function infoTip() {
+  const btn = document.getElementById('infoToggle');
+  if (state.infoOpen) { btn.title = '보유 · 52주 · 추세 점검 접기'; return; }
+  const lines = [];
+  const symbol = state.selected;
+  const h = state.holdings[symbol];
+  if (h && !isIndex(symbol)) {
+    const cur = curOf(symbol);
+    const q = quotes[symbol];
+    const r = holdingPl(h, q && q.price);
+    lines.push(`보유 ${fmt(h.qty)}주 · 평단 ${money(h.avg, cur)}`
+      + (r ? ` · 평가 ${money(r.value, cur)} · 손익 ${signedMoney(r.pl, cur)} (${fmtPct(r.pct)})` : ''));
+  }
+  const w52 = document.getElementById('w52');
+  if (!w52.hidden && w52.title) lines.push(w52.title);
+  const tc = document.getElementById('trendCheck');
+  const trend = !tc.hidden && tc.textContent;
+  if (trend) lines.push(trend.startsWith('추세 점검') ? trend : `추세 점검 ${trend}`);
+  btn.title = (lines.length ? `${lines.join('\n')}\n\n` : '') + '누르면 펼칩니다';
 }
 
 function toggleInfo() {

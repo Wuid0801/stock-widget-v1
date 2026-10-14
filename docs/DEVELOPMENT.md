@@ -93,7 +93,7 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 | `alerts` | 알림 사용 여부와 종목별 목표가 |
 | `holdings` | 종목별 보유 수량 · 평단가 |
 | `chartMode` | 1M·3M 을 캔들과 라인 중 무엇으로 그릴지 (기본 캔들) |
-| `infoOpen` | 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지 (기본 펼침). 세 줄의 `hidden` 은 각자 그리는 함수가 정하므로, 접기는 손잡이 `#infoToggle` 의 `.off` 와 CSS 형제 선택자로만 숨긴다 |
+| `infoOpen` | 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지 (기본 펼침). 세 줄의 `hidden` 은 각자 그리는 함수가 정하므로, 접기는 손잡이 `#infoToggle` 의 `.off` 와 CSS 형제 선택자로만 숨긴다. 접혀 있으면 손잡이 툴팁이 보이던 줄의 내용을 글자로 미리 보인다(`infoTip`, 갱신마다 다시 씀) |
 
 저장 값을 추가할 때는 renderer.js 의 save() 와 main.js 의 state:set · state:get 세 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다.
 

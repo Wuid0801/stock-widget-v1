@@ -46,7 +46,7 @@ function harness(extra = []) {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -227,6 +227,10 @@ await test('selected detail updates header, independent of aggregate; quote and 
   c.renderUpdated();
   assert.match(header.innerHTML, /확인중/);
   assert.doesNotMatch(header.title, /NXT|실시간|20분지연/);
+  // 접혀 있으면 갱신 때마다 손잡이 툴팁(세 줄 미리보기)도 새로 쓴다
+  run("state.selected = '000660.KS'; state.infoOpen = false;");
+  c.renderDetail();
+  assert.equal(elements.get('infoToggle').title, '누르면 펼칩니다');
 });
 
 await test('1D appends only active regular; pre/after lines retain price origin after close', async () => {
@@ -1548,11 +1552,52 @@ await test('info fold: the toggle folds hold · 52-week · trend lines and saves
   assert.deepEqual(saved, [false]);
   assert.equal(btn.className, 'infotoggle off', '.off 가 붙으면 CSS 가 세 줄을 숨긴다 (dom-contract)');
   assert.equal(btn.ariaExpanded, 'false');
-  assert.equal(btn.title, '보유 · 52주 · 추세 점검 펴기');
+  assert.equal(btn.title, '누르면 펼칩니다', '보이는 줄이 없으면 안내만');
   c.toggleInfo();
   assert.equal(run('state.infoOpen'), true);
   assert.deepEqual(saved, [false, true]);
   assert.equal(btn.className, 'infotoggle');
+  assert.equal(btn.title, '보유 · 52주 · 추세 점검 접기');
+});
+
+// 접혀 있을 때 손잡이에 마우스를 올리면 세 줄에 보이던 내용을 툴팁으로 미리 본다.
+// 52주는 52주 막대의 툴팁 글자를 그대로 쓴다 — 막대에 올렸을 때와 같은 말이다.
+await test('info fold: the folded toggle\'s tooltip previews the visible lines', () => {
+  const { c, run, elements } = harness(['infoTip', 'holdingPl']);
+  run(formatting);
+  run(`state.infoOpen = false; state.holdings = { '005930.KS': { qty: 10, avg: 200000 } };
+    quotes['005930.KS'] = { price: 225000 };`);
+  const w52 = c.document.getElementById('w52');
+  const tc = c.document.getElementById('trendCheck');
+  Object.assign(w52, { hidden: false, title: '52주 최저 201,000 · 최고 312,000\n현재 225,000 — 저점 대비 +11.94%, 고점 대비 -27.88%' });
+  Object.assign(tc, { hidden: false, textContent: '혼조·20선↓ · 20/60 보유 378일째 · 5년: 구분 안 됨' });
+  c.infoTip();
+  const btn = elements.get('infoToggle');
+  assert.equal(btn.title, [
+    '보유 10주 · 평단 200,000 · 평가 2,250,000 · 손익 +250,000 (+12.50%)',
+    '52주 최저 201,000 · 최고 312,000',
+    '현재 225,000 — 저점 대비 +11.94%, 고점 대비 -27.88%',
+    '추세 점검 혼조·20선↓ · 20/60 보유 378일째 · 5년: 구분 안 됨',
+    '', '누르면 펼칩니다'].join('\n'));
+
+  // 숨은 줄은 빼고, 보유가 없으면 보유 줄도 없다. "데이터 확인 필요" 는 머리말이 겹치지 않게.
+  run('state.holdings = {};');
+  Object.assign(w52, { hidden: true });
+  Object.assign(tc, { textContent: '추세 점검: 데이터 확인 필요' });
+  c.infoTip();
+  assert.equal(btn.title, '추세 점검: 데이터 확인 필요\n\n누르면 펼칩니다');
+  // 현재가를 아직 못 받았으면 보유는 수량 · 평단만
+  run(`state.holdings = { '005930.KS': { qty: 10, avg: 200000 } }; quotes['005930.KS'] = {};`);
+  Object.assign(tc, { hidden: true });
+  c.infoTip();
+  assert.equal(btn.title, '보유 10주 · 평단 200,000\n\n누르면 펼칩니다');
+  // 지수에는 보유가 없다
+  run(`state.selected = '^KS11'; state.holdings['^KS11'] = { qty: 1, avg: 1 };`);
+  c.infoTip();
+  assert.equal(btn.title, '누르면 펼칩니다');
+  run('state.infoOpen = true;');
+  c.infoTip();
+  assert.equal(btn.title, '보유 · 52주 · 추세 점검 접기');
 });
 
 console.log(`PASS: ${passed} session UI test groups`);
