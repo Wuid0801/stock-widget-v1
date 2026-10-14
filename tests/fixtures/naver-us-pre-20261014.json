@@ -1,0 +1,238 @@
+{
+  "datas": [
+    {
+      "reutersCode": "SOXL.K",
+      "stockName": "Direxion Daily Semiconductor Bull 3X ETF",
+      "symbolCode": "SOXL",
+      "stockExchangeType": {
+        "code": "AMX",
+        "zoneId": "EST5EDT",
+        "nationType": "USA",
+        "delayTime": 0,
+        "startTime": "0930",
+        "endTime": "1600",
+        "closePriceSendTime": "2031",
+        "nameKor": "아멕스 증권거래소",
+        "nameEng": "American Stock Exchange",
+        "nationCode": "USA",
+        "nationName": "미국",
+        "stockType": "worldstock",
+        "name": "AMEX"
+      },
+      "closePrice": "127.57",
+      "compareToPreviousClosePrice": "-0.83",
+      "compareToPreviousPrice": {
+        "code": "5",
+        "text": "하락",
+        "name": "FALLING"
+      },
+      "fluctuationsRatio": "-0.65",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "tradableStatus": "tradable",
+      "tradableStatusCode": "ok",
+      "tradableStatusUpdatedAt": null,
+      "openPrice": "118.42",
+      "highPrice": "127.92",
+      "lowPrice": "115.84",
+      "accumulatedTradingVolume": "79,220,159",
+      "accumulatedTradingValue": "97.2억 USD",
+      "localTradedAt": "2026-10-13T16:00:00-04:00",
+      "marketStatus": "CLOSE",
+      "overMarketPriceInfo": {
+        "tradingSessionType": "PRE_MARKET",
+        "overMarketStatus": "OPEN",
+        "overPrice": "127.52",
+        "compareToPreviousPrice": {
+          "code": "5",
+          "text": "하락",
+          "name": "FALLING"
+        },
+        "compareToPreviousClosePrice": "-0.05",
+        "fluctuationsRatio": "-0.04",
+        "localTradedAt": "2026-10-14T04:08:30-04:00"
+      },
+      "currencyType": {
+        "code": "USD",
+        "text": "US dollar",
+        "name": "USD"
+      },
+      "isinCode": "US25459W4583",
+      "myDataCode": null,
+      "stockEndUrl": null,
+      "marketValueFull": "19,958,334,154",
+      "marketValueHangeul": "-",
+      "marketValueKrwHangeul": "-",
+      "marketValueKrwRaw": null,
+      "accumulatedTradingValueKrwRaw": "12985379013600",
+      "openPriceRaw": "118.42",
+      "compareToPreviousClosePriceRaw": "-0.83",
+      "accumulatedTradingValueRaw": "9722506000",
+      "marketValueFullRaw": "19958334154",
+      "accumulatedTradingVolumeRaw": "79220159",
+      "closePriceRaw": "127.57",
+      "fluctuationsRatioRaw": "-0.65",
+      "highPriceRaw": "127.92",
+      "lowPriceRaw": "115.84"
+    },
+    {
+      "reutersCode": "AAPL.O",
+      "stockName": "애플",
+      "symbolCode": "AAPL",
+      "stockExchangeType": {
+        "code": "NSQ",
+        "zoneId": "EST5EDT",
+        "nationType": "USA",
+        "delayTime": 0,
+        "startTime": "0930",
+        "endTime": "1600",
+        "closePriceSendTime": "2031",
+        "nameKor": "나스닥 증권거래소",
+        "nameEng": "NASDAQ Stock Exchange",
+        "nationCode": "USA",
+        "nationName": "미국",
+        "stockType": "worldstock",
+        "name": "NASDAQ"
+      },
+      "closePrice": "341.27",
+      "compareToPreviousClosePrice": "0.30",
+      "compareToPreviousPrice": {
+        "code": "2",
+        "text": "상승",
+        "name": "RISING"
+      },
+      "fluctuationsRatio": "0.09",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "tradableStatus": "tradable",
+      "tradableStatusCode": "ok",
+      "tradableStatusUpdatedAt": null,
+      "openPrice": "344.67",
+      "highPrice": "348.15",
+      "lowPrice": "340.74",
+      "accumulatedTradingVolume": "38,983,839",
+      "accumulatedTradingValue": "134억 USD",
+      "localTradedAt": "2026-10-13T16:00:00-04:00",
+      "marketStatus": "CLOSE",
+      "overMarketPriceInfo": {
+        "tradingSessionType": "PRE_MARKET",
+        "overMarketStatus": "OPEN",
+        "overPrice": "342.59",
+        "compareToPreviousPrice": {
+          "code": "2",
+          "text": "상승",
+          "name": "RISING"
+        },
+        "compareToPreviousClosePrice": "1.32",
+        "fluctuationsRatio": "0.39",
+        "localTradedAt": "2026-10-14T04:08:17-04:00"
+      },
+      "currencyType": {
+        "code": "USD",
+        "text": "US dollar",
+        "name": "USD"
+      },
+      "isinCode": "US0378331005",
+      "myDataCode": null,
+      "stockEndUrl": null,
+      "marketValueFull": "4,980,555,808,600",
+      "marketValueHangeul": "4조 9,806억 USD",
+      "marketValueKrwHangeul": "6,652조 303억원",
+      "marketValueKrwRaw": "6652030337966160",
+      "accumulatedTradingValueKrwRaw": "17891244831600",
+      "openPriceRaw": "344.67",
+      "compareToPreviousClosePriceRaw": "0.30",
+      "accumulatedTradingValueRaw": "13395661000",
+      "marketValueFullRaw": "4980555808600",
+      "accumulatedTradingVolumeRaw": "38983839",
+      "closePriceRaw": "341.27",
+      "fluctuationsRatioRaw": "0.09",
+      "highPriceRaw": "348.15",
+      "lowPriceRaw": "340.74"
+    },
+    {
+      "reutersCode": "NVDA.O",
+      "stockName": "엔비디아",
+      "symbolCode": "NVDA",
+      "stockExchangeType": {
+        "code": "NSQ",
+        "zoneId": "EST5EDT",
+        "nationType": "USA",
+        "delayTime": 0,
+        "startTime": "0930",
+        "endTime": "1600",
+        "closePriceSendTime": "2031",
+        "nameKor": "나스닥 증권거래소",
+        "nameEng": "NASDAQ Stock Exchange",
+        "nationCode": "USA",
+        "nationName": "미국",
+        "stockType": "worldstock",
+        "name": "NASDAQ"
+      },
+      "closePrice": "228.52",
+      "compareToPreviousClosePrice": "2.20",
+      "compareToPreviousPrice": {
+        "code": "2",
+        "text": "상승",
+        "name": "RISING"
+      },
+      "fluctuationsRatio": "0.97",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "tradableStatus": "tradable",
+      "tradableStatusCode": "ok",
+      "tradableStatusUpdatedAt": null,
+      "openPrice": "224.34",
+      "highPrice": "228.64",
+      "lowPrice": "223.06",
+      "accumulatedTradingVolume": "84,036,941",
+      "accumulatedTradingValue": "190억 USD",
+      "localTradedAt": "2026-10-13T16:00:00-04:00",
+      "marketStatus": "CLOSE",
+      "overMarketPriceInfo": {
+        "tradingSessionType": "PRE_MARKET",
+        "overMarketStatus": "OPEN",
+        "overPrice": "229.29",
+        "compareToPreviousPrice": {
+          "code": "2",
+          "text": "상승",
+          "name": "RISING"
+        },
+        "compareToPreviousClosePrice": "0.77",
+        "fluctuationsRatio": "0.34",
+        "localTradedAt": "2026-10-14T04:07:53-04:00"
+      },
+      "currencyType": {
+        "code": "USD",
+        "text": "US dollar",
+        "name": "USD"
+      },
+      "isinCode": "US67066G1040",
+      "myDataCode": null,
+      "stockEndUrl": null,
+      "marketValueFull": "5,507,332,000,000",
+      "marketValueHangeul": "5조 5,073억 USD",
+      "marketValueKrwHangeul": "7,355조 5,926억원",
+      "marketValueKrwRaw": "7355592619200000",
+      "accumulatedTradingValueKrwRaw": "25439593914000",
+      "openPriceRaw": "224.34",
+      "compareToPreviousClosePriceRaw": "2.20",
+      "accumulatedTradingValueRaw": "19047315000",
+      "marketValueFullRaw": "5507332000000",
+      "accumulatedTradingVolumeRaw": "84036941",
+      "closePriceRaw": "228.52",
+      "fluctuationsRatioRaw": "0.97",
+      "highPriceRaw": "228.64",
+      "lowPriceRaw": "223.06"
+    }
+  ]
+}

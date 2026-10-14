@@ -539,9 +539,9 @@ function isUs(symbol) {
 }
 
 function pollingIsOpen(symbols, liveMap) {
-  const domestic = symbols.filter(isDomestic);
-  // 해외만 있거나 국내 응답이 하나라도 비었으면 짧은 간격으로 재확인한다.
-  return !domestic.length || domestic.some((symbol) =>
+  // 국내 · 미국 모두 네이버 실시간의 거래 상태를 본다. 하나라도 거래 중이거나 응답이 비었으면
+  // (실패 · 네이버에 없는 미국 종목) 짧은 간격으로 재확인한다.
+  return !symbols.length || symbols.some((symbol) =>
     tradingState(liveMap[symbol] || liveMap[symbol.split('.')[0]]) !== false);
 }
 
@@ -1432,7 +1432,10 @@ async function dailyFor(symbol, ttl) {
 async function loadQuote(item, live) {
   // 실시간 가격이 따로 오면 일봉은 오래 캐시해도 된다.
   // 실시간이 없으면(폴백) 일봉의 가격을 그대로 쓰므로 짧게만 캐시한다.
-  const r = await dailyFor(item.symbol, live ? DAILY_TTL : 60000);
+  // 미국 종목은 실시간이 있어도 짧게 둔다 — 야후 미국 일봉은 늦지 않아 RSI 를 그대로 맞춰 주고,
+  // 아래에서 일봉을 건드리지 않는다.
+  const us = isUs(item.symbol);
+  const r = await dailyFor(item.symbol, live && !us ? DAILY_TTL : 60000);
   if (!r || r.error) {
     quotes[item.symbol] = { error: r ? r.error : '조회 실패', fetchedAt: Date.now() };
     return;
@@ -1444,10 +1447,14 @@ async function loadQuote(item, live) {
   let prevClose = closes.length >= 2 ? closes[closes.length - 2] : price;
 
   if (live) {
-    // 현재가/전일종가는 실시간 값으로 교체하고, 마지막 일봉 종가도 현재가로 맞춰
-    // RSI가 20분 지난 값으로 계산되지 않게 한다
+    // 현재가/전일종가는 실시간 값으로 교체한다
     price = live.price;
     prevClose = live.prevClose;
+  }
+  // 미국 종목은 일봉을 그대로 둔다. 프리 · 애프터 가격이 정규장 봉에 들어가고, 한국 날짜로
+  // "오늘" 을 가르면 밤 22:30~05:00 의 정규장 하루가 둘로 쪼개진다.
+  if (live && !us) {
+    // 마지막 일봉 종가도 현재가로 맞춰 RSI가 20분 지난 값으로 계산되지 않게 한다.
     // 다만 마지막 봉이 아직 어제인데(장 전 프리마켓 · 개장 직후 — 야후 일봉은 20분 늦고 30분 캐시)
     // 실시간은 오늘 거래면, 어제 종가를 지우지 않고 오늘 봉을 덧붙인다. 덮으면 어제 봉의 이동평균
     // 끝점이 오늘 가격으로 틀어져 차트의 어제 캔들(실제 종가)과 어긋났다. 시각은 야후 일봉처럼 그날
@@ -1664,7 +1671,9 @@ async function loadChart() {
 
   // Yahoo 1D 봉은 20분 전에서 끊긴다. 끝점을 이어붙이거나(장중 현재가 · 장 마감 뒤 종가)
   // 야후 종가 봉을 거래소 종가로 맞춰 차트 끝과 위에 표시된 가격이 어긋나 보이지 않게 한다.
-  const end = state.timeframe === '1D' ? intradayEnd(q, r.volumes && r.volumes[r.volumes.length - 1], Date.now()) : null;
+  // 미국 종목은 야후 분봉이 늦지 않아 맞출 것이 없다(intradayEnd 의 날짜 · 시각도 한국 기준이다).
+  const end = state.timeframe === '1D' && !isUs(item.symbol)
+    ? intradayEnd(q, r.volumes && r.volumes[r.volumes.length - 1], Date.now()) : null;
   if (end && end.replace) closes[closes.length - 1] = end.value;
   else if (end) {
     closes.push(end.value);

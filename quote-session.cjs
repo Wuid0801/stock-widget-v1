@@ -162,4 +162,68 @@ function normalizeQuote(data, { now = Date.now(), regularClose = null, nxt = nul
   };
 }
 
-module.exports = { normalizeQuote, confirmedRegularClose, overFromClose, dailyRegularClose };
+// The exchange's own calendar date for ms, read from the offset the feed stamps
+// (-04:00 / -05:00). A US session runs 22:30~05:00 KST, so a Korean date would
+// split one trading day in two.
+function exchangeDate(ms, stamp) {
+  const m = /([+-])(\d{2}):(\d{2})$/.exec(stamp || '');
+  if (ms == null || !m) return null;
+  const offset = (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
+  return new Date(ms + offset * 60000).toISOString().slice(0, 10);
+}
+
+// Naver worldstock (US) quote, same shape as normalizeQuote. The base record is the
+// regular session; overMarketPriceInfo is the pre/after market.
+// Observed 2026-10-14 (SOXL · AAPL · NVDA): during pre-market the base is CLOSE with the
+// previous regular close stamped 16:00 and the over record is PRE_MARKET OPEN, its change
+// measured from that close. Minutes before pre-market the base was PREOPEN with a 0.00
+// change, so anything but OPEN/CLOSE returns null and the caller keeps Yahoo.
+// Prices are rebuilt from the base close rather than the over record's own change, so an
+// after-market price is measured from the previous close like every other price, and
+// fromClose from today's close.
+function normalizeWorldQuote(data, { now = Date.now() } = {}) {
+  const close = numberOrNull(data?.closePriceRaw ?? data?.closePrice);
+  const change = numberOrNull(data?.compareToPreviousClosePriceRaw ?? data?.compareToPreviousClosePrice);
+  if (close == null || close <= 0 || change == null || close - change <= 0) return null;
+  const ms = timestamp(data.localTradedAt);
+  if (ms == null || ms > now + 60000) return null;
+  if (data.marketStatus !== 'OPEN' && data.marketStatus !== 'CLOSE') return null;
+  const stopped = !!data.tradeStopType?.name && data.tradeStopType.name !== 'TRADING';
+  const today = exchangeDate(now, data.localTradedAt);
+  const common = {
+    candle: dayCandle(data),
+    market: data.stockExchangeType?.name || null,
+    // HHMM fields elsewhere are Korean clock times; the US ones are New York's.
+    openTime: null, closeTime: null,
+  };
+
+  if (data.marketStatus === 'OPEN') {
+    const live = !stopped && exchangeDate(ms, data.localTradedAt) === today;
+    return { ...common, price: close, change, prevClose: close - change,
+      open: live, session: live ? 'regular' : 'unknown', priceSession: 'regular', isTrading: live ? true : null,
+      regularClose: null, fromClose: null, source: 'naver-us', tradedAt: data.localTradedAt };
+  }
+
+  // CLOSE: the base is the last finished regular session.
+  const o = data.overMarketPriceInfo;
+  const session = { PRE_MARKET: 'pre', AFTER_MARKET: 'after' }[o?.tradingSessionType];
+  const overPrice = numberOrNull(o?.overPriceRaw ?? o?.overPrice);
+  const overMs = timestamp(o?.localTradedAt);
+  // An over record older than the close is a previous day's after-market left behind.
+  if (session && overPrice > 0 && overMs != null && overMs > ms && overMs <= now + 60000) {
+    const prevClose = session === 'pre' ? close : close - change;
+    const active = o.overMarketStatus === 'OPEN'
+      ? !stopped && exchangeDate(overMs, o.localTradedAt) === today
+      : o.overMarketStatus === 'CLOSE' ? false : null;
+    return { ...common, price: overPrice, change: overPrice - prevClose, prevClose,
+      open: false, session: active === true ? session : active === false ? 'closed' : 'unknown',
+      priceSession: session, isTrading: active,
+      regularClose: close, fromClose: overFromClose(close, overPrice, session),
+      source: 'naver-us-over', tradedAt: o.localTradedAt };
+  }
+  return { ...common, price: close, change, prevClose: close - change,
+    open: false, session: 'closed', priceSession: 'regular', isTrading: false,
+    regularClose: close, fromClose: null, source: 'naver-us', tradedAt: data.localTradedAt };
+}
+
+module.exports = { normalizeQuote, normalizeWorldQuote, confirmedRegularClose, overFromClose, dailyRegularClose };

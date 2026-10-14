@@ -6,7 +6,7 @@ const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu 
 const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
-const { normalizeQuote, confirmedRegularClose, overFromClose,
+const { normalizeQuote, normalizeWorldQuote, confirmedRegularClose, overFromClose,
   dailyRegularClose } = require('./quote-session.cjs');
 
 // Only confirmed same-day regular closes. An after-market startup has none of
@@ -291,8 +291,44 @@ ipcMain.on('win:minimize', () => {
 // 여러 종목을 한 번에 조회할 수 있어 요청 1건으로 끝난다.
 // 실패하면 { ok:false } 를 주고, 렌더러는 Yahoo 값(지연)을 그대로 쓴다.
 // 세션·가격 선택은 quote-session.cjs 에서 독립적으로 검증한다.
+// 미국 종목은 네이버 해외 시세로 따로 받는다 — 야후는 정규장 가격만 줘서 프리 · 애프터마켓
+// 움직임이 안 보였다. 한쪽이 실패해도 다른 쪽 시세는 쓴다(빠진 종목은 렌더러가 야후로 채운다).
 ipcMain.handle('quote:realtime', async (_e, symbols) => {
-  // 네이버 실시간은 국내 전용. 해외 종목은 걸러내고 Yahoo 값을 그대로 쓰게 둔다.
+  const usPending = usRealtime(symbols);
+  const kr = await domesticRealtime(symbols);
+  const us = await usPending;
+  if (!Object.keys(us).length) return kr;
+  return { ok: true, quotes: { ...(kr.ok ? kr.quotes : {}), ...us } };
+});
+
+// 미국 종목 = 접미사 없는 야후 티커(AAPL, BRK-B). 지수(^) · 환율(=) · 국내(.KS)는 걸린다.
+const US_RE = /^[A-Z][A-Z0-9-]{0,9}$/;
+
+// 네이버 코드(AAPL.O)를 못 찾은 종목(BRK-B 는 네이버에서 BRK.B)이나 요청 실패는 빠진다.
+async function usRealtime(symbols) {
+  const us = [...new Set((symbols || []).map(String).filter((s) => US_RE.test(s)))];
+  if (!us.length) return {};
+  try {
+    const pairs = (await Promise.all(us.map(async (s) => [s, await naverUsCode(s).catch(() => null)])))
+      .filter(([, code]) => code);
+    if (!pairs.length) return {};
+    const j = await naverJson('https://polling.finance.naver.com/api/realtime/worldstock/stock/'
+      + pairs.map(([, code]) => encodeURIComponent(code)).join(','));
+    const byCode = new Map((Array.isArray(j?.datas) ? j.datas : []).map((d) => [d.reutersCode, d]));
+    const now = Date.now();
+    const quotes = {};
+    for (const [symbol, code] of pairs) {
+      const q = normalizeWorldQuote(byCode.get(code), { now });
+      if (q) quotes[symbol] = q;
+    }
+    return quotes;
+  } catch {
+    return {};
+  }
+}
+
+async function domesticRealtime(symbols) {
+  // 국내 종목만 받는다(미국은 usRealtime).
   // 종목코드 형태를 확인해 URL 경로에 이상한 값이 끼어들지 않게 한다.
   const valid = (symbols || [])
     .filter((s) => /^[A-Za-z0-9]{1,10}\.(KS|KQ)$/.test(String(s)))
@@ -383,7 +419,7 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
   } catch (err) {
     return { ok: false, error: err.message || '실시간 조회 실패' };
   }
-});
+}
 
 // 코스피/코스닥 지수 (실시간). 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
 ipcMain.handle('quote:indices', async () => {
@@ -467,14 +503,24 @@ async function naverIndustry(symbol) {
     const d = await naverJson(`https://m.stock.naver.com/api/stock/${kr[1]}/integration`);
     return d.stockEndType === 'stock' && d.industryCode != null ? naverIndustryName(d.industryCode) : null;
   }
-  // 미국: 앱에는 야후 티커(AAPL)만 있다 — 네이버 검색으로 네이버 코드(AAPL.O)를 찾는다.
-  // 정확히 같은 티커만 쓴다. BRK-B(네이버 BRK.B)처럼 표기가 다르면 못 찾고 야후로 간다.
+  const code = await naverUsCode(symbol);
+  if (!code) return null;
+  const b = await naverJson(`https://api.stock.naver.com/stock/${encodeURIComponent(code)}/basic`);
+  return b.stockEndType === 'stock' ? b.industryCodeType?.industryGroupKor || null : null;
+}
+
+// 미국: 앱에는 야후 티커(AAPL)만 있다 — 네이버 검색으로 네이버 코드(AAPL.O)를 찾는다(업종 · 실시간 시세).
+// 정확히 같은 티커만 쓴다. BRK-B(네이버 BRK.B)처럼 표기가 다르면 못 찾고 야후로 간다.
+// 찾은 결과(못 찾음 포함)는 앱이 켜져 있는 동안 기억한다. 요청이 실패하면 기억하지 않는다.
+const naverUsCodes = new Map();
+async function naverUsCode(symbol) {
+  if (naverUsCodes.has(symbol)) return naverUsCodes.get(symbol);
   const s = await naverJson('https://m.stock.naver.com/front-api/search/autoComplete'
     + `?query=${encodeURIComponent(symbol)}&target=stock`);
   const hit = (s.result?.items || []).find((i) => i.nationCode === 'USA' && i.code === symbol);
-  if (!hit || !hit.reutersCode) return null;
-  const b = await naverJson(`https://api.stock.naver.com/stock/${encodeURIComponent(hit.reutersCode)}/basic`);
-  return b.stockEndType === 'stock' ? b.industryCodeType?.industryGroupKor || null : null;
+  const code = hit?.reutersCode || null;
+  naverUsCodes.set(symbol, code);
+  return code;
 }
 
 // 야후 업종(영어). quoteSummary(assetProfile)는 크럼 토큰을 요구해 막히는데,

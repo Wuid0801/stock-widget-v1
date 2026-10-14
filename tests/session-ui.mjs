@@ -335,6 +335,28 @@ await test('1D ends at the verified close until Yahoo\'s close bar arrives; neve
   }
 });
 
+// 미국 종목은 네이버 해외 시세가 현재가 · 등락 · 세션을 준다(2026-10-14 실측 SOXL 프리마켓 17:03 KST:
+// 정규장 종가 127.57 에서 126.20). 야후 미국 시세는 늦지 않지만 정규장 가격뿐이라 프리 · 애프터가 안 보였다.
+await test('US live quote: price from Naver; Yahoo daily untouched and cached briefly', async () => {
+  const { c, run } = harness(['loadQuote']);
+  const ttls = [];
+  c.dailyFor = async (_s, ttl) => { ttls.push(ttl); return { price: 127.57, closes: [128.4, 127.57], times: [1, 2], currency: 'USD' }; };
+  const live = { price: 126.2, prevClose: 127.57, change: -1.37, open: false, session: 'pre', priceSession: 'pre',
+    isTrading: true, regularClose: 127.57, fromClose: null, market: 'AMEX', source: 'naver-us-over',
+    tradedAt: '2026-10-14T04:03:01-04:00' };
+  await c.loadQuote({ symbol: 'SOXL' }, live);
+  const q = run("quotes['SOXL']");
+  assert.equal(q.price, 126.2);
+  assert.equal(q.prevClose, 127.57);
+  assert.equal(q.session, 'pre');
+  assert.equal(q.live, true);
+  // 프리 · 애프터 가격을 정규장 봉에 넣지 않는다. 한국 날짜로 오늘 봉을 덧붙이지도 않는다.
+  assert.equal(JSON.stringify(q.daily.closes), '[128.4,127.57]');
+  assert.equal(ttls.at(-1), 60000, 'Yahoo US daily is not delayed, so it keeps the RSI current');
+  await c.loadQuote({ symbol: '005930.KS' }, { ...live, price: 250000, prevClose: 249000, tradedAt: '2026-09-10T18:29:00+09:00' });
+  assert.equal(ttls.at(-1), run('DAILY_TTL'), 'domestic live keeps the long cache');
+});
+
 await test('US header: never 20분지연 — the Naver session when live, 확인중 on Yahoo\'s regular price', () => {
   const { run, elements } = harness();
   const header = () => elements.get('updated');
@@ -358,6 +380,41 @@ await test('US header: never 20분지연 — the Naver session when live, 확인
     run('renderUpdated()');
     assert.match(header().innerHTML, /20분지연/, s);
   }
+});
+
+await test('polling: a US stock counts by its own Naver session, not the Korean market', () => {
+  const { c } = harness();
+  const closed = { session: 'closed', isTrading: false };
+  const pre = { session: 'pre', isTrading: true };
+  assert.equal(c.pollingIsOpen(['SOXL', 'AAPL'], { SOXL: closed, AAPL: closed }), false);
+  assert.equal(c.pollingIsOpen(['005930.KS', 'SOXL'], { '005930': closed, SOXL: pre }), true, 'US pre-market while KRX is closed');
+  assert.equal(c.pollingIsOpen(['005930.KS', 'BRK-B'], { '005930': closed }), true, 'a US stock Naver does not have stays fast');
+  assert.equal(c.isUs('SOXL'), true);
+  assert.equal(c.isUs('BRK-B'), true);
+  assert.equal(c.isUs('005930.KS'), false);
+  assert.equal(c.isUs('^KS11'), false);
+});
+
+// 야후 미국 분봉은 늦지 않아 1D 끝을 맞출 것이 없다. intradayEnd 의 날짜 · 종료 시각은 한국 기준이기도 하다.
+await test('1D US chart: no end point from the live quote; the over-market line still shows', async () => {
+  const { c, run } = harness(['loadChart']);
+  const draws = [];
+  const bars = { ok: true, closes: [128, 127.57], times: [1, 2], volumes: [10, 20], highs: [129, 128], lows: [127, 127] };
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
+    renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'USD',
+    drawChart: (data) => draws.push(data),
+  });
+  run("let lastDrawSig = null; state.watchlist.push({symbol:'SOXL', name:'SOXL'}); state.selected = 'SOXL';");
+  for (const patch of [{ session: 'regular', priceSession: 'regular', open: true, isTrading: true },
+    { session: 'after', priceSession: 'after', isTrading: true, regularClose: 127.6 }]) {
+    run(`lastDrawSig = null; quotes['SOXL'] = ${JSON.stringify({ price: 127.78, prevClose: 128.4, change: -0.62,
+      live: true, open: false, tradedAt: '2026-09-10T18:29:00+09:00', ...patch })};`);
+    await c.loadChart();
+    assert.deepEqual(draws.at(-1).closes, [128, 127.57], patch.session);
+  }
+  assert.equal(draws.at(-1).hLines.find((l) => l.varName === '--over-line')?.label, '애프터');
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른

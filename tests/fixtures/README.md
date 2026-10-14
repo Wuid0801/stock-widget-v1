@@ -27,3 +27,15 @@ The time check is what makes it safe. Korean Yahoo quotes are 20 minutes delayed
 between 15:30 and 15:50 the same fields still hold an intraday price. The adapter
 still refuses to infer a close from an arbitrary 15:30 candle, lastClosePrice
 (previous day), or a moving after price, and it never hardcodes a closing hour.
+
+## US (worldstock)
+
+Captured on 2026-10-14, Asia/Seoul, from
+`https://polling.finance.naver.com/api/realtime/worldstock/stock/{codes}`.
+
+- `naver-us-preopen-20261014.json`: 16:57:56 (03:57 New York), SOXL.K `PREOPEN`, change reset to `0.00`, no over record.
+- `naver-us-pre-20261014.json`: 17:08:34 (04:08 New York), SOXL.K · AAPL.O · NVDA.O `CLOSE`
+  (previous close stamped 16:00 New York) + `overMarketPriceInfo` `PRE_MARKET OPEN`.
+
+Regular, after-market and after-close states had not been seen yet; the tests build them
+from these records by changing only status and time fields.

@@ -1,0 +1,70 @@
+{
+  "datas": [
+    {
+      "reutersCode": "SOXL.K",
+      "stockName": "Direxion Daily Semiconductor Bull 3X ETF",
+      "symbolCode": "SOXL",
+      "stockExchangeType": {
+        "code": "AMX",
+        "zoneId": "EST5EDT",
+        "nationType": "USA",
+        "delayTime": 0,
+        "startTime": "0930",
+        "endTime": "1600",
+        "closePriceSendTime": "2031",
+        "nameKor": "아멕스 증권거래소",
+        "nameEng": "American Stock Exchange",
+        "nationCode": "USA",
+        "nationName": "미국",
+        "stockType": "worldstock",
+        "name": "AMEX"
+      },
+      "closePrice": "127.57",
+      "compareToPreviousClosePrice": "0.00",
+      "compareToPreviousPrice": {
+        "code": "3",
+        "text": "보합",
+        "name": "UNCHANGED"
+      },
+      "fluctuationsRatio": "0.00",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "tradableStatus": "tradable",
+      "tradableStatusCode": "ok",
+      "tradableStatusUpdatedAt": null,
+      "openPrice": "-",
+      "highPrice": "-",
+      "lowPrice": "-",
+      "accumulatedTradingVolume": "-",
+      "accumulatedTradingValue": "-",
+      "localTradedAt": "2026-10-14T03:57:56-04:00",
+      "marketStatus": "PREOPEN",
+      "overMarketPriceInfo": null,
+      "currencyType": {
+        "code": "USD",
+        "text": "US dollar",
+        "name": "USD"
+      },
+      "isinCode": "US25459W4583",
+      "myDataCode": null,
+      "stockEndUrl": null,
+      "marketValueFull": "19,958,334,154",
+      "marketValueHangeul": "-",
+      "marketValueKrwHangeul": "-",
+      "marketValueKrwRaw": null,
+      "accumulatedTradingValueKrwRaw": null,
+      "closePriceRaw": "127.57",
+      "compareToPreviousClosePriceRaw": "0.00",
+      "fluctuationsRatioRaw": "0.00",
+      "openPriceRaw": "",
+      "highPriceRaw": "",
+      "lowPriceRaw": "",
+      "accumulatedTradingVolumeRaw": "",
+      "accumulatedTradingValueRaw": "0",
+      "marketValueFullRaw": "19958334154"
+    }
+  ]
+}

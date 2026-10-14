@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
-import { normalizeQuote, confirmedRegularClose, overFromClose, dailyRegularClose } from '../quote-session.cjs';
+import { normalizeQuote, normalizeWorldQuote, confirmedRegularClose, overFromClose, dailyRegularClose } from '../quote-session.cjs';
 const require = createRequire(import.meta.url);
 const read = (name) => JSON.parse(fs.readFileSync(new URL(`fixtures/${name}`, import.meta.url), 'utf8'));
 const paused = read('naver-break-20260915.json');
@@ -164,6 +164,115 @@ await test('Difference arithmetic includes zero and never pre session', () => {
   assert.equal(overFromClose(null, 110, 'after'), null);
 });
 
+// US (Naver worldstock). Measured 2026-10-14: 17:08 KST is 04:08 New York, four minutes
+// into pre-market; 16:57 KST was just before it. Regular and after-market states below are
+// built from the measured record by changing only the status/time fields.
+const usPre = read('naver-us-pre-20261014.json');
+const usPreopen = read('naver-us-preopen-20261014.json');
+const usNow = Date.parse('2026-10-14T17:08:34+09:00');
+const soxl = (patch = {}) => ({ ...clone(usPre.datas[0]), ...patch });
+const overOf = (patch) => ({ ...clone(usPre.datas[0].overMarketPriceInfo), ...patch });
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≈ ${b}`);
+
+await test('US pre-market: over price measured from the last regular close', () => {
+  const q = normalizeWorldQuote(usPre.datas[0], { now: usNow });
+  assert.equal(q.price, 127.52);
+  assert.equal(q.prevClose, 127.57);
+  near(q.change, -0.05);
+  assert.equal(q.session, 'pre');
+  assert.equal(q.priceSession, 'pre');
+  assert.equal(q.isTrading, true);
+  assert.equal(q.open, false);
+  assert.equal(q.regularClose, 127.57); // The day candle (yesterday's session) closes there.
+  assert.equal(q.fromClose, null);
+  assert.deepEqual(q.candle, { open: 118.42, high: 127.92, low: 115.84 });
+  assert.equal(q.market, 'AMEX');
+  assert.equal(q.source, 'naver-us-over');
+  assert.equal(q.tradedAt, '2026-10-14T04:08:30-04:00');
+  // HHMM fields are Korean clock times elsewhere; New York's 0930/1600 must not leak in.
+  assert.equal(q.openTime, null);
+  assert.equal(q.closeTime, null);
+  // The rebuilt change equals Naver's own pre-market change for every captured stock.
+  for (const d of usPre.datas) {
+    near(normalizeWorldQuote(d, { now: usNow }).change, Number(d.overMarketPriceInfo.compareToPreviousClosePrice));
+  }
+});
+await test('US PREOPEN (change reset to 0.00) is not used', () => {
+  assert.equal(normalizeWorldQuote(usPreopen.datas[0], { now: Date.parse('2026-10-14T16:57:56+09:00') }), null);
+  assert.equal(normalizeWorldQuote(soxl({ marketStatus: 'SOMETHING_NEW' }), { now: usNow }), null);
+});
+await test('US regular: OPEN on the exchange date is trading, across Korean midnight', () => {
+  // 23:59 KST on the 14th is 10:59 New York; a minute later Korea is on the 15th, New York is not.
+  const d = soxl({ marketStatus: 'OPEN', localTradedAt: '2026-10-14T10:59:00-04:00', overMarketPriceInfo: null });
+  const q = normalizeWorldQuote(d, { now: Date.parse('2026-10-15T00:00:30+09:00') });
+  assert.equal(q.session, 'regular');
+  assert.equal(q.open, true);
+  assert.equal(q.isTrading, true);
+  assert.equal(q.price, 127.57);
+  assert.equal(q.prevClose, 127.57 + 0.83);
+  assert.equal(q.regularClose, null);
+  assert.equal(q.source, 'naver-us');
+  const old = normalizeWorldQuote(d, { now: Date.parse('2026-10-15T23:00:00+09:00') });
+  assert.equal(old.session, 'unknown'); // OPEN stamped on another exchange day.
+  assert.equal(old.isTrading, null);
+  const halted = normalizeWorldQuote({ ...d, tradeStopType: { name: 'HALT' } }, { now: Date.parse('2026-10-15T00:00:30+09:00') });
+  assert.equal(halted.open, false);
+});
+await test('US after-market: change from the previous close, difference from today\'s close', () => {
+  const now = Date.parse('2026-10-15T06:00:00+09:00'); // 17:00 New York
+  const d = soxl({ localTradedAt: '2026-10-14T16:00:00-04:00', overMarketPriceInfo: overOf({ tradingSessionType: 'AFTER_MARKET',
+    overPrice: '127.78', localTradedAt: '2026-10-14T16:59:00-04:00' }) });
+  const q = normalizeWorldQuote(d, { now });
+  assert.equal(q.session, 'after');
+  assert.equal(q.isTrading, true);
+  assert.equal(q.price, 127.78);
+  near(q.prevClose, 128.4);
+  near(q.change, 127.78 - 128.4);
+  assert.equal(q.regularClose, 127.57);
+  near(q.fromClose, 0.21);
+  // 20:00 New York: the session ends; the last after price and its difference stay.
+  d.overMarketPriceInfo.overMarketStatus = 'CLOSE';
+  const ended = normalizeWorldQuote(d, { now: Date.parse('2026-10-15T10:00:00+09:00') });
+  assert.equal(ended.session, 'closed');
+  assert.equal(ended.priceSession, 'after');
+  assert.equal(ended.isTrading, false);
+  assert.equal(ended.price, 127.78);
+  near(ended.fromClose, 0.21);
+});
+await test('US over record older than the close, or from another day, is not live', () => {
+  // Yesterday's after-market left in the response once today's close is in.
+  const stale = soxl({ localTradedAt: '2026-10-14T16:00:00-04:00', overMarketPriceInfo: overOf({ tradingSessionType: 'AFTER_MARKET',
+    overPrice: '120.00', localTradedAt: '2026-10-13T19:59:00-04:00' }) });
+  const q = normalizeWorldQuote(stale, { now: Date.parse('2026-10-15T05:30:00+09:00') });
+  assert.equal(q.price, 127.57);
+  assert.equal(q.priceSession, 'regular');
+  assert.equal(q.session, 'closed');
+  assert.equal(q.regularClose, 127.57);
+  // Friday's after-market still marked OPEN on Saturday.
+  const fri = soxl({ localTradedAt: '2026-10-16T16:00:00-04:00', overMarketPriceInfo: overOf({ tradingSessionType: 'AFTER_MARKET',
+    localTradedAt: '2026-10-16T19:59:00-04:00' }) });
+  const sat = normalizeWorldQuote(fri, { now: Date.parse('2026-10-17T15:00:00+09:00') });
+  assert.equal(sat.session, 'closed');
+  assert.equal(sat.isTrading, false);
+  // An unknown over status is unknown, not trading or closed.
+  const odd = normalizeWorldQuote(soxl({ overMarketPriceInfo: overOf({ overMarketStatus: 'NEW' }) }), { now: usNow });
+  assert.equal(odd.session, 'unknown');
+  assert.equal(odd.isTrading, null);
+});
+await test('US invalid numbers and future stamps are rejected', () => {
+  for (const value of [null, '', 'NaN', '0', '-1']) {
+    assert.equal(normalizeWorldQuote(soxl({ closePriceRaw: value, closePrice: value }), { now: usNow }), null, String(value));
+  }
+  assert.equal(normalizeWorldQuote(soxl({ compareToPreviousClosePriceRaw: '', compareToPreviousClosePrice: '' }), { now: usNow }), null);
+  assert.equal(normalizeWorldQuote(soxl({ localTradedAt: '' }), { now: usNow }), null);
+  assert.equal(normalizeWorldQuote(soxl({ localTradedAt: '2026-10-14T05:00:00-04:00' }), { now: usNow }), null);
+  assert.equal(normalizeWorldQuote(undefined, { now: usNow }), null);
+  // A broken over price falls back to the regular close, not to zero.
+  const q = normalizeWorldQuote(soxl({ overMarketPriceInfo: overOf({ overPrice: '' }) }), { now: usNow });
+  assert.equal(q.price, 127.57);
+  assert.equal(q.session, 'closed');
+});
+
 // Exercise the actual IPC adapter with the same snapshots and fake transport.
 // No source rewriting, Electron launch, user profile, or real market dependency.
 const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
@@ -179,11 +288,22 @@ let yahooResponse = { chart: { result: [{ meta: { regularMarketPrice: 1690000,
   regularMarketTime: Date.parse('2026-09-15T15:30:22+09:00') / 1000 } }] } };
 const tried = new Map();
 const cache = new Map();
-class Clock extends Date { static now() { return now; } }
+let clockNow = now;
+class Clock extends Date { static now() { return clockNow; } }
+// US: ticker → Naver code (autoComplete in the app), then one worldstock request.
+const usCodes = { SOXL: 'SOXL.K', AAPL: 'AAPL.O', NVDA: 'NVDA.O' };
+let usCalls = [];
+let usAsked = [];
 vm.runInNewContext(main.slice(start, end), {
   ipcMain: { handle: (_, fn) => { handler = fn; } },
   ...require('../quote-session.cjs'), Date: Clock, AbortSignal,
   regularCloseCache: cache, regularCloseTried: tried, CLOSE_RETRY: 300000, FORCE_SESSION: '',
+  naverUsCode: async (s) => { usAsked.push(s); return usCodes[s] ?? null; },
+  naverJson: async (url) => {
+    usCalls.push(url);
+    if (failed.has('US')) throw new Error('fixture failure');
+    return usPre;
+  },
   netFetch: async (url) => {
     if (url.includes('finance.yahoo.com')) {
       yahooCalls.push(url);
@@ -246,6 +366,41 @@ await test('IPC single-venue failure keeps usable price, not false all-closed', 
 await test('IPC both venues failed requests Yahoo fallback', async () => {
   failed = new Set(['KRX', 'NXT']);
   assert.equal((await handler(null, ['005930.KS'])).ok, false);
+});
+await test('IPC US: one worldstock request, quotes keyed by the Yahoo ticker', async () => {
+  failed = new Set();
+  clockNow = usNow;
+  usCalls = [];
+  usAsked = [];
+  const r = await handler(null, ['SOXL', 'AAPL', 'BRK-B', '^KS11', 'KRW=X', '005930.KS']);
+  assert.deepEqual([...usAsked], ['SOXL', 'AAPL', 'BRK-B'], 'only US tickers are looked up on Naver');
+  clockNow = now;
+  assert.equal(r.ok, true);
+  // BRK-B has no Naver code; ^ and = are not US stocks. Domestic keeps its code key.
+  assert.deepEqual(Object.keys(r.quotes).sort(), ['005930', 'AAPL', 'SOXL']);
+  assert.equal(r.quotes.SOXL.session, 'pre');
+  assert.equal(r.quotes.SOXL.price, 127.52);
+  assert.equal(usCalls.length, 1);
+  assert.equal(usCalls[0], 'https://polling.finance.naver.com/api/realtime/worldstock/stock/SOXL.K,AAPL.O');
+});
+await test('IPC US and domestic fail independently', async () => {
+  clockNow = usNow;
+  failed = new Set(['KRX', 'NXT']); // Domestic down, US up: US quotes still arrive.
+  let r = await handler(null, ['005930.KS', 'SOXL']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(Object.keys(r.quotes), ['SOXL']);
+  failed = new Set(['US']); // US down, domestic up: the domestic answer is unchanged.
+  baseResponse = after;
+  nxtResponse = nxt;
+  clockNow = now;
+  r = await handler(null, ['005930.KS', 'SOXL']);
+  assert.equal(r.ok, true);
+  assert.equal(r.quotes.SOXL, undefined);
+  assert.equal(r.quotes['005930'].session, 'after');
+  failed = new Set(['US']);
+  // Renderer falls back to Yahoo. (JSON: the vm's objects are from another realm.)
+  assert.equal(JSON.stringify(await handler(null, ['SOXL'])), '{"ok":true,"quotes":{}}');
+  failed = new Set();
 });
 
 // The day candle must describe the integrated (KRX + NXT) session, the way a
