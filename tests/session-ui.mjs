@@ -569,7 +569,7 @@ await test('indicators: loadChart passes only the enabled overlays — bands and
   assert.equal(d.vwapLine[4], null, '애프터 봉도 비운다');
   const hl = d.hLines.filter((l) => l.label === '전고' || l.label === '전저');
   assert.equal(JSON.stringify(hl.map((l) => [l.label, l.value])), '[["전고",110],["전저",90]]', '오늘(9/10) 앞의 9/9 일봉');
-  assert.ok(hl.every((l) => l.varName === '--prev-line'), '전일 종가와 같은 색');
+  assert.equal(JSON.stringify(hl.map((l) => l.varName)), '["--prevhi-line","--prevlo-line"]', '전고 옅은 빨강 · 전저 옅은 파랑');
 
   d = await draw('1D', { vwap: false, prevHL: false }, oneDay);
   assert.equal(d.vwapLine, null);
@@ -780,6 +780,53 @@ await test('indicators: profile plugin bars grow leftward from the right edge, t
   rects.length = 0;
   plugin.beforeDatasetsDraw(chartStub, {}, { profile: null });
   assert.equal(rects.length, 0);
+});
+
+// 가로선(평단 · 전일 · 전고 · 전저 · 프리 · 애프터): 가까운 이름표는 합치고, 범위 밖은 가장자리에 이름 · 값.
+await test('horizontal lines: close labels merge instead of vanishing; out-of-range lines go to the edge with their value', () => {
+  const { c, run } = harness(['hLineGroups']);
+  run(formatting);
+  run(source.slice(source.indexOf('const HLINE_GAP'), source.indexOf('function hLineGroups')));
+  run(source.slice(source.indexOf('const hLinePlugin = {'), source.indexOf('// 마우스를 올린 시점을 세로선으로')));
+  const plugin = run('hLinePlugin');
+  const strokes = [];
+  const texts = [];
+  const ctx = { save() {}, restore() {}, beginPath() {}, stroke() {}, setLineDash() {},
+    moveTo(_x, y) { this.at = y; }, lineTo() { strokes.push({ y: this.at, color: this.strokeStyle }); },
+    fillText(t, x, y) { texts.push({ t, x, y, color: this.fillStyle }); } };
+  c.cssVar = (n) => n;
+  // 가격 v 는 y = 200 - v (값이 클수록 위). 차트 안은 y 0~100 → 가격 100~200.
+  const chartStub = { ctx, chartArea: { left: 0, right: 300, top: 0, bottom: 100 },
+    scales: { y: { getPixelForValue: (v) => 200 - v } } };
+  plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [
+    { value: 150, label: '전일', varName: '--prev-line' },
+    { value: 145, label: '전고', varName: '--prevhi-line' }, // 5px 아래 — 예전에는 이름표가 빠졌다
+    { value: 120, label: '평단', varName: '--avg-line' },
+    { value: 230, label: '전고2', varName: '--prevhi-line' }, // 범위 위
+    { value: 210, label: '애프터', varName: '--over-line' }, // 범위 위, 더 가깝다
+    { value: 60, label: '전저', varName: '--prevlo-line' }, // 범위 아래
+  ] });
+  assert.deepEqual(strokes.map((s) => s.y), [50, 55, 80], '선은 범위 안의 것만 긋는다');
+  assert.deepEqual(strokes.map((s) => s.color), ['--prev-line', '--prevhi-line', '--avg-line']);
+  const byText = Object.fromEntries(texts.map((t) => [t.t, t]));
+  assert.ok(byText['전일·전고'], `가까운 이름표는 하나로: ${texts.map((t) => t.t).join(' | ')}`);
+  assert.equal(byText['전일·전고'].y, 49, '맨 위 선 바로 위에');
+  assert.ok(byText['평단']);
+  assert.ok(byText['▲ 애프터 210 · 전고2 230'], '범위 위는 위 가장자리에 가까운 것부터, 값과 함께');
+  assert.equal(byText['▲ 애프터 210 · 전고2 230'].color, '--over-line', '가장 가까운 선의 색');
+  assert.ok(byText['▼ 전저 60'], '범위 아래는 아래 가장자리에');
+  assert.equal(byText['▼ 전저 60'].y, 99);
+  assert.equal(texts.length, 4, '이름표가 빠지지 않는다');
+
+  // 이름표는 묶음의 첫 선 자리에 그리므로 그 자리에서 10px 이상 떨어진 선은 따로 쓴다(포개지지 않는다)
+  assert.deepEqual([...run(`hLineGroups([{ y: 50, text: 'a' }, { y: 58, text: 'b' }, { y: 66, text: 'c' }])`)
+    .map((g) => `${g.text}@${g.y}`)], ['a·b@50', 'c@66']);
+
+  // 안쪽 맨 위 선의 이름표와 위 가장자리 표시가 포개질 자리면 그것도 합친다
+  texts.length = 0;
+  plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [
+    { value: 195, label: '전일', varName: '--prev-line' }, { value: 230, label: '전고', varName: '--prevhi-line' }] });
+  assert.deepEqual(texts.map((t) => t.t), ['전일·▲ 전고 230']);
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른

@@ -960,8 +960,25 @@ const fmtVol = (v) => {
   return v.toLocaleString();
 };
 
-// 가로 기준선(보유 평단가 · 전일 종가). 데이터셋으로 넣으면 값이 차트 범위 밖일 때
-// y축이 통째로 늘어나므로, 축과 무관하게 캔버스에 직접 그리고 범위를 벗어나면 생략한다.
+// 이름표끼리 이만큼(px) 가까우면 포개지므로 하나로 합친다
+const HLINE_GAP = 10;
+
+// 가로선 이름표 묶기. 이름표는 묶음의 맨 위 선 자리 · 색에 그리므로, 그 자리에서 HLINE_GAP 안으로
+// 들어오는 것끼리 `전일·전고` 처럼 한 이름표가 된다. 예전에는 뒤의 것을 그냥 뺐다 — SOXL 10/14 의
+// 전일 127.57 과 전고 127.92 처럼 겹치면 어느 선이 무엇인지 알 수 없었다.
+function hLineGroups(items) {
+  const groups = [];
+  for (const it of [...items].sort((a, b) => a.y - b.y)) {
+    const g = groups[groups.length - 1];
+    if (g && it.y - g.y < HLINE_GAP) g.text += `·${it.text}`;
+    else groups.push({ y: it.y, text: it.text, color: it.color });
+  }
+  return groups;
+}
+
+// 가로 기준선(평단 · 전일 · 전고 · 전저 · 프리 · 애프터). 데이터셋으로 넣으면 값이 차트 범위 밖일 때
+// y축이 통째로 늘어나므로, 축과 무관하게 캔버스에 직접 그린다. 범위 밖의 선은 선 대신 위 · 아래
+// 가장자리에 `▲ 전고 230,500` 처럼 이름과 값을 적는다 — 갭이 큰 날 전고 · 전저가 말없이 사라졌다.
 const hLinePlugin = {
   id: 'hLine',
   afterDatasetsDraw(c, _args, opts) {
@@ -969,33 +986,44 @@ const hLinePlugin = {
     if (!lines.length) return;
     const area = c.chartArea;
     const ctx = c.ctx;
-    const drawnAt = []; // 이미 라벨을 찍은 y 좌표
-
+    const inside = [];
+    const above = [];
+    const below = [];
     for (const ln of lines) {
       const y = c.scales.y.getPixelForValue(ln.value);
-      if (y < area.top || y > area.bottom) continue;
-
-      const color = cssVar(ln.varName);
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(area.left, y);
-      ctx.lineTo(area.right, y);
-      ctx.stroke();
-
-      // 선끼리 가까우면 글자가 포개진다. 선은 그리고 라벨만 생략한다.
-      if (!drawnAt.some((prev) => Math.abs(prev - y) < 10)) {
-        drawnAt.push(y);
-        ctx.setLineDash([]);
-        ctx.fillStyle = color;
-        ctx.font = '9px system-ui, sans-serif';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(ln.label, area.left + 2, y - 1);
-      }
-      ctx.restore();
+      const it = { ...ln, y, color: cssVar(ln.varName) };
+      if (y < area.top) above.push(it);
+      else if (y > area.bottom) below.push(it);
+      else inside.push(it);
     }
+
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    for (const ln of inside) {
+      ctx.strokeStyle = ln.color;
+      ctx.beginPath();
+      ctx.moveTo(area.left, ln.y);
+      ctx.lineTo(area.right, ln.y);
+      ctx.stroke();
+    }
+
+    // 이름표는 선 바로 위에. 가장자리 표시도 같은 묶음에 넣어 안쪽 선의 이름표와 포개지지 않게 한다
+    // (위 가장자리는 첫 줄 자리 top+10, 아래는 bottom). 가장자리는 가까운 선부터 적는다.
+    const labels = inside.map((ln) => ({ y: ln.y, text: ln.label, color: ln.color }));
+    const edge = (items, arrow) => `${arrow} ${items.map((ln) => `${ln.label} ${money(ln.value, opts.cur)}`).join(' · ')}`;
+    above.sort((a, b) => b.y - a.y);
+    below.sort((a, b) => a.y - b.y);
+    if (above.length) labels.push({ y: area.top + HLINE_GAP, text: edge(above, '▲'), color: above[0].color });
+    if (below.length) labels.push({ y: area.bottom, text: edge(below, '▼'), color: below[0].color });
+    ctx.setLineDash([]);
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textBaseline = 'bottom';
+    for (const g of hLineGroups(labels)) {
+      ctx.fillStyle = g.color;
+      ctx.fillText(g.text, area.left + 2, g.y - 1);
+    }
+    ctx.restore();
   },
 };
 
@@ -1492,7 +1520,7 @@ function drawChart(arg) {
         // 150px 짜리 차트에서 35px 가까이 잡아먹는다.
         // 이동평균과 추세선은 차트 위 범례(renderMaLegend)가 색과 값으로 알려준다.
         legend: { display: false },
-        hLine: { lines: hLines },
+        hLine: { lines: hLines, cur },
         crossMark: { list: crosses },
         candle: candles ? { opens, highs, lows, closes } : {},
         extBand: { ext },
@@ -2047,11 +2075,11 @@ async function loadChart() {
     if ((origin === 'after' || origin === 'pre') && q.price != null) {
       hLines.push({ value: q.price, label: origin === 'after' ? '애프터' : '프리', varName: '--over-line' });
     }
-    // 어제 고가 · 저가 — 전일 종가와 같은 색, 이름으로 가른다
+    // 어제 고가 · 저가 — 이름표가 묶이거나 가장자리로 가도 어느 선인지 알게 옅은 빨강 · 파랑(높으면 빨강)
     const prev = ind.prevHL ? prevDayRange(item.symbol, times) : null;
     if (prev) {
-      hLines.push({ value: prev.high, label: '전고', varName: '--prev-line' },
-        { value: prev.low, label: '전저', varName: '--prev-line' });
+      hLines.push({ value: prev.high, label: '전고', varName: '--prevhi-line' },
+        { value: prev.low, label: '전저', varName: '--prevlo-line' });
     }
   }
 
