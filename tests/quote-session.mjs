@@ -165,10 +165,12 @@ await test('Difference arithmetic includes zero and never pre session', () => {
 });
 
 // US (Naver worldstock). Measured 2026-10-14: 17:08 KST is 04:08 New York, four minutes
-// into pre-market; 16:57 KST was just before it. Regular and after-market states below are
-// built from the measured record by changing only the status/time fields.
+// into pre-market; 16:57 KST was just before it. 2026-10-15 09:54 KST is after the after-market
+// ended (20:00 New York). The regular and live after-market states below are built from the
+// measured records by changing only the status/time fields.
 const usPre = read('naver-us-pre-20261014.json');
 const usPreopen = read('naver-us-preopen-20261014.json');
+const usAfterClose = read('naver-us-afterclose-20261015.json');
 const usNow = Date.parse('2026-10-14T17:08:34+09:00');
 const soxl = (patch = {}) => ({ ...clone(usPre.datas[0]), ...patch });
 const overOf = (patch) => ({ ...clone(usPre.datas[0].overMarketPriceInfo), ...patch });
@@ -218,26 +220,31 @@ await test('US regular: OPEN on the exchange date is trading, across Korean midn
   const halted = normalizeWorldQuote({ ...d, tradeStopType: { name: 'HALT' } }, { now: Date.parse('2026-10-15T00:00:30+09:00') });
   assert.equal(halted.open, false);
 });
-await test('US after-market: change from the previous close, difference from today\'s close', () => {
-  const now = Date.parse('2026-10-15T06:00:00+09:00'); // 17:00 New York
-  const d = soxl({ localTradedAt: '2026-10-14T16:00:00-04:00', overMarketPriceInfo: overOf({ tradingSessionType: 'AFTER_MARKET',
-    overPrice: '127.78', localTradedAt: '2026-10-14T16:59:00-04:00' }) });
-  const q = normalizeWorldQuote(d, { now });
+await test('US after the after-market: last after price, change from the previous close, difference from today\'s close', () => {
+  // Measured: SOXL closed 110.54 (-17.03 from 127.57), after-market ended at 103.61.
+  const now = Date.parse('2026-10-15T09:54:12+09:00');
+  const q = normalizeWorldQuote(usAfterClose.datas[0], { now });
+  assert.equal(q.session, 'closed');
+  assert.equal(q.priceSession, 'after');
+  assert.equal(q.isTrading, false);
+  assert.equal(q.price, 103.61);
+  near(q.prevClose, 127.57);
+  near(q.change, 103.61 - 127.57);
+  assert.equal(q.regularClose, 110.54);
+  near(q.fromClose, -6.93);
+  // Naver's own after-market change is measured from today's close: it equals fromClose for every stock.
+  for (const d of usAfterClose.datas) {
+    near(normalizeWorldQuote(d, { now }).fromClose, Number(d.overMarketPriceInfo.compareToPreviousClosePrice));
+  }
+});
+await test('US live after-market: the same record while overMarketStatus is OPEN is trading', () => {
+  const d = clone(usAfterClose.datas[0]);
+  d.overMarketPriceInfo.overMarketStatus = 'OPEN';
+  d.overMarketPriceInfo.localTradedAt = '2026-10-14T16:59:00-04:00';
+  const q = normalizeWorldQuote(d, { now: Date.parse('2026-10-15T06:00:00+09:00') }); // 17:00 New York
   assert.equal(q.session, 'after');
   assert.equal(q.isTrading, true);
-  assert.equal(q.price, 127.78);
-  near(q.prevClose, 128.4);
-  near(q.change, 127.78 - 128.4);
-  assert.equal(q.regularClose, 127.57);
-  near(q.fromClose, 0.21);
-  // 20:00 New York: the session ends; the last after price and its difference stay.
-  d.overMarketPriceInfo.overMarketStatus = 'CLOSE';
-  const ended = normalizeWorldQuote(d, { now: Date.parse('2026-10-15T10:00:00+09:00') });
-  assert.equal(ended.session, 'closed');
-  assert.equal(ended.priceSession, 'after');
-  assert.equal(ended.isTrading, false);
-  assert.equal(ended.price, 127.78);
-  near(ended.fromClose, 0.21);
+  near(q.fromClose, -6.93);
 });
 await test('US over record older than the close, or from another day, is not live', () => {
   // Yesterday's after-market left in the response once today's close is in.

@@ -30,12 +30,14 @@ still refuses to infer a close from an arbitrary 15:30 candle, lastClosePrice
 
 ## US (worldstock)
 
-Captured on 2026-10-14, Asia/Seoul, from
+Captured on 2026-10-14 · 15, Asia/Seoul, from
 `https://polling.finance.naver.com/api/realtime/worldstock/stock/{codes}`.
 
-- `naver-us-preopen-20261014.json`: 16:57:56 (03:57 New York), SOXL.K `PREOPEN`, change reset to `0.00`, no over record.
-- `naver-us-pre-20261014.json`: 17:08:34 (04:08 New York), SOXL.K · AAPL.O · NVDA.O `CLOSE`
+- `naver-us-preopen-20261014.json`: 10-14 16:57:56 (03:57 New York), SOXL.K `PREOPEN`, change reset to `0.00`, no over record.
+- `naver-us-pre-20261014.json`: 10-14 17:08:34 (04:08 New York), SOXL.K · AAPL.O · NVDA.O `CLOSE`
   (previous close stamped 16:00 New York) + `overMarketPriceInfo` `PRE_MARKET OPEN`.
+- `naver-us-afterclose-20261015.json`: 10-15 09:54:12 (20:54 New York), same three `CLOSE` (that day's close
+  stamped 16:00) + `AFTER_MARKET CLOSE` stamped 20:00. The over record's change is measured from that day's close.
 
-Regular, after-market and after-close states had not been seen yet; the tests build them
+The regular session and a live after-market had not been seen yet; the tests build them
 from these records by changing only status and time fields.
