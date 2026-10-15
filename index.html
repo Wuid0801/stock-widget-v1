@@ -558,6 +558,11 @@
   /* 창을 세로로 늘리면 차트도 같이 커진다. 최소 150px(기본 창 높이일 때의 크기)는
      지키고, 300px 를 넘어 관심종목 목록을 다 밀어내지는 않게 한다. */
   .chartbox { height: clamp(150px, 26vh, 300px); margin-top: 7px; position: relative; }
+  /* 다른 종목 · 기간의 차트를 받는 동안(옛 차트는 지웠다) */
+  .chartbox.loading::after {
+    content: '불러오는 중…'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--mute); pointer-events: none;
+  }
   /* 라인 / 캔들 전환. 기간 버튼과 헷갈리지 않게 차트 왼쪽 위에 아이콘으로 띄운다.
      첫 봉 위에 겹치므로 평소엔 흐리게, 마우스를 올리면 또렷하게. */
   /* 차트 왼쪽 위 버튼 묶음 — 라인/캔들 전환과 확대 풀기. 하나가 숨으면 나머지가
@@ -663,7 +668,7 @@
       <!-- 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과. 자세한 숫자는 툴팁 -->
       <div class="trendchk" id="trendCheck" hidden></div>
 
-      <div class="chartbox"><canvas id="chart"></canvas><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
+      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
       <div class="err" id="err"></div>
     </div>
 

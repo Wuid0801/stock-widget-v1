@@ -174,6 +174,7 @@ let chart = null;
 let busy = false;
 let lastRefreshAt = 0; // 마지막 갱신이 끝난 시각 — ↻ 연타 제한에 쓴다
 let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해도 마지막 것만 반영
+let drawnKey = null; // 지금 그려진 차트의 '종목|기간'. 없으면 null
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
 let marketOpen = true;
@@ -1357,6 +1358,8 @@ function clearChart() {
   if (chart) { chart.destroy(); chart = null; }
   lastChart = null;
   lastDrawSig = null;
+  drawnKey = null;
+  document.getElementById('chartBox').className = 'chartbox'; // 불러오던 요청도 위에서 무효가 됐다
   hoverIdx = null;
   renderMaLegend();
   renderCrossBadge([], []);
@@ -1985,13 +1988,23 @@ async function loadChart() {
 
   // 종목/타임프레임을 빠르게 바꾸면 요청이 겹친다. 응답이 뒤늦게 도착한
   // 이전 요청은 버려야 헤더와 차트가 서로 다른 종목을 가리키지 않는다.
+  // 네트워크가 느리면 응답까지 몇 초가 걸린다. 그동안 다른 종목 · 기간의 차트를 그대로 두면 탭 · 헤더는 새것인데
+  // 차트 · 기간 배지는 옛것이라 눌러도 데이터가 안 바뀐 것처럼 보였다(2026-10-15). 다른 화면으로 넘어가면 옛 차트를
+  // 먼저 지우고 불러오는 중을 띄운다. 같은 화면의 30초 갱신은 차트를 그대로 둔다(깜빡이지 않게).
+  const key = `${item.symbol}|${state.timeframe}`;
+  if (key !== drawnKey) {
+    if (drawnKey) clearChart();
+    document.getElementById('period').hidden = true;
+    document.getElementById('chartBox').className = 'chartbox loading';
+  }
   const seq = ++chartSeq;
   const tf = TF[state.timeframe];
   // 지수 대비 수익률(보조 지표)은 같은 기간의 지수 차트가 필요하다 — 종목 차트와 함께 받는다(같은 캐시).
   const bench = state.indicators && state.indicators.rel && state.timeframe !== '1D' ? benchmarkOf(item.symbol) : null;
   const [got, benchGot] = await Promise.all([fetchChartCached(item.symbol, tf),
     bench ? fetchChartCached(bench.symbol, tf).catch(() => null) : null]);
-  if (seq !== chartSeq) return;
+  if (seq !== chartSeq) return; // 더 새 요청이 있다 — 불러오는 중은 그 요청이 내린다
+  document.getElementById('chartBox').className = 'chartbox';
   const r = got.ok && tf.years ? lastYears(got, tf.years) : got; // 3Y: 5년치에서 3년만
 
   if (!r.ok) {
@@ -2165,6 +2178,7 @@ async function loadChart() {
     + `|${INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join('')}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
+  drawnKey = key;
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),

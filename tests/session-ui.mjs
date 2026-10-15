@@ -44,6 +44,9 @@ function harness(extra = []) {
   // 만들어져 Date.now() 가 FixedDate 가 아니라 진짜 지금을 읽는다.
   Object.assign(c, indicators, backtest, {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
+    // loadChart 는 다른 종목 · 기간으로 넘어갈 때 옛 차트를 지운다 — 차트가 없는 하네스에서는 할 일이 없다.
+    // 진짜가 필요한 테스트는 extra 에 'clearChart' 를 넣는다(아래 선언이 이것을 덮는다).
+    clearChart: () => {},
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
     'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', ...extra];
@@ -742,6 +745,74 @@ await test('indicators: loadChart fetches the matching index with the chart — 
   asked.length = 0;
   await c.loadChart();
   assert.deepEqual([...asked], ['^KS11'], '지수 자체를 볼 때는 비교하지 않는다');
+});
+
+// 네트워크가 느리면 차트 응답까지 몇 초가 걸린다. 그동안 탭 · 헤더는 새 종목 · 기간인데 차트 · 기간 배지는
+// 옛 것이라 "눌러도 데이터가 안 바뀐다"로 보였다(2026-10-15). 다른 화면으로 넘어가면 옛 차트를 먼저 지우고
+// 불러오는 중을 띄운다. 같은 화면의 30초 갱신은 지우지 않는다(깜빡이지 않게).
+await test('slow network: switching symbol or period clears the old chart and shows loading until the new one arrives', async () => {
+  const { c, run, elements } = harness(['loadChart']);
+  const draws = [];
+  let cleared = 0;
+  let pending = null;
+  const series = (closes) => ({ ok: true, closes, times: closes.map((_, i) => Date.parse(`2026-09-0${i + 1}T00:00:00Z`)),
+    volumes: closes.map(() => 1), opens: closes, highs: closes, lows: closes });
+  Object.assign(c, {
+    fetchChartCached: () => new Promise((resolve) => { pending = resolve; }),
+    err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+    clearChart: () => { cleared++; },
+  });
+  run("let lastDrawSig = null; state.timeframe = '1M';");
+  const box = () => elements.get('chartBox').className;
+  const settle = () => new Promise((r) => setImmediate(r));
+
+  let load = c.loadChart();
+  assert.equal(box(), 'chartbox loading', '처음 그릴 때도 불러오는 중');
+  assert.equal(cleared, 0, '지울 차트가 없다');
+  pending(series([1, 2]));
+  await load;
+  assert.equal(draws.length, 1);
+  assert.equal(box(), 'chartbox');
+
+  // 같은 화면의 갱신 — 응답을 기다리는 동안에도 차트를 그대로 둔다
+  load = c.loadChart();
+  await settle();
+  assert.equal(cleared, 0, '같은 종목 · 기간이면 지우지 않는다');
+  assert.equal(box(), 'chartbox');
+  pending(series([1, 3]));
+  await load;
+  assert.equal(draws.length, 2);
+
+  // 기간을 바꾸면 응답 전에 옛 차트를 지운다
+  c.document.getElementById('period').hidden = false;
+  run("state.timeframe = '3M';");
+  load = c.loadChart();
+  await settle();
+  assert.equal(cleared, 1, '다른 기간으로 넘어가면 바로 지운다');
+  assert.equal(elements.get('period').hidden, true, '옛 기간 배지도 숨긴다');
+  assert.equal(box(), 'chartbox loading');
+  pending(series([5, 6, 7]));
+  await load;
+  assert.equal(draws.at(-1).closes.length, 3);
+  assert.equal(box(), 'chartbox', '그리면 불러오는 중을 내린다');
+
+  // 종목을 바꿔도 같다. 응답이 늦게 와 버려지는(더 새 요청이 있는) 동안은 불러오는 중을 그대로 둔다
+  run("state.selected = '000660.KS';");
+  load = c.loadChart();
+  await settle();
+  assert.equal(cleared, 2, '다른 종목으로 넘어가면 바로 지운다');
+  const first = pending;
+  run("state.timeframe = '1Y';");
+  const load2 = c.loadChart();
+  await settle();
+  first(series([9, 9]));
+  await load;
+  assert.equal(box(), 'chartbox loading', '버려진 응답은 불러오는 중을 내리지 않는다');
+  assert.equal(draws.length, 3);
+  pending({ ok: false, error: '응답 시간 초과' });
+  await load2;
+  assert.equal(box(), 'chartbox', '실패해도 내린다(오류 문구가 대신 뜬다)');
 });
 
 // 매물대(보조 지표): drawChart 가 보이는 구간으로 계산해 플러그인에 넘긴다. 플러그인은 오른쪽 끝에서 왼쪽으로 그린다.
