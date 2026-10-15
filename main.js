@@ -82,6 +82,8 @@ const storeOptions = {
     maStyles: {}, // 이동평균선별로 바꾼 색 · 굵기 { [기간]: { color, width } } — 바꾼 것만
     chartMode: 'candle', // 'candle' | 'line'
     infoOpen: true, // 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지
+    // 보조 지표(설정의 칩). 기본은 모두 꺼짐 — 이동평균 · 추세선과 겹치면 작은 차트가 빽빽해진다.
+    indicators: { bb: false, vwap: false, volAvg: false, prevHL: false },
   },
   // 메모장 · PowerShell 이 붙인 UTF-8 BOM 은 떼고 읽는다 — JSON.parse 는 BOM 에서 SyntaxError 를 낸다.
   deserialize: (text) => JSON.parse(text.replace(/^\uFEFF/, '')),
@@ -215,13 +217,14 @@ ipcMain.handle('state:get', () => ({
   maStyles: store.get('maStyles'),
   chartMode: store.get('chartMode'),
   infoOpen: store.get('infoOpen'),
+  indicators: store.get('indicators'),
 }));
 
 ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'infoOpen'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'infoOpen', 'indicators'].includes(k)) store.set(k, v);
   }
 });
 

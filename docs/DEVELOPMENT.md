@@ -93,6 +93,7 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 | `alerts` | 알림 사용 여부와 종목별 목표가 |
 | `holdings` | 종목별 보유 수량 · 평단가 |
 | `chartMode` | 1M·3M 을 캔들과 라인 중 무엇으로 그릴지 (기본 캔들) |
+| `indicators` | 보조 지표 켜짐 `{ bb, vwap, volAvg, prevHL }` (기본 모두 꺼짐). 아는 키의 `true` 만 믿는다(`cleanIndicators`) |
 | `infoOpen` | 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지 (기본 펼침). 세 줄의 `hidden` 은 각자 그리는 함수가 정하므로, 접기는 손잡이 `#infoToggle` 의 `.off` 와 CSS 형제 선택자로만 숨긴다. 접혀 있으면 손잡이 툴팁이 보이던 줄의 내용을 글자로 미리 보인다(`infoTip`, 갱신마다 다시 씀) |
 
 저장 값을 추가할 때는 renderer.js 의 save() 와 main.js 의 state:set · state:get 세 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다.
@@ -116,9 +117,9 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 열여섯 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector`.
+푸시와 PR 마다 **앱을 띄우지 않는 열일곱 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector`.
 
-이 열여섯 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
+이 열일곱 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 
@@ -593,6 +594,21 @@ y축이 모든 선을 담도록 늘어나기 때문입니다. 1M 차트의 360�
 ```
 quote[0]: open, high, low, close, volume
 ```
+
+### 보조 지표
+
+설정의 **보조 지표** 칩으로 켜고 끕니다(`INDICATORS`, 저장 키 `indicators`). 기본은 모두 꺼짐입니다 — 이동평균 · 추세선과 겹치면 150px 차트가 빽빽해집니다. 켜진 칩은 그 선의 색을 띱니다. 새 요청은 없습니다.
+
+| 지표 | 기간 | 계산 | 그림 |
+|---|---|---|---|
+| 볼린저 밴드 | 1M · 3M · 1Y · 3Y | 20일 평균 ± 2 모집단 표준편차(`bollinger`). 이동평균처럼 5년치 일봉 종가(오늘 봉은 현재가)로 계산해 날짜로 맞춘다(`bandFor`) — 1M 첫 봉부터 그려진다 | 위 · 아래 1px 점선(`--bb-line`) 사이를 옅게(`--bb-fill`). 가운데 선은 `20` 이동평균 칩 |
+| VWAP | 1D | 대표가 (고 + 저 + 종) / 3 를 거래량으로 가중해 누적(`vwap`). **정규장 봉만** — 시간외 봉은 빼고 그 칸은 비운다. 거래량 0 인 봉(끼운 끝점 · 야후 종가 봉)은 직전 값을 잇는다 | 1.4px 실선(`--vwap-line`) |
+| 거래량 평균 · 급증 | 모든 기간 | 20봉 평균. 일봉 기간은 5년치 일봉 거래량으로(`dailyVolAvg`, 일봉 캐시에 거래량을 같이 둔다), 1D · 1W · 전체는 받은 봉으로 — 1D 시간외 봉과 거래량 0 인 봉은 뺀다(`seriesVolAvg`) | 거래량 축에 1px 선(`--vol-avg`), 평균의 2배(`VOL_SURGE`) 넘는 막대는 진하게(0.55). 툴팁 `거래량 123만 · 평균의 3.1배` |
+| 전일 고저 | 1D | 1D 가 보여 주는 날 바로 앞 거래일의 고가 · 저가(`prevDayRange`, 일봉 캐시의 마지막 5봉). 날짜는 그 시장의 날짜 — 국내 1D 프리 봉(08:00 KST)은 UTC 로 전날이라 한국 날짜, 미국은 UTC 날짜(뉴욕 날짜와 같다) | `전일` 종가 점선과 같은 색의 `전고` · `전저` 점선. 다른 가로선처럼 차트 범위 밖이면 그리지 않는다 |
+
+- **VWAP 가 정규장 봉만인 이유** — 미국 프리마켓은 야후 거래량이 0 이고, 국내 시간외는 NXT 거래량이라 정규장(KRX)과 섞으면 평균가의 뜻이 흐려집니다. 국내는 야후 분봉이 20분 늦어 선도 20분 전에서 끝납니다.
+- **범례** — 볼린저는 이동평균처럼 마우스를 올린 시점의 `아래~위` 값만, VWAP 는 추세선처럼 마우스를 안 올리면 마지막 값(지금 평균가)을 보입니다.
+- **그리는 순서** — 밴드 · VWAP 는 이동평균과 같은 `order` 3, 거래량 평균선은 거래량 막대와 같은 0 입니다. 밴드는 정규 데이터셋이라 y축이 밴드까지 넓어집니다(밴드 밖으로 나간 봉이 보여야 해서).
 
 ### 지지·저항 추세선
 

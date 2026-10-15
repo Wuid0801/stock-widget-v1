@@ -475,6 +475,184 @@ await test('1D with extended bars: the regular end point sits before the after b
   assert.deepEqual(d.ext, ['pre', 'pre', null]);
 });
 
+// 보조 지표(설정의 칩): 볼린저 밴드 · VWAP · 거래량 평균 · 전일 고저. 기본은 모두 꺼짐.
+await test('indicators: saved value is cleaned; chips toggle, save and redraw', () => {
+  const { c, run, elements } = harness(['renderIndChips']);
+  assert.equal(JSON.stringify(run("cleanIndicators({ bb: true, vwap: 'yes', bogus: true })")),
+    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false}', '아는 키만, true 일 때만');
+  assert.equal(JSON.stringify(run('cleanIndicators(undefined)')), '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false}');
+  const kids = [];
+  let saves = 0;
+  let loads = 0;
+  c.document.createElement = () => ({ style: {} });
+  c.document.getElementById('indChips').appendChild = (b) => kids.push(b);
+  Object.assign(c, { save: () => { saves++; }, loadChart: () => { loads++; }, cssVar: (n) => n });
+  run("state.indicators = cleanIndicators({ bb: true });");
+  run('renderIndChips()');
+  const shown = () => kids.slice(-4);
+  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저']);
+  assert.equal(shown()[0].className, 'on');
+  assert.equal(shown()[0].style.color, '--bb-line', '켜진 칩은 그 선의 색');
+  assert.equal(shown()[1].className, undefined);
+  shown()[1].onclick();
+  assert.equal(run('state.indicators.vwap'), true);
+  assert.equal(run('state.indicators.bb'), true, '다른 칩은 그대로');
+  assert.equal(saves, 1);
+  assert.equal(loads, 1);
+  assert.equal(shown()[1].className, 'on', '칩을 다시 그린다');
+  assert.ok(elements.get('indChips'));
+});
+
+await test('indicators: loadChart passes only the enabled overlays — bands and volume average on daily, VWAP and previous high/low on 1D', async () => {
+  const { c, run } = harness(['loadChart', 'alignByDay', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange']);
+  const draws = [];
+  let bars;
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
+    renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+  });
+  run('let lastDrawSig = null;');
+  const day = 86400000;
+  // 국내 일봉 시각 = 09:00 KST. 마지막 일봉이 아래 1D 의 날(9/10)이라, 볼린저를 1D 에 잘못 그리면 값이 잡힌다.
+  const t0 = Date.parse('2026-07-28T00:00:00Z');
+  const N = 45; // 차트 첫 봉(끝에서 22번째) 앞에 20봉이 넘게 있다
+  const T = Array.from({ length: N }, (_, i) => t0 + i * day);
+  const C = Array.from({ length: N }, (_, i) => 100 + (i % 5));
+  const V = Array.from({ length: N }, (_, i) => (i === N - 1 ? 5000 : 1000));
+  run(`quotes['005930.KS'] = { price: ${C[N - 1]}, prevClose: 100, change: 4, live: true,
+    daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} },
+    dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(V)} },
+    recentBars: { times: [${Date.parse('2026-09-09T00:00:00Z')}, ${Date.parse('2026-09-10T00:00:00Z')}], highs: [110, 120], lows: [90, 95] } };`);
+  const daily = { ok: true, closes: C.slice(-22), times: T.slice(-22), volumes: V.slice(-22),
+    opens: C.slice(-22), highs: C.slice(-22), lows: C.slice(-22) };
+  const draw = async (tf, ind, b) => {
+    bars = b;
+    run(`state.timeframe = '${tf}'; state.indicators = cleanIndicators(${JSON.stringify(ind)});`);
+    await c.loadChart();
+    return draws.at(-1);
+  };
+
+  let d = await draw('1M', {}, daily);
+  assert.equal(d.bands, null);
+  assert.equal(d.vwapLine, null);
+  assert.equal(d.volAvg, null, '꺼 두면 아무것도 넘기지 않는다');
+
+  const before = draws.length;
+  d = await draw('1M', { bb: true, volAvg: true }, daily);
+  assert.equal(draws.length, before + 1, '칩만 바꿔도 다시 그린다');
+  const full = c.bollinger(C, 20, 2);
+  assert.equal(d.bands.upper.length, 22);
+  assert.equal(d.bands.upper[21], full.upper[N - 1], '5년치 일봉으로 계산해 차트 날짜에 맞춘다');
+  assert.equal(d.bands.lower[0], full.lower[N - 22], '1M 첫 봉부터 그려진다');
+  assert.equal(d.volAvg[21], (19 * 1000 + 5000) / 20, '일봉 거래량 20일 평균');
+  assert.equal(d.volAvg[0], 1000);
+  assert.equal(d.vwapLine, null, 'VWAP 는 1D 만');
+
+  // 1D: 프리 · 정규장 · 애프터 봉. VWAP 와 거래량 평균은 정규장 봉만, 전일 고저는 어제 일봉에서
+  const T1 = (s) => Date.parse(`2026-09-10T${s}:00+09:00`);
+  const oneDay = { ok: true, closes: [99, 100, 102, 101, 103], times: ['08:00', '09:00', '09:05', '15:00', '15:40'].map(T1),
+    volumes: [10, 100, 300, 0, 50], opens: [99, 100, 102, 101, 103], highs: [99, 101, 103, 101, 103], lows: [99, 99, 101, 101, 103],
+    ext: ['pre', null, null, null, 'after'] };
+  d = await draw('1D', { bb: true, vwap: true, prevHL: true }, oneDay);
+  assert.equal(d.bands, null, '볼린저는 일봉 기간만');
+  const tp1 = (101 + 99 + 100) / 3;
+  const tp2 = (103 + 101 + 102) / 3;
+  assert.equal(d.vwapLine[0], null, '프리 봉은 빼고 그 칸은 비운다');
+  assert.equal(d.vwapLine[1], tp1);
+  assert.equal(d.vwapLine[2], (tp1 * 100 + tp2 * 300) / 400);
+  assert.equal(d.vwapLine[3], d.vwapLine[2], '거래량 0 인 봉은 직전 값');
+  assert.equal(d.vwapLine[4], null, '애프터 봉도 비운다');
+  const hl = d.hLines.filter((l) => l.label === '전고' || l.label === '전저');
+  assert.equal(JSON.stringify(hl.map((l) => [l.label, l.value])), '[["전고",110],["전저",90]]', '오늘(9/10) 앞의 9/9 일봉');
+  assert.ok(hl.every((l) => l.varName === '--prev-line'), '전일 종가와 같은 색');
+
+  d = await draw('1D', { vwap: false, prevHL: false }, oneDay);
+  assert.equal(d.vwapLine, null);
+  assert.equal(d.hLines.some((l) => l.label === '전고'), false);
+});
+
+await test('indicators: volume average leaves out extended and zero-volume bars; previous day uses the market\'s own date', () => {
+  const { c, run } = harness(['seriesVolAvg', 'prevDayRange']);
+  const vols = Array.from({ length: 25 }, (_, i) => (i < 2 ? 5 : 100));
+  const ext = vols.map((_, i) => (i < 2 ? 'pre' : null));
+  vols[10] = 0; // 끼운 끝점처럼 거래량 0
+  const avg = c.seriesVolAvg(vols, ext);
+  assert.equal(avg[0], null, '시간외 봉은 평균에 넣지도, 칸을 채우지도 않는다');
+  assert.equal(avg[10], null, '거래량 0 인 봉도');
+  // 쓰는 봉: 2~9, 11~ → 20번째는 22번 칸
+  assert.equal(avg[22], 100, '정규장 봉 20개가 모인 첫 칸');
+  assert.equal(avg[21], null, '아직 19개');
+
+  // 국내 1D 프리 봉(08:30 KST)은 UTC 로 전날이다 — 한국 날짜로 세야 어제(10/14) 일봉을 고른다
+  run(`quotes['005930.KS'] = { recentBars: { times: [${Date.parse('2026-10-13T00:00:00Z')}, ${Date.parse('2026-10-14T00:00:00Z')}],
+    highs: [200, 210], lows: [190, 195] } };`);
+  assert.deepEqual({ ...c.prevDayRange('005930.KS', [Date.parse('2026-10-15T08:30:00+09:00')]) }, { high: 210, low: 195 });
+  // 미국 1D 애프터 봉(08:55 KST = 뉴욕 10/14 19:55)은 UTC 날짜가 뉴욕 날짜다 — 10/14 일봉은 그날이라 빼고 10/13
+  run(`quotes.SOXL = { recentBars: { times: [${Date.parse('2026-10-13T13:30:00Z')}, ${Date.parse('2026-10-14T13:30:00Z')}],
+    highs: [128, 130], lows: [115, 110] } };`);
+  assert.deepEqual({ ...c.prevDayRange('SOXL', [Date.parse('2026-10-15T08:55:00+09:00')]) }, { high: 128, low: 115 });
+  assert.equal(c.prevDayRange('000660.KS', [1]), null, '일봉이 없으면 그리지 않는다');
+});
+
+await test('indicators: drawChart draws the band as a filled pair, VWAP on the price axis, the average on the volume axis', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
+  });
+  run(`state.timeframe = '1D';
+    var C_ = [100, 101, 102, 103];
+    var arg_ = { closes: C_, times: [1, 2, 3, 4], up: true, volumes: [10, 10, 50, 10], highs: C_, lows: C_,
+      bands: { upper: [110, 111, 112, 113], lower: [90, 91, 92, 93] }, vwapLine: [100, 100.5, 101, 101.5],
+      volAvg: [null, 10, 20, 15] };`);
+  run('drawChart(arg_);');
+  const sets = configs.at(-1).data.datasets;
+  const up = sets.findIndex((d) => d.borderColor === '--bb-line' && d.fill === '+1');
+  assert.ok(up >= 0, '위쪽 경계가 아래쪽까지 채운다');
+  assert.equal(sets[up + 1].borderColor, '--bb-line', '아래쪽 경계가 바로 다음 데이터셋이다(fill +1)');
+  assert.equal(JSON.stringify(sets[up + 1].data), '[90,91,92,93]');
+  const vw = sets.find((d) => d.borderColor === '--vwap-line');
+  assert.equal(vw.yAxisID, 'y');
+  const avg = sets.find((d) => d.borderColor === '--vol-avg');
+  assert.equal(avg.yAxisID, 'yVol', '거래량 평균은 거래량 축');
+  const vol = sets.find((d) => d.isVolume);
+  assert.equal(JSON.stringify(vol.backgroundColor), '["a0.2","a0.2","a0.55","a0.2"]', '평균의 2배 넘는 막대만 진하게');
+
+  run('arg_.bands = null; arg_.vwapLine = null; arg_.volAvg = null; drawChart(arg_);');
+  const off = configs.at(-1).data.datasets;
+  assert.equal(off.some((d) => ['--bb-line', '--vwap-line', '--vol-avg'].includes(d.borderColor)), false);
+  assert.equal(off.find((d) => d.isVolume).backgroundColor, 'a0.2', '끄면 막대 색은 예전처럼 하나');
+});
+
+await test('indicators: legend shows BB low~high on hover, VWAP its latest value until hovered', () => {
+  const { c, run, elements } = harness(['renderMaLegend']);
+  run(formatting);
+  const box = c.document.getElementById('maLegend');
+  const items = [];
+  const node = () => ({ style: {}, kids: [], append(t) { this.text = t; }, appendChild(k) { this.kids.push(k); } });
+  c.document.createElement = () => node();
+  box.appendChild = (s) => items.push(s);
+  Object.assign(c, { cssVar: (n) => n, maColor: () => '#000' });
+  run(`lastChart = { cur: 'KRW', mas: [], trends: [], bands: { upper: [110, 120], lower: [90, 95] },
+    vwapLine: [100, 102, null] };`);
+  const read = () => items.map((s) => `${s.text}=${s.kids[0].textContent}`);
+  run('hoverIdx = null; renderMaLegend();');
+  assert.equal(elements.get('maLegend').hidden, false, '지표만 켜져 있어도 범례가 보인다');
+  assert.deepEqual([...read()], ['BB=', 'VWAP=102'], '마우스를 안 올리면 VWAP 는 마지막 값(애프터 칸 앞), BB 는 비움');
+  items.length = 0;
+  run('hoverIdx = 0; renderMaLegend();');
+  assert.deepEqual([...read()], ['BB=90~110', 'VWAP=100']);
+  items.length = 0;
+  run('lastChart.bands = null; lastChart.vwapLine = null; renderMaLegend();');
+  assert.equal(elements.get('maLegend').hidden, true);
+});
+
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른
 // 값들보다 뒤처진다. 상세 캔들은 네이버 실시간이므로, 맞춰주지 않으면 한 화면이
 // 서로 다른 순간을 가리킨다. 지나간 봉은 건드리면 안 된다.

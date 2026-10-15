@@ -41,6 +41,38 @@ function sma(closes, period) {
   return out;
 }
 
+// 볼린저 밴드 — period 일 평균 ± k 표준편차(모집단 표준편차, 흔한 차트들과 같다). 앞부분은 null.
+// 가운데 선은 같은 기간의 이동평균이라 따로 돌려주지 않는다(20일선 칩으로 켠다).
+function bollinger(closes, period = 20, k = 2) {
+  const mid = sma(closes, period);
+  const upper = new Array(closes.length).fill(null);
+  const lower = new Array(closes.length).fill(null);
+  for (let i = period - 1; i < closes.length; i++) {
+    let ss = 0;
+    for (let j = i - period + 1; j <= i; j++) ss += (closes[j] - mid[i]) ** 2;
+    const sd = Math.sqrt(ss / period);
+    upper[i] = mid[i] + k * sd;
+    lower[i] = mid[i] - k * sd;
+  }
+  return { upper, lower };
+}
+
+// VWAP(거래량 가중 평균가) — 대표가 (고 + 저 + 종) / 3 를 거래량으로 가중해 처음부터 누적한다.
+// use(i) 가 거짓인 봉(1D 시간외)은 계산에서 빼고 그 칸은 null 이다. 거래량 0 인 봉은 직전 값을 잇는다.
+function vwap(highs, lows, closes, volumes, use = () => true) {
+  const out = new Array(closes.length).fill(null);
+  let pv = 0;
+  let vol = 0;
+  for (let i = 0; i < closes.length; i++) {
+    if (!use(i)) continue;
+    const v = volumes[i] > 0 ? volumes[i] : 0;
+    pv += ((highs[i] + lows[i] + closes[i]) / 3) * v;
+    vol += v;
+    if (vol > 0) out[i] = pv / vol;
+  }
+  return out;
+}
+
 // 단기선이 장기선을 뚫은 지점. 위로 뚫으면 골든, 아래로 뚫으면 데드.
 function crossings(short, long) {
   const out = [];
@@ -349,7 +381,7 @@ function meetAt(a, b) {
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
-    calcRSI, sma, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    calcRSI, sma, bollinger, vwap, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,

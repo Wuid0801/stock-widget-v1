@@ -58,6 +58,11 @@
     --prev-line: #7a8494; /* 전일 종가 점선 (1D 차트) */
     --over-line: #4a9ec7; /* 시간외 현재가 점선 — 헤더 시간외 배지와 같은 색 */
     --ext-band: rgba(255, 255, 255, 0.05); /* 1D 시간외(프리 · 애프터) 구간 배경 */
+    /* 보조 지표. VWAP 는 1D 에만 나와 이동평균 · 추세선과 함께 보일 일이 없다 */
+    --bb-line: #9fb0c8; /* 볼린저 밴드 위 · 아래 점선 */
+    --bb-fill: rgba(159, 176, 200, 0.08); /* 볼린저 밴드 사이 */
+    --vwap-line: #f0b429; /* VWAP (1D) */
+    --vol-avg: rgba(232, 236, 242, 0.55); /* 거래량 평균선 */
     /* 지지·저항 추세선 (3M · 1Y). 등락 색(빨강/파랑)과 겹치지 않는 색으로 둔다 */
     --sup-line: #5fd0a6; /* 저점을 잇는 지지선 */
     --res-line: #e8a94f; /* 고점을 잇는 저항선 */
@@ -126,6 +131,10 @@
     --prev-line: #8b93a0; /* 전일 종가 점선 (1D 차트) */
     --over-line: #2d7fa6; /* 시간외 현재가 점선 — 헤더 시간외 배지와 같은 색 */
     --ext-band: rgba(0, 0, 0, 0.05); /* 1D 시간외(프리 · 애프터) 구간 배경 */
+    --bb-line: #6b7a90; /* 볼린저 밴드 위 · 아래 점선 */
+    --bb-fill: rgba(107, 122, 144, 0.08); /* 볼린저 밴드 사이 */
+    --vwap-line: #a86b00; /* VWAP (1D) */
+    --vol-avg: rgba(26, 31, 39, 0.5); /* 거래량 평균선 */
     --sup-line: #10795a; /* 저점을 잇는 지지선 */
     --res-line: #8a5a10; /* 고점을 잇는 저항선 */
     --crosshair: rgba(0, 0, 0, 0.3);
@@ -682,6 +691,10 @@
         <div class="machips" id="maChips"></div>
         <div class="mastyles" id="maStyles"></div>
         <div class="ohint">흐린 기간은 지금 보고 있는 구간에 비해 너무 길어 그리지 않습니다. 더 긴 타임프레임으로 바꾸면 나타납니다.</div>
+
+        <div class="sect">보조 지표 <span class="sechint">켜 둔 것만 차트에 그립니다</span></div>
+        <div class="machips" id="indChips"></div>
+        <div class="ohint">볼린저는 1M · 3M · 1Y · 3Y, VWAP · 전일 고저는 1D, 거래량 평균은 모든 기간에 나옵니다. 칩에 마우스를 올리면 설명이 보입니다.</div>
         <div class="sect">
           목표가 알림
           <label class="toggle"><input type="checkbox" id="alertOn" /> 사용</label>

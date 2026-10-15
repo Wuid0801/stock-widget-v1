@@ -57,6 +57,20 @@ function cleanMaStyles(raw) {
   return out;
 }
 
+// 보조 지표(설정의 칩, state.indicators). 기본은 모두 꺼짐. varName 은 선 색이자 켜진 칩의 색이다.
+const INDICATORS = [
+  { key: 'bb', label: '볼린저', varName: '--bb-line', title: '볼린저 밴드 — 20일 평균 ± 2표준편차 (1M · 3M · 1Y · 3Y)' },
+  { key: 'vwap', label: 'VWAP', varName: '--vwap-line', title: '거래량 가중 평균가 — 그날 정규장 봉만 (1D)' },
+  { key: 'volAvg', label: '거래량 평균', varName: '--vol-avg', title: '거래량 20봉 평균선 · 평균의 2배 넘는 막대 강조 (모든 기간)' },
+  { key: 'prevHL', label: '전일 고저', varName: '--prev-line', title: '어제 고가 · 저가 점선 (1D)' },
+];
+const BB_PERIOD = 20;
+const BB_K = 2;
+const VOL_AVG = 20;   // 거래량 평균 봉 수
+const VOL_SURGE = 2;  // 평균의 몇 배부터 막대를 진하게 칠하나
+// 저장된 값을 믿지 않는다 — 아는 키만, true 일 때만 켠다.
+const cleanIndicators = (raw) => Object.fromEntries(INDICATORS.map(({ key }) => [key, !!raw && raw[key] === true]));
+
 // 골든/데드크로스를 볼 이동평균 조합.
 // 60/80 처럼 가까운 기간끼리는 횡보 구간에서 계속 교차해 신호 가치가 없어 넣지 않는다.
 const CROSS_PAIRS = [[5, 20], [20, 60]];
@@ -853,7 +867,9 @@ function renderMaLegend() {
   // 확대 중에는 추세선을 그리지 않으므로(drawChart) 범례에서도 뺀다. drawChart 가
   // zoom 을 먼저 정리한 뒤 이 함수를 부르므로 zoom 이 있으면 확대된 화면이다.
   const trends = (lastChart && !zoom && lastChart.trends) || [];
-  box.hidden = mas.length === 0 && trends.length === 0;
+  const bands = (lastChart && lastChart.bands) || null;
+  const vw = (lastChart && lastChart.vwapLine) || null;
+  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw;
   box.innerHTML = '';
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
@@ -863,7 +879,7 @@ function renderMaLegend() {
     s.title = title;
     s.append(label);
     const val = document.createElement('b');
-    val.textContent = value == null ? '' : money(value, lastChart.cur);
+    val.textContent = value == null ? '' : typeof value === 'string' ? value : money(value, lastChart.cur);
     s.appendChild(val);
     const i = document.createElement('i');
     i.style.background = color;
@@ -875,6 +891,19 @@ function renderMaLegend() {
   for (const m of mas) {
     add(String(m.p), hoverIdx == null ? null : m.data[hoverIdx],
       maColor(m.p), `${m.p}일 이동평균`);
+  }
+  // 볼린저 밴드는 이동평균처럼 마우스를 올린 시점의 아래~위 값만
+  if (bands) {
+    const lo = hoverIdx == null ? null : bands.lower[hoverIdx];
+    const hi = hoverIdx == null ? null : bands.upper[hoverIdx];
+    add('BB', lo == null || hi == null ? null : `${money(lo, lastChart.cur)}~${money(hi, lastChart.cur)}`,
+      cssVar('--bb-line'), `볼린저 밴드 (${BB_PERIOD}일 ± ${BB_K}표준편차)`, true);
+  }
+  // VWAP 는 추세선처럼 마우스를 안 올리면 마지막 값(지금 평균가)을 보여 준다
+  if (vw) {
+    let i = hoverIdx;
+    if (i == null) for (i = vw.length - 1; i > 0 && vw[i] == null; i--);
+    add('VWAP', vw[i], cssVar('--vwap-line'), '거래량 가중 평균가 — 그날 정규장 봉');
   }
   // 추세선은 마우스를 안 올렸을 때 마지막 봉(오늘) 값을 보여준다.
   // 이동평균과 달리 개수가 둘로 고정이라 늘 떠 있어도 줄이 넘치지 않는다.
@@ -1185,6 +1214,7 @@ function drawChart(arg) {
   const {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
+    bands = null, vwapLine = null, volAvg = null,
   } = arg;
   const color = up ? UP : DOWN;
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
@@ -1266,6 +1296,48 @@ function drawChart(arg) {
         tension: 0.15,
         fill: false,
       }] : []),
+      // 볼린저 밴드(보조 지표). 위 · 아래 경계를 얇은 점선으로, 사이를 옅게 채운다 — 고저 밴드처럼
+      // 위쪽이 fill:'+1' 로 바로 다음(아래쪽)까지 채우므로 배열에서 붙어 있어야 한다.
+      // 정규 데이터셋이라 y축이 밴드까지 넓어진다(밴드 밖으로 나간 봉이 보여야 해서).
+      ...(bands ? [{
+        data: bands.upper,
+        yAxisID: 'y',
+        order: 3,
+        borderColor: cssVar('--bb-line'),
+        borderWidth: 1,
+        borderDash: [3, 2],
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.2,
+        fill: '+1',
+        backgroundColor: cssVar('--bb-fill'),
+        spanGaps: false,
+      }, {
+        data: bands.lower,
+        yAxisID: 'y',
+        order: 3,
+        borderColor: cssVar('--bb-line'),
+        borderWidth: 1,
+        borderDash: [3, 2],
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.2,
+        fill: false,
+        spanGaps: false,
+      }] : []),
+      // VWAP(보조 지표, 1D 정규장 봉만). 시간외 칸은 null 이라 끊긴다.
+      ...(vwapLine ? [{
+        data: vwapLine,
+        yAxisID: 'y',
+        order: 3,
+        borderColor: cssVar('--vwap-line'),
+        borderWidth: 1.4,
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0,
+        fill: false,
+        spanGaps: false,
+      }] : []),
       // 이동평균선 (일봉 타임프레임에서만 전달된다).
       // 전부 80% 불투명도. 주가선은 2px 라 여러 개를 켜도 굵기로 먼저 읽힌다.
       ...mas.map((m) => ({
@@ -1310,10 +1382,26 @@ function drawChart(arg) {
         data: volumes,
         yAxisID: 'yVol',
         order: 0, // 추세선 바로 아래 — 옅어서(0.2) 주가선 · 이평선이 비쳐 보인다
-        backgroundColor: hexA(color, 0.2),
+        // 거래량 평균을 켜면 평균의 VOL_SURGE 배 넘는 막대만 진하게 — 거래가 터진 봉이 바로 보인다
+        backgroundColor: volAvg
+          ? volumes.map((v, i) => hexA(color, volAvg[i] > 0 && v >= VOL_SURGE * volAvg[i] ? 0.55 : 0.2))
+          : hexA(color, 0.2),
         borderWidth: 0,
         barPercentage: 1,
         categoryPercentage: 1,
+      }] : []),
+      // 거래량 평균선(보조 지표). 거래량 축에 그린다.
+      ...(maxVol > 0 && volAvg ? [{
+        data: volAvg,
+        yAxisID: 'yVol',
+        order: 0,
+        borderColor: cssVar('--vol-avg'),
+        borderWidth: 1,
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.2,
+        fill: false,
+        spanGaps: false,
       }] : []),
       ],
     },
@@ -1380,7 +1468,10 @@ function drawChart(arg) {
               }
 
               const v = items.find((x) => x.dataset.isVolume);
-              if (v && v.parsed.y) lines.push(`거래량 ${fmtVol(v.parsed.y)}`);
+              if (v && v.parsed.y) {
+                const avg = volAvg && volAvg[v.dataIndex];
+                lines.push(`거래량 ${fmtVol(v.parsed.y)}${avg > 0 ? ` · 평균의 ${(v.parsed.y / avg).toFixed(1)}배` : ''}`);
+              }
               return lines;
             },
             // 빈 배열을 주면 Chart.js 가 그 줄을 통째로 건너뛴다 → 본문이 비고 높이가 고정된다
@@ -1454,6 +1545,10 @@ async function dailyFor(symbol, ttl) {
     // 목록의 오늘 캔들용 폴백(해외 종목·네이버 실패). 마지막 봉만 쓰므로
     // 시·고·저 배열 전체를 들고 있지 않는다 — 5년치면 종목당 세 배다.
     candle: { open: r.opens?.[last], high: r.highs?.[last], low: r.lows?.[last] },
+    // 보조 지표용. 거래량 평균은 5년치가 있어야 1M 첫 봉부터 그려지고(이동평균과 같은 이유),
+    // 전일 고가 · 저가는 마지막 며칠의 고 · 저만 있으면 된다.
+    volumes: r.volumes || [],
+    recent: { times: r.times.slice(-5), highs: (r.highs || []).slice(-5), lows: (r.lows || []).slice(-5) },
     currency: r.currency,
     week52High: r.week52High,
     week52Low: r.week52Low,
@@ -1537,7 +1632,60 @@ async function loadQuote(item, live) {
     // 이동평균 계산용. 1M 차트는 23봉뿐이라 자체 데이터로는 20일선이 끝부분만 그려진다.
     // 이미 받아둔 1년치를 그대로 재활용해 추가 요청 없이 앞구간까지 채운다.
     daily: { times, closes },
+    // 거래량 평균 · 전일 고저(보조 지표). 거래량은 받은 일봉 그대로라 시각도 그 일봉의 것이다.
+    dailyVolume: { times: r.times, volumes: r.volumes || [] },
+    recentBars: r.recent || null,
   };
+}
+
+// 일봉 값(srcTimes 와 짝인 values)을 차트 시각에 날짜로 맞춘다 — maFor 와 같은 UTC 날짜 짝짓기.
+function alignByDay(srcTimes, values, times) {
+  const dayOf = (t) => Math.floor(t / 86400000);
+  const byDay = new Map();
+  for (let i = 0; i < srcTimes.length; i++) byDay.set(dayOf(srcTimes[i]), values[i]);
+  const out = times.map((t) => (byDay.has(dayOf(t)) ? byDay.get(dayOf(t)) : null));
+  return out.some((v) => v != null) ? out : null;
+}
+
+// 볼린저 밴드 — 이동평균처럼 5년치 일봉 종가(오늘 봉은 현재가)로 계산해 차트에 맞춘다.
+function bandFor(symbol, times) {
+  const d = quotes[symbol] && quotes[symbol].daily;
+  if (!d || d.closes.length < BB_PERIOD) return null;
+  const b = bollinger(d.closes, BB_PERIOD, BB_K);
+  const upper = alignByDay(d.times, b.upper, times);
+  const lower = alignByDay(d.times, b.lower, times);
+  return upper && lower ? { upper, lower } : null;
+}
+
+// 거래량 평균. 일봉 기간은 5년치 일봉 거래량으로(첫 봉부터 평균이 있다).
+function dailyVolAvg(symbol, times) {
+  const d = quotes[symbol] && quotes[symbol].dailyVolume;
+  if (!d || d.volumes.length < VOL_AVG) return null;
+  return alignByDay(d.times, sma(d.volumes, VOL_AVG), times);
+}
+
+// 분봉(1D · 1W) · 전체 탭은 받은 봉으로. 1D 시간외 봉과 거래량 0 인 봉(끼운 끝점 · 야후 종가 봉)은
+// 평균에서 빼고 그 칸은 비운다 — 시간외 거래량은 기준이 다르다(미국 프리 0, 국내는 NXT).
+function seriesVolAvg(volumes, ext) {
+  const idx = volumes.map((_, i) => i).filter((i) => !(ext && ext[i]) && volumes[i] > 0);
+  const avg = sma(idx.map((i) => volumes[i]), VOL_AVG);
+  const out = new Array(volumes.length).fill(null);
+  idx.forEach((i, k) => { out[i] = avg[k]; });
+  return out;
+}
+
+// 1D 가 보여 주는 날의 바로 앞 거래일 고가 · 저가(전고 · 전저). 날짜는 그 시장의 날짜다 —
+// 국내 일봉은 09:00 KST(00:00 UTC), 국내 1D 프리 봉(08:00 KST)은 UTC 로 전날이라 한국 날짜로 센다.
+// 미국 일봉은 13:30 UTC 이고 미국 1D 봉(뉴욕 04:00~20:00)은 UTC 날짜가 뉴욕 날짜와 같다.
+function prevDayRange(symbol, times) {
+  const r = quotes[symbol] && quotes[symbol].recentBars;
+  if (!r || !times.length) return null;
+  const day = (ms) => Math.floor((ms + (isUs(symbol) ? 0 : 9 * 3600000)) / 86400000);
+  const shown = day(times[times.length - 1]);
+  for (let i = r.times.length - 1; i >= 0; i--) {
+    if (day(r.times[i]) < shown && r.highs[i] > 0 && r.lows[i] > 0) return { high: r.highs[i], low: r.lows[i] };
+  }
+  return null;
 }
 
 // 차트 시각(times)에 맞춰 일봉 이동평균을 끌어온다. 일봉이 아닌 타임프레임은 대상 아님.
@@ -1798,6 +1946,15 @@ async function loadChart() {
   }
   renderTrendBadges(trends, closes.length, times);
 
+  // 보조 지표(설정의 칩). 볼린저 밴드는 이동평균처럼 일봉 기간에만, VWAP 는 1D 정규장 봉만 —
+  // 시간외 거래량은 기준이 달라(미국 프리 0, 국내는 NXT) 섞으면 평균가의 뜻이 흐려진다.
+  const ind = state.indicators || {};
+  const bands = ind.bb && daily ? bandFor(item.symbol, times) : null;
+  const vw = ind.vwap && state.timeframe === '1D'
+    ? vwap(highs, lows, closes, volumes, (i) => !(ext && ext[i])) : null;
+  const vwapLine = vw && vw.some((v) => v != null) ? vw : null;
+  const volAvg = ind.volAvg ? (daily ? dailyVolAvg(item.symbol, times) : seriesVolAvg(volumes, ext)) : null;
+
   const held = state.holdings[item.symbol];
   const up = !q || q.change >= 0;
 
@@ -1814,6 +1971,12 @@ async function loadChart() {
     const origin = priceSessionOf(q);
     if ((origin === 'after' || origin === 'pre') && q.price != null) {
       hLines.push({ value: q.price, label: origin === 'after' ? '애프터' : '프리', varName: '--over-line' });
+    }
+    // 어제 고가 · 저가 — 전일 종가와 같은 색, 이름으로 가른다
+    const prev = ind.prevHL ? prevDayRange(item.symbol, times) : null;
+    if (prev) {
+      hLines.push({ value: prev.high, label: '전고', varName: '--prev-line' },
+        { value: prev.low, label: '전저', varName: '--prev-line' });
     }
   }
 
@@ -1833,13 +1996,15 @@ async function loadChart() {
     + `|${zoom ? `${zoom.start}-${zoom.end}` : ''}`
     + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`
     // 애프터 봉이 뒤에 붙으면 정규장 끝점(종가)은 마지막 칸이 아니다 — 그 값과 시간외 봉 수도 본다.
-    + `|${ext ? ext.filter(Boolean).length : ''}|${endAt >= 0 ? closes[endAt] : ''}|${lastReg >= 0 ? closes[lastReg] : ''}`;
+    + `|${ext ? ext.filter(Boolean).length : ''}|${endAt >= 0 ? closes[endAt] : ''}|${lastReg >= 0 ? closes[lastReg] : ''}`
+    // 보조 지표를 켜고 끄면 봉이 그대로여도 다시 그린다
+    + `|${INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join('')}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext,
+    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg,
   });
 }
 
@@ -1885,6 +2050,7 @@ const save = () => api.setState({
   maStyles: state.maStyles,
   chartMode: state.chartMode,
   infoOpen: state.infoOpen,
+  indicators: state.indicators,
 });
 
 // 저장된 선택이 관심종목도 지수도 아니면 첫 관심종목. 관심종목이 비어 있으면 null —
@@ -2214,6 +2380,7 @@ function applyTheme(theme) {
   renderList();
   renderDetail();
   renderMaChips(); // 칩 색도 테마를 따라간다
+  renderIndChips();
 }
 
 // 평소(마우스가 벗어났을 때) 불투명도. preview=true 면 hover 중에도 그 값으로 보여준다.
@@ -2268,6 +2435,32 @@ function renderMaChips() {
     box.appendChild(b);
   }
   renderMaStyleRows();
+}
+
+// 보조 지표 켜고 끄기. 켜진 칩은 이동평균 칩처럼 그 선의 색을 띤다.
+function renderIndChips() {
+  const box = document.getElementById('indChips');
+  box.innerHTML = '';
+  for (const ind of INDICATORS) {
+    const on = state.indicators[ind.key];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = ind.label;
+    b.title = ind.title;
+    if (on) {
+      const c = cssVar(ind.varName);
+      b.className = 'on';
+      b.style.color = c;
+      b.style.borderColor = c;
+    }
+    b.onclick = () => {
+      state.indicators = { ...state.indicators, [ind.key]: !on };
+      save();
+      renderIndChips();
+      loadChart();
+    };
+    box.appendChild(b);
+  }
 }
 
 // 켜 둔 이동평균선마다 색 · 굵기 한 줄. 끈 선은 바꿀 이유가 없어 보이지 않는다.
@@ -2741,9 +2934,11 @@ async function refreshNow() {
   document.getElementById('infoToggle').onclick = toggleInfo;
   // 이동평균 색 · 굵기 — 잘못된 값은 버리고 기본으로 그린다(applyTheme 가 칩을 그리기 전에)
   state.maStyles = cleanMaStyles(state.maStyles);
+  state.indicators = cleanIndicators(state.indicators);
   applyTheme(state.theme);
   applyOpacity(state.opacity);
   renderMaChips();
+  renderIndChips();
   state.selected = validSelection(state.selected, state.watchlist); // 지수를 보던 중이면 그대로
   state.timeframe = validTimeframe(state.timeframe);
 
