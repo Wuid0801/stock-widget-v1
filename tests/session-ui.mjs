@@ -747,6 +747,104 @@ await test('indicators: loadChart fetches the matching index with the chart — 
   assert.deepEqual([...asked], ['^KS11'], '지수 자체를 볼 때는 비교하지 않는다');
 });
 
+// 차트만 보기: 버튼 하나로 덧그림(이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지)을 다 끈다.
+// 칩 설정은 그대로라 다시 누르면 돌아온다. 가격과 거래량 막대는 남는다.
+await test('plain chart: one switch hides every overlay and keeps price and volume; switching back restores them', async () => {
+  const { c, run, elements } = harness(['loadChart', 'alignByDay', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange', 'maFor']);
+  const draws = [];
+  const asked = [];
+  const periods = [];
+  const badges = [];
+  let bars;
+  Object.assign(c, {
+    fetchChartCached: async (s) => { asked.push(s); return s === '005930.KS' ? bars : { ok: false, error: 'x' }; },
+    err: () => {}, quoteErrText: () => '', renderMaChips: () => {}, curOf: () => 'KRW',
+    renderPeriod: (...a) => periods.push(a),
+    renderCrossBadge: (x) => badges.push(`cross ${x.length}`), renderTrendBadges: (x) => badges.push(`trend ${x.length}`),
+    trendLine: () => ({ from: 0, to: 1 }), breakoutOf: () => false, // 추세선이 늘 하나씩 나오게
+    drawChart: (data) => draws.push(data),
+  });
+  const day = 86400000;
+  const t0 = Date.parse('2026-07-28T00:00:00Z');
+  const N = 45;
+  const T = Array.from({ length: N }, (_, i) => t0 + i * day);
+  const C = Array.from({ length: N }, (_, i) => 100 + (i % 5));
+  const V = Array.from({ length: N }, () => 1000);
+  run(`let lastDrawSig = null; quotes['005930.KS'] = { price: ${C[N - 1]}, prevClose: 100, change: 4, live: true,
+    daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} },
+    dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(V)} },
+    recentBars: { times: [${Date.parse('2026-09-09T00:00:00Z')}, ${Date.parse('2026-09-10T00:00:00Z')}], highs: [110, 120], lows: [90, 95] } };
+    state.maPeriods = [5]; state.holdings = { '005930.KS': { qty: 1, avg: 101 } };
+    state.indicators = cleanIndicators({ bb: true, vwap: true, volAvg: true, prevHL: true, vp: true, rel: true });`);
+  const daily = { ok: true, closes: C.slice(-22), times: T.slice(-22), volumes: V.slice(-22),
+    opens: C.slice(-22), highs: C.slice(-22), lows: C.slice(-22) };
+  const T1 = (s) => Date.parse(`2026-09-10T${s}:00+09:00`);
+  const oneDay = { ok: true, closes: [100, 102, 101], times: ['09:00', '09:05', '09:10'].map(T1),
+    volumes: [100, 300, 50], opens: [100, 102, 101], highs: [101, 103, 101], lows: [99, 101, 100] };
+  const show = async (tf, plain, b) => {
+    bars = b;
+    asked.length = 0;
+    run(`state.timeframe = '${tf}'; state.plainChart = ${plain};`);
+    await c.loadChart();
+    return draws.at(-1);
+  };
+
+  let d = await show('3M', false, daily);
+  assert.ok(d.mas.length && d.bands && d.volAvg && d.profile && d.trends.length && d.hLines.length, '켜 둔 덧그림이 다 있다');
+  assert.deepEqual([...asked], ['005930.KS', '^KS11']);
+  const drawn = draws.length;
+  const shownPeriods = periods.length;
+  c.document.getElementById('period').hidden = false;
+
+  d = await show('3M', true, daily);
+  assert.equal(draws.length, drawn + 1, '켜기만 해도 다시 그린다');
+  assert.deepEqual([d.mas.length, d.trends.length, d.crosses.length, d.hLines.length], [0, 0, 0, 0]);
+  assert.equal(d.bands, null);
+  assert.equal(d.volAvg, null);
+  assert.equal(d.vwapLine, null);
+  assert.equal(d.profile, false);
+  assert.deepEqual([...d.closes], C.slice(-22), '가격은 그대로');
+  assert.deepEqual([...d.volumes], V.slice(-22), '거래량 막대는 남는다');
+  assert.deepEqual([...asked], ['005930.KS'], '지수 대비를 안 보이므로 지수 차트도 받지 않는다');
+  assert.equal(elements.get('period').hidden, true, '기간 · 지수 대비 배지도 숨긴다');
+  assert.equal(periods.length, shownPeriods);
+  assert.deepEqual(badges.slice(-2), ['cross 0', 'trend 0'], '교차 · 추세 배지도 비운다');
+  assert.equal(JSON.stringify(run('state.indicators')),
+    '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true}', '칩 설정은 지우지 않는다');
+  assert.equal(JSON.stringify(run('state.maPeriods')), '[5]');
+
+  d = await show('1D', true, oneDay);
+  assert.equal(d.hLines.length, 0, '1D 의 평단 · 전일 · 전고 · 전저도 끈다');
+  assert.equal(d.vwapLine, null);
+  assert.equal(d.volAvg, null);
+  d = await show('1D', false, oneDay);
+  assert.deepEqual([...d.hLines.map((l) => l.label)], ['평단', '전일', '전고', '전저'], '다시 누르면 돌아온다');
+  assert.ok(d.vwapLine && d.volAvg);
+  d = await show('3M', false, daily);
+  assert.ok(d.mas.length && d.bands && d.trends.length, '일봉 덧그림도 돌아온다');
+
+  // 추세선만 있는 화면(이동평균 · 지표 · 평단 없음) — 다른 값이 그대로여도 다시 그려 추세선을 지운다
+  run('state.maPeriods = []; state.indicators = cleanIndicators({}); state.holdings = {};');
+  d = await show('3M', false, daily);
+  assert.equal(d.trends.length, 2, '지지선 · 저항선');
+  d = await show('3M', true, daily);
+  assert.equal(d.trends.length, 0, '추세선만 있던 화면도 다시 그린다');
+});
+
+await test('plain chart: the switch beside the candle/line icon shows its state and hides with the chart', () => {
+  const { c, run, elements } = harness(['renderChartMode']);
+  c.MODE_ICON = { candle: 'C', line: 'L' };
+  run("state.chartMode = 'line'; state.plainChart = false; renderChartMode(30, true);");
+  const b = elements.get('plainChart');
+  assert.equal(b.hidden, false);
+  assert.equal(b.className, '');
+  assert.equal(b.title, '차트만 보기 — 이동평균 · 보조 지표 · 기준선 끄기');
+  run('state.plainChart = true; renderChartMode(30, true);');
+  assert.equal(b.className, 'on');
+  assert.equal(b.title, '덧그림 다시 보기');
+  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('plainChart'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
+});
+
 // 네트워크가 느리면 차트 응답까지 몇 초가 걸린다. 그동안 탭 · 헤더는 새 종목 · 기간인데 차트 · 기간 배지는
 // 옛 것이라 "눌러도 데이터가 안 바뀐다"로 보였다(2026-10-15). 다른 화면으로 넘어가면 옛 차트를 먼저 지우고
 // 불러오는 중을 띄운다. 같은 화면의 30초 갱신은 지우지 않는다(깜빡이지 않게).

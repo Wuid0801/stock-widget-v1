@@ -81,6 +81,7 @@ const storeOptions = {
     maPeriods: [5, 20, 60], // 표시할 이동평균 기간(일)
     maStyles: {}, // 이동평균선별로 바꾼 색 · 굵기 { [기간]: { color, width } } — 바꾼 것만
     chartMode: 'candle', // 'candle' | 'line'
+    plainChart: false, // 차트만 보기(이동평균 · 보조 지표 · 기준선을 그리지 않는다)
     infoOpen: true, // 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지
     // 보조 지표(설정의 칩). 기본은 모두 꺼짐 — 이동평균 · 추세선과 겹치면 작은 차트가 빽빽해진다.
     indicators: { bb: false, vwap: false, volAvg: false, prevHL: false, vp: false, rel: false },
@@ -216,6 +217,7 @@ ipcMain.handle('state:get', () => ({
   maPeriods: store.get('maPeriods'),
   maStyles: store.get('maStyles'),
   chartMode: store.get('chartMode'),
+  plainChart: store.get('plainChart'),
   infoOpen: store.get('infoOpen'),
   indicators: store.get('indicators'),
 }));
@@ -224,7 +226,7 @@ ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'infoOpen', 'indicators'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'plainChart', 'infoOpen', 'indicators'].includes(k)) store.set(k, v);
   }
 });
 

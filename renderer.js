@@ -1365,6 +1365,7 @@ function clearChart() {
   renderCrossBadge([], []);
   renderTrendBadges([], 0);
   document.getElementById('chartMode').hidden = true; // 차트가 없으면 전환할 것도 없다
+  document.getElementById('plainChart').hidden = true;
   document.getElementById('zoomReset').hidden = true; // 차트가 없으면 풀 확대도 없다
 }
 
@@ -1999,8 +2000,11 @@ async function loadChart() {
   }
   const seq = ++chartSeq;
   const tf = TF[state.timeframe];
+  // 차트만 보기(차트 위 버튼): 이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지를 그리지 않는다.
+  // 칩 설정은 그대로 두고 그리기만 건너뛰어, 다시 누르면 원래대로 돌아온다. 가격과 거래량 막대는 남는다.
+  const plain = state.plainChart === true;
   // 지수 대비 수익률(보조 지표)은 같은 기간의 지수 차트가 필요하다 — 종목 차트와 함께 받는다(같은 캐시).
-  const bench = state.indicators && state.indicators.rel && state.timeframe !== '1D' ? benchmarkOf(item.symbol) : null;
+  const bench = !plain && state.indicators && state.indicators.rel && state.timeframe !== '1D' ? benchmarkOf(item.symbol) : null;
   const [got, benchGot] = await Promise.all([fetchChartCached(item.symbol, tf),
     bench ? fetchChartCached(bench.symbol, tf).catch(() => null) : null]);
   if (seq !== chartSeq) return; // 더 새 요청이 있다 — 불러오는 중은 그 요청이 내린다
@@ -2050,8 +2054,11 @@ async function loadChart() {
   }
 
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
-  renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1],
-    benchReturn(bench, benchGot, r.times[0]));
+  if (plain) document.getElementById('period').hidden = true;
+  else {
+    renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1],
+      benchReturn(bench, benchGot, r.times[0]));
+  }
 
   // 이동평균선은 일봉 타임프레임(1M/3M/1Y/3Y)에서만 의미가 있다.
   // 1D(5분봉)/1W(30분봉)에 "5일선"을 그리면 이름과 실제가 안 맞는다.
@@ -2060,7 +2067,7 @@ async function loadChart() {
   if (bars !== chartBars) { chartBars = bars; renderMaChips(); } // 켤 수 있는 기간이 바뀐다
 
   const mas = [];
-  for (const p of state.maPeriods) {
+  for (const p of plain ? [] : state.maPeriods) {
     if (!maFits(p)) continue; // 구간에 비해 너무 긴 선은 y축만 벌리므로 건너뛴다
     const data = maFor(item.symbol, times, p);
     if (data) mas.push({ p, data }); // 색 · 굵기는 그릴 때 maColor · maWidth 로 읽는다(설정에서 바뀐다)
@@ -2113,7 +2120,7 @@ async function loadChart() {
   // 추세선은 3M · 1Y 에서만. 검사를 통과 못 한 쪽은 빠지므로
   // 지지선만, 저항선만, 또는 둘 다 없는 상태가 정상이다.
   const trends = [];
-  if (TREND_TF.has(state.timeframe)) {
+  if (!plain && TREND_TF.has(state.timeframe)) {
     const len = closes.length;
     const sup = trendLine(lows, len, true);
     const res = trendLine(highs, len, false);
@@ -2125,7 +2132,7 @@ async function loadChart() {
 
   // 보조 지표(설정의 칩). 볼린저 밴드는 이동평균처럼 일봉 기간에만, VWAP 는 1D 정규장 봉만 —
   // 시간외 거래량은 기준이 달라(미국 프리 0, 국내는 NXT) 섞으면 평균가의 뜻이 흐려진다.
-  const ind = state.indicators || {};
+  const ind = plain ? {} : state.indicators || {};
   const bands = ind.bb && daily ? bandFor(item.symbol, times) : null;
   const vw = ind.vwap && state.timeframe === '1D'
     ? vwap(highs, lows, closes, volumes, (i) => !(ext && ext[i])) : null;
@@ -2138,8 +2145,8 @@ async function loadChart() {
   // 가로 기준선. 전일 종가는 장중(1D)에만 의미가 있다 —
   // 일봉 차트에서는 마지막에서 두 번째 점일 뿐이라 기준선이 될 이유가 없다.
   const hLines = [];
-  if (held && held.avg > 0) hLines.push({ value: held.avg, label: '평단', varName: '--avg-line' });
-  if (state.timeframe === '1D' && q) {
+  if (!plain && held && held.avg > 0) hLines.push({ value: held.avg, label: '평단', varName: '--avg-line' });
+  if (!plain && state.timeframe === '1D' && q) {
     if (q.prevClose != null) {
       hLines.push({ value: q.prevClose, label: '전일', varName: '--prev-line' });
     }
@@ -2175,7 +2182,9 @@ async function loadChart() {
     // 애프터 봉이 뒤에 붙으면 정규장 끝점(종가)은 마지막 칸이 아니다 — 그 값과 시간외 봉 수도 본다.
     + `|${ext ? ext.filter(Boolean).length : ''}|${endAt >= 0 ? closes[endAt] : ''}|${lastReg >= 0 ? closes[lastReg] : ''}`
     // 보조 지표를 켜고 끄면 봉이 그대로여도 다시 그린다
-    + `|${INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join('')}`;
+    + `|${INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join('')}`
+    // 차트만 보기 — 이동평균 · 가로선이 없던 화면이면 위 값이 같아도 추세선이 남는다
+    + `|${plain}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
   drawnKey = key;
@@ -2228,6 +2237,7 @@ const save = () => api.setState({
   maPeriods: state.maPeriods,
   maStyles: state.maStyles,
   chartMode: state.chartMode,
+  plainChart: state.plainChart,
   infoOpen: state.infoOpen,
   indicators: state.indicators,
 });
@@ -2947,6 +2957,11 @@ function renderChartMode(bars, daily) {
   b.hidden = !candleMode(bars, daily, 'candle'); // 캔들로 그릴 수 있는 화면에서만
   b.innerHTML = MODE_ICON[candle ? 'candle' : 'line'];
   b.title = candle ? '라인으로 보기' : '캔들로 보기';
+  // 옆의 차트만 보기 버튼 — 켜져 있으면 강조
+  const p = document.getElementById('plainChart');
+  p.hidden = false;
+  p.className = state.plainChart ? 'on' : '';
+  p.title = state.plainChart ? '덧그림 다시 보기' : '차트만 보기 — 이동평균 · 보조 지표 · 기준선 끄기';
 }
 
 function renderTabs() {
@@ -3111,6 +3126,7 @@ async function refreshNow() {
     : [5, 20, 60];
   // 저장값에 없거나 모르는 값이면 캔들로 시작한다
   state.chartMode = state.chartMode === 'line' ? 'line' : 'candle';
+  state.plainChart = state.plainChart === true;
   // 보유 · 52주 · 추세 점검은 접었다고 저장된 때만 접는다
   state.infoOpen = state.infoOpen !== false;
   applyInfoOpen();
@@ -3129,6 +3145,11 @@ async function refreshNow() {
     state.chartMode = state.chartMode === 'candle' ? 'line' : 'candle';
     save();
     await loadChart(); // 서명에 chartMode 가 있어 다시 그려지고, drawChart 가 아이콘도 바꾼다
+  };
+  document.getElementById('plainChart').onclick = async () => {
+    state.plainChart = !state.plainChart;
+    save();
+    await loadChart(); // 서명에 plainChart 가 있어 다시 그려지고, drawChart 가 버튼 강조도 바꾼다
   };
   document.getElementById('zoomReset').onclick = resetZoom;
   bindZoom();
