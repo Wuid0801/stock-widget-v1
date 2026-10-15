@@ -1,6 +1,6 @@
-// 보조 지표(볼린저 밴드 · VWAP) 계산 — 앱을 띄우지 않고 indicators.js 를 검증한다.
+// 보조 지표(볼린저 밴드 · VWAP · 파라볼릭 SAR …) 계산 — 앱을 띄우지 않고 indicators.js 를 검증한다.
 // 기대값은 손으로 셀 수 있는 작은 예로 고정했다.
-import { bollinger, vwap, volumeProfile, returnSince } from '../indicators.js';
+import { bollinger, vwap, volumeProfile, returnSince, parabolicSar } from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -77,6 +77,34 @@ const near = (a, b) => a != null && Math.abs(a - b) < 1e-9;
   check('시각이 아니라 날짜로 맞춘다', near(returnSince(late, closes, day('2026-09-02'), 112.2), 10));
   check('지수 시계열이 더 늦게 시작하면 첫 봉부터', near(returnSince(times, closes, day('2026-08-01'), 110), 10));
   check('마지막 값이 없으면 null', returnSince(times, closes, day('2026-09-02'), null) === null);
+}
+
+// --- 파라볼릭 SAR ----------------------------------------------------------------
+{
+  // 손으로 센 예(가속 0.02 · 최대 0.2).
+  // 1: 중간값 10 ≥ 9 라 상승으로 시작 — 극값 11, SAR 은 앞 두 봉의 저가 8
+  // 2: 8 + .02(11-8) = 8.06 → 앞 두 저가(9 · 8)를 넘지 않게 8. 고가 12 가 새 극값 → 가속 .04
+  // 3: 8 + .04(12-8) = 8.16. 고가 13 → 극값 13, 가속 .06
+  // 4: 8.16 + .06(13-8.16) = 8.4504 인데 저가 7 이 뚫었다 → 하락 전환, SAR 은 직전 극값 13, 극값 7, 가속 .02
+  // 5: 13 + .02(7-13) = 12.88 → 앞 두 고가(9 · 13)보다 낮을 수 없어 13. 저가 6 → 극값 6, 가속 .04
+  // 6: 13 + .04(6-13) = 12.72
+  const h = [10, 11, 12, 13, 9, 8.5, 8];
+  const l = [8, 9, 10, 11, 7, 6, 5];
+  const s = parabolicSar(h, l);
+  check('첫 봉은 비운다', s.sar[0] === null && s.up[0] === null);
+  const want = [8, 8, 8.16, 13, 13, 12.72];
+  check('손으로 센 값', want.every((v, i) => near(s.sar[i + 1], v)), JSON.stringify(s.sar));
+  check('방향 — 넷째 봉에서 하락 전환', JSON.stringify(s.up) === '[null,true,true,true,false,false,false]', JSON.stringify(s.up));
+
+  // 가속은 0.2 에서 멈춘다: 계속 오르면 SAR 은 직전 SAR + 0.2 × (직전 고가 - 직전 SAR)
+  const up = Array.from({ length: 30 }, (_, i) => 100 + i);
+  const r = parabolicSar(up, up.map((v) => v - 1));
+  check('가속 상한 0.2', near(r.sar[25], r.sar[24] + 0.2 * (up[24] - r.sar[24])), `${r.sar[25]}`);
+  check('계속 오르면 전환이 없다', r.up.slice(1).every((u) => u === true));
+  check('봉이 하나뿐이면 아무것도 없다', parabolicSar([1], [1]).sar.every((v) => v === null));
+  // 둘째 봉의 중간값이 낮으면 하락으로 시작 — 극값은 두 저가 중 낮은 것, SAR 은 두 고가 중 높은 것
+  const dn = parabolicSar([12, 11], [10, 9]);
+  check('하락으로 시작', dn.up[1] === false && near(dn.sar[1], 12), JSON.stringify(dn));
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');

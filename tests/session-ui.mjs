@@ -497,9 +497,9 @@ await test('1D with extended bars: the regular end point sits before the after b
 await test('indicators: saved value is cleaned; chips toggle, save and redraw', () => {
   const { c, run, elements } = harness(['renderIndChips']);
   assert.equal(JSON.stringify(run("cleanIndicators({ bb: true, vwap: 'yes', bogus: true })")),
-    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false}', '아는 키만, true 일 때만');
+    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false}', '아는 키만, true 일 때만');
   assert.equal(JSON.stringify(run('cleanIndicators(undefined)')),
-    '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false}');
+    '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false}');
   const kids = [];
   let saves = 0;
   let loads = 0;
@@ -508,8 +508,8 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   Object.assign(c, { save: () => { saves++; }, loadChart: () => { loads++; }, cssVar: (n) => n });
   run("state.indicators = cleanIndicators({ bb: true });");
   run('renderIndChips()');
-  const shown = () => kids.slice(-6);
-  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비']);
+  const shown = () => kids.slice(-7);
+  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR']);
   assert.equal(shown()[0].className, 'on');
   assert.equal(shown()[0].style.color, '--bb-line', '켜진 칩은 그 선의 색');
   assert.equal(shown()[1].className, undefined);
@@ -680,6 +680,131 @@ await test('indicators: legend shows BB low~high on hover, VWAP its latest value
   assert.deepEqual([...read()], ['매물대=110~115']);
 });
 
+// 파라볼릭 SAR(보조 지표). 일봉 기간은 차트 첫날 앞의 5년치 일봉 고 · 저를 이어 계산한다 — SAR 은 지난 흐름을
+// 이어받아서, 차트 첫 봉에서 새로 시작하면 1M 은 대부분 다른 값이 된다. 1D 는 정규장 봉만, 그날 첫 봉부터.
+await test('indicators: SAR continues from the daily history on daily charts and uses regular bars only on 1D', () => {
+  const { c, run } = harness(['sarFor']);
+  const day = 86400000;
+  const t0 = Date.parse('2026-08-01T00:00:00Z');
+  const N = 40;
+  const T = Array.from({ length: N }, (_, i) => t0 + i * day);
+  const H = Array.from({ length: N }, (_, i) => 101 + 10 * Math.sin(i / 4));
+  const L = H.map((v) => v - 2);
+  run(`quotes.X = { dailyHL: { times: ${JSON.stringify(T)}, highs: ${JSON.stringify(H)}, lows: ${JSON.stringify(L)} } };`);
+  // 차트는 마지막 10일. 오늘 봉은 실시간 캔들로 맞춘 값이라 일봉과 다를 수 있다 — 차트 쪽 값을 쓴다.
+  const cH = H.slice(-10); const cL = L.slice(-10);
+  cH[9] += 5;
+  const r = run(`sarFor('X', ${JSON.stringify(T.slice(-10))}, ${JSON.stringify(cH)}, ${JSON.stringify(cL)})`);
+  const full = c.parabolicSar([...H.slice(0, 30), ...cH], [...L.slice(0, 30), ...cL]);
+  assert.equal(JSON.stringify(r.data), JSON.stringify(full.sar.slice(30)), '5년치 흐름을 이어 받은 값');
+  assert.equal(JSON.stringify(r.up), JSON.stringify(full.up.slice(30)));
+  let k = full.up.length - 1;
+  while (full.up[k - 1] === full.up.at(-1)) k--;
+  assert.equal(r.rising, full.up.at(-1));
+  assert.equal(r.since, full.up.length - k, '전환 봉부터 센 봉 수');
+  assert.equal(r.flipAt, [...T.slice(0, 30), ...T.slice(-10)][k], '전환 봉의 시각(차트 밖일 수도 있다)');
+  const alone = c.parabolicSar(cH, cL);
+  assert.notEqual(JSON.stringify(r.data), JSON.stringify(alone.sar), '차트 봉만으로 새로 시작한 값과 다르다');
+
+  // 1D: 정규장 봉만으로 계산하고 시간외 칸은 비운다. 일봉 흐름은 잇지 않는다(그날 첫 봉부터).
+  const t1 = Date.parse('2026-09-10T08:00:00+09:00');
+  const times = [0, 1, 2, 3, 4, 5].map((i) => t1 + i * 300000);
+  const h1 = [50, 101, 103, 104, 102, 60];
+  const l1 = [49, 99, 101, 102, 98, 59];
+  const ext = ['pre', null, null, null, null, 'after'];
+  const d = run(`sarFor('X', ${JSON.stringify(times)}, ${JSON.stringify(h1)}, ${JSON.stringify(l1)}, ${JSON.stringify(ext)})`);
+  const reg = c.parabolicSar(h1.slice(1, 5), l1.slice(1, 5));
+  assert.equal(JSON.stringify(d.data), JSON.stringify([null, ...reg.sar, null]), '시간외 칸은 비우고 정규장 봉만으로');
+  assert.equal(d.up[0], null);
+  assert.equal(d.up[5], null);
+
+  run('delete quotes.X;');
+  const bare = run(`sarFor('X', ${JSON.stringify(T.slice(-10))}, ${JSON.stringify(cH)}, ${JSON.stringify(cL)})`);
+  assert.equal(JSON.stringify(bare.data), JSON.stringify(alone.sar), '일봉이 없으면 차트 봉만으로');
+  assert.equal(run('sarFor("X", [1], [1], [1])'), null, '봉이 모자라면 없다');
+});
+
+await test('indicators: loadChart passes SAR on 1D and the daily periods only, and only when the chip is on', async () => {
+  const { c, run } = harness(['loadChart', 'sarFor']);
+  const draws = [];
+  let bars;
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
+    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+  });
+  run("let lastDrawSig = null; quotes['005930.KS'] = { price: 104, prevClose: 100, change: 4 };");
+  const series = (n) => ({ ok: true, closes: Array.from({ length: n }, (_, i) => 100 + (i % 4)),
+    times: Array.from({ length: n }, (_, i) => Date.parse('2026-09-01T00:00:00Z') + i * 86400000),
+    volumes: new Array(n).fill(1), opens: Array.from({ length: n }, (_, i) => 100 + (i % 4)),
+    highs: Array.from({ length: n }, (_, i) => 101 + (i % 4)), lows: Array.from({ length: n }, (_, i) => 99 + (i % 4)) });
+  const show = async (tf, on) => {
+    bars = series(8);
+    run(`lastDrawSig = null; state.timeframe = '${tf}'; state.indicators = cleanIndicators({ sar: ${on} });`);
+    await c.loadChart();
+    return draws.at(-1).sar;
+  };
+  for (const tf of ['1D', '1M', '3M', '1Y', '3Y']) assert.ok(await show(tf, true), `${tf} 에는 그린다`);
+  assert.equal((await show('1M', true)).data.length, 8);
+  assert.equal(await show('1W', true), null, '1W(30분봉)는 밤 사이 공백이 끼어 그리지 않는다');
+  assert.equal(await show('전체', true), null, '전체(월봉 · 분기봉)도 그리지 않는다');
+  assert.equal(await show('1M', false), null, '칩을 끄면 없다');
+});
+
+await test('indicators: SAR legend shows the direction and how long it has held, the value on hover', () => {
+  const { c, run } = harness(['renderMaLegend', 'labelFor']);
+  run(formatting);
+  const box = c.document.getElementById('maLegend');
+  const items = [];
+  const node = () => ({ style: {}, kids: [], append(t) { this.text = t; }, appendChild(k) { this.kids.push(k); } });
+  c.document.createElement = () => node();
+  box.appendChild = (s) => items.push(s);
+  Object.assign(c, { cssVar: (n) => n, maColor: () => '#000' });
+  const flip = Date.parse('2026-10-09T00:00:00Z');
+  run(`lastProfile = null; state.timeframe = '1M';
+    lastChart = { cur: 'KRW', mas: [], trends: [], sar: { data: [null, 95000, 96000], up: [null, false, false],
+      rising: false, since: 4, flipAt: ${flip} } };`);
+  const read = () => items.map((s) => `${s.text}=${s.kids[0].textContent}`);
+  run('hoverIdx = null; renderMaLegend();');
+  assert.equal(c.document.getElementById('maLegend').hidden, false, 'SAR 만 켜져 있어도 범례가 보인다');
+  assert.deepEqual([...read()], ['SAR=하락 4일째']);
+  assert.equal(items[0].kids[1].style.background, '--sar-down', '하락이면 파랑 점의 색');
+  assert.equal(items[0].title, `파라볼릭 SAR — ${run(`labelFor(${flip}, '1M')`)} 하락 전환 (가속 0.02 · 최대 0.2). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위`);
+  items.length = 0;
+  run('hoverIdx = 1; renderMaLegend();');
+  assert.deepEqual([...read()], ['SAR=95,000'], '마우스를 올리면 그 봉의 SAR');
+  items.length = 0;
+  const at = Date.parse('2026-10-15T13:20:00+09:00');
+  run(`hoverIdx = null; state.timeframe = '1D'; lastChart.sar.rising = true; lastChart.sar.flipAt = ${at}; renderMaLegend();`);
+  assert.deepEqual([...read()], [`SAR=상승 · ${run(`labelFor(${at}, '1D')`)}부터`], '1D 는 일 대신 전환 시각');
+  assert.equal(items[0].kids[1].style.background, '--sar-up');
+});
+
+await test('indicators: drawChart draws SAR as dots on the price axis, red below a rising trend and blue above a falling one', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
+  });
+  run(`state.timeframe = '1M';
+    var C_ = [100, 101, 102, 103];
+    var arg_ = { closes: C_, times: [1, 2, 3, 4], up: true, volumes: [1, 1, 1, 1], highs: C_, lows: C_,
+      sar: { data: [null, 99, 100, 104], up: [null, true, true, false] } };`);
+  run('drawChart(arg_);');
+  const dots = configs.at(-1).data.datasets.find((d) => d.showLine === false);
+  assert.ok(dots, '선 없이 점만');
+  assert.equal(dots.yAxisID, 'y');
+  assert.equal(JSON.stringify(dots.data), '[null,99,100,104]');
+  assert.equal(JSON.stringify(dots.pointBackgroundColor.slice(1)), '["--sar-up","--sar-up","--sar-down"]');
+  assert.ok(dots.pointRadius > 0 && dots.pointHitRadius === 0, '점은 보이되 마우스 대상은 아니다');
+  run('arg_.sar = null; drawChart(arg_);');
+  assert.equal(configs.at(-1).data.datasets.some((d) => d.showLine === false), false);
+});
+
 // 지수 대비 수익률(보조 지표): 기간 배지에 종목 수익률 - 같은 기간 지수 수익률(%p).
 await test('indicators: period badge adds the excess return over the index, with the index return in its tooltip', () => {
   const { run, elements } = harness(['renderPeriod']);
@@ -810,7 +935,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   assert.equal(periods.length, shownPeriods);
   assert.deepEqual(badges.slice(-2), ['cross 0', 'trend 0'], '교차 · 추세 배지도 비운다');
   assert.equal(JSON.stringify(run('state.indicators')),
-    '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true}', '칩 설정은 지우지 않는다');
+    '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true,"sar":false}', '칩 설정은 지우지 않는다');
   assert.equal(JSON.stringify(run('state.maPeriods')), '[5]');
 
   d = await show('1D', true, oneDay);

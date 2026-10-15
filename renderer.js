@@ -65,12 +65,15 @@ const INDICATORS = [
   { key: 'prevHL', label: '전일 고저', varName: '--prev-line', title: '어제 고가 · 저가 점선 (1D)' },
   { key: 'vp', label: '매물대', varName: '--vp-poc', title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
   { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%p) — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
+  { key: 'sar', label: 'SAR', varName: '--sar-up', title: '파라볼릭 SAR — 상승 추세면 봉 아래, 하락 추세면 봉 위에 점. 범례에 지금 방향과 전환 뒤 기간 (1D · 1M · 3M · 1Y · 3Y)' },
 ];
 const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸 약 7px
 const BB_PERIOD = 20;
 const BB_K = 2;
 const VOL_AVG = 20;   // 거래량 평균 봉 수
 const VOL_SURGE = 2;  // 평균의 몇 배부터 막대를 진하게 칠하나
+const SAR_STEP = 0.02; // 파라볼릭 SAR 가속 — 흔한 기본값(와일더)
+const SAR_MAX = 0.2;
 // 저장된 값을 믿지 않는다 — 아는 키만, true 일 때만 켠다.
 const cleanIndicators = (raw) => Object.fromEntries(INDICATORS.map(({ key }) => [key, !!raw && raw[key] === true]));
 
@@ -942,7 +945,8 @@ function renderMaLegend() {
   const bands = (lastChart && lastChart.bands) || null;
   const vw = (lastChart && lastChart.vwapLine) || null;
   const vp = lastChart ? lastProfile : null;
-  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp;
+  const sr = (lastChart && lastChart.sar) || null;
+  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr;
   box.innerHTML = '';
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
@@ -977,6 +981,16 @@ function renderMaLegend() {
     let i = hoverIdx;
     if (i == null) for (i = vw.length - 1; i > 0 && vw[i] == null; i--);
     add('VWAP', vw[i], cssVar('--vwap-line'), '거래량 가중 평균가 — 그날 정규장 봉');
+  }
+  // SAR 은 마우스를 안 올리면 지금 방향과 그 방향이 이어진 기간 — 매수 · 매도 신호가 아니라 상태만 말한다.
+  // 1D 는 전환 시각, 일봉 기간은 전환 뒤 봉 수(거래일, 전환한 날 포함). 마우스를 올리면 그 봉의 SAR.
+  if (sr) {
+    const dir = sr.rising ? '상승' : '하락';
+    const intraday = state.timeframe === '1D';
+    const when = labelFor(sr.flipAt, intraday ? '1D' : '1M');
+    add('SAR', hoverIdx != null ? sr.data[hoverIdx] : intraday ? `${dir} · ${when}부터` : `${dir} ${sr.since}일째`,
+      cssVar(sr.rising ? '--sar-up' : '--sar-down'),
+      `파라볼릭 SAR — ${when} ${dir} 전환 (가속 ${SAR_STEP} · 최대 ${SAR_MAX}). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위`);
   }
   // 매물대는 가장 많이 거래된 가격대(진하게 칠한 칸)를 늘 보여 준다
   if (vp) {
@@ -1374,7 +1388,7 @@ function drawChart(arg) {
   const {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
-    bands = null, vwapLine = null, volAvg = null, profile = false,
+    bands = null, vwapLine = null, volAvg = null, profile = false, sar = null,
   } = arg;
   const color = up ? UP : DOWN;
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
@@ -1486,6 +1500,19 @@ function drawChart(arg) {
         tension: 0.2,
         fill: false,
         spanGaps: false,
+      }] : []),
+      // 파라볼릭 SAR(보조 지표) — 선 없이 봉마다 작은 점. 상승 추세(봉 아래)는 옅은 빨강, 하락(봉 위)은 옅은 파랑.
+      // 툴팁 · 범례 값은 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
+      ...(sar ? [{
+        data: sar.data,
+        yAxisID: 'y',
+        order: 3,
+        showLine: false,
+        pointRadius: 1.4,
+        pointHoverRadius: 1.4,
+        pointHitRadius: 0,
+        pointBorderWidth: 0,
+        pointBackgroundColor: sar.up.map((u) => cssVar(u ? '--sar-up' : '--sar-down')),
       }] : []),
       // VWAP(보조 지표, 1D 정규장 봉만). 시간외 칸은 null 이라 끊긴다.
       ...(vwapLine ? [{
@@ -1705,9 +1732,12 @@ async function dailyFor(symbol, ttl) {
     price: r.price,
     closes: r.closes,
     times: r.times,
-    // 목록의 오늘 캔들용 폴백(해외 종목·네이버 실패). 마지막 봉만 쓰므로
-    // 시·고·저 배열 전체를 들고 있지 않는다 — 5년치면 종목당 세 배다.
+    // 목록의 오늘 캔들용 폴백(해외 종목·네이버 실패). 마지막 봉만 쓰므로 시가 배열은 들고 있지 않는다.
     candle: { open: r.opens?.[last], high: r.highs?.[last], low: r.lows?.[last] },
+    // 파라볼릭 SAR(보조 지표)은 지난 흐름을 이어받아 5년치 고 · 저가 있어야 1M 첫 봉부터 값이 맞는다
+    // (종목당 약 1,250봉 × 2 — 수십 KB).
+    highs: r.highs || [],
+    lows: r.lows || [],
     // 보조 지표용. 거래량 평균은 5년치가 있어야 1M 첫 봉부터 그려지고(이동평균과 같은 이유),
     // 전일 고가 · 저가는 마지막 며칠의 고 · 저만 있으면 된다.
     volumes: r.volumes || [],
@@ -1798,6 +1828,7 @@ async function loadQuote(item, live) {
     daily: { times, closes },
     // 거래량 평균 · 전일 고저(보조 지표). 거래량은 받은 일봉 그대로라 시각도 그 일봉의 것이다.
     dailyVolume: { times: r.times, volumes: r.volumes || [] },
+    dailyHL: { times: r.times, highs: r.highs || [], lows: r.lows || [] },
     recentBars: r.recent || null,
   };
 }
@@ -1819,6 +1850,35 @@ function bandFor(symbol, times) {
   const upper = alignByDay(d.times, b.upper, times);
   const lower = alignByDay(d.times, b.lower, times);
   return upper && lower ? { upper, lower } : null;
+}
+
+// 파라볼릭 SAR(보조 지표). SAR 은 지난 흐름(극값 · 가속)을 이어받아서 차트 첫 봉에서 새로 시작하면 1M 은
+// 대부분 다른 값이 된다 — 일봉 기간은 차트 첫날 앞의 5년치 일봉 고 · 저를 이어 붙여 계산한다. 차트 봉은 오늘
+// 봉을 실시간 캔들로 맞춘 값이라 차트 쪽을 쓴다. 1D(ext 를 넘긴다, 없으면 null)는 정규장 봉만으로 그날 첫 봉부터 —
+// 시간외는 거래가 드물어 빈 칸을 채운 평평한 봉이 많아 엉뚱한 곳에서 뒤집힌다. 시간외 칸은 null.
+// 돌려주는 값: { data, up(봉마다), rising(지금 상승인지), since(전환 봉부터 센 봉 수), flipAt(전환 봉 시각) } | null
+function sarFor(symbol, times, highs, lows, ext) {
+  const intraday = ext !== undefined;
+  const hs = []; const ls = []; const ts = [];
+  const d = !intraday && times.length && quotes[symbol] && quotes[symbol].dailyHL;
+  if (d) {
+    const first = Math.floor(times[0] / 86400000); // 이동평균과 같은 UTC 날짜 짝짓기
+    for (let i = 0; i < d.times.length && Math.floor(d.times[i] / 86400000) < first; i++) {
+      hs.push(d.highs[i]); ls.push(d.lows[i]); ts.push(d.times[i]);
+    }
+  }
+  const pre = hs.length;
+  const idx = times.map((_, i) => i).filter((i) => !(ext && ext[i]));
+  for (const i of idx) { hs.push(highs[i]); ls.push(lows[i]); ts.push(times[i]); }
+  const r = parabolicSar(hs, ls, SAR_STEP, SAR_MAX);
+  const last = hs.length - 1;
+  if (last < 1) return null;
+  let k = last;
+  while (k > 1 && r.up[k - 1] === r.up[last]) k--;
+  const data = new Array(times.length).fill(null);
+  const up = new Array(times.length).fill(null);
+  idx.forEach((i, j) => { data[i] = r.sar[pre + j]; up[i] = r.up[pre + j]; });
+  return { data, up, rising: r.up[last], since: last - k + 1, flipAt: ts[k] };
 }
 
 // 거래량 평균. 일봉 기간은 5년치 일봉 거래량으로(첫 봉부터 평균이 있다).
@@ -2138,6 +2198,10 @@ async function loadChart() {
     ? vwap(highs, lows, closes, volumes, (i) => !(ext && ext[i])) : null;
   const vwapLine = vw && vw.some((v) => v != null) ? vw : null;
   const volAvg = ind.volAvg ? (daily ? dailyVolAvg(item.symbol, times) : seriesVolAvg(volumes, ext)) : null;
+  // SAR 은 1D 와 일봉 기간만. 1W(30분봉)는 밤 사이 공백이, 전체(월봉 · 분기봉)는 봉 크기가 들쭉날쭉하다.
+  const sar = !ind.sar ? null
+    : daily ? sarFor(item.symbol, times, highs, lows)
+      : state.timeframe === '1D' ? sarFor(item.symbol, times, highs, lows, ext) : null;
 
   const held = state.holdings[item.symbol];
   const up = !q || q.change >= 0;
@@ -2191,7 +2255,7 @@ async function loadChart() {
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg,
+    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar,
     profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
   });
 }

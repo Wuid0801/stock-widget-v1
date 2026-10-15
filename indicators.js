@@ -73,6 +73,40 @@ function vwap(highs, lows, closes, volumes, use = () => true) {
   return out;
 }
 
+// 파라볼릭 SAR(와일더). 상승 추세면 SAR 이 봉 아래에서, 하락 추세면 봉 위에서 극값(추세 중 최고 · 최저가)
+// 쪽으로 따라온다 — 따라오는 속도(가속)는 극값이 갱신될 때마다 step 씩 max 까지 커진다. 봉이 SAR 을 뚫으면
+// 방향이 바뀌고 SAR 은 직전 극값에서 다시 시작한다. SAR 은 앞 두 봉의 저가(상승) · 고가(하락)를 넘지 않는다.
+// 첫 방향은 두 봉의 중간값으로 정한다. 돌려주는 값: { sar, up } — 봉마다 SAR 과 상승 추세인지, 첫 봉은 null.
+function parabolicSar(highs, lows, step = 0.02, max = 0.2) {
+  const n = highs.length;
+  const sar = new Array(n).fill(null);
+  const up = new Array(n).fill(null);
+  if (n < 2) return { sar, up };
+  let rising = highs[1] + lows[1] >= highs[0] + lows[0];
+  let af = step;
+  let ep = rising ? Math.max(highs[0], highs[1]) : Math.min(lows[0], lows[1]);
+  let s = rising ? Math.min(lows[0], lows[1]) : Math.max(highs[0], highs[1]);
+  sar[1] = s;
+  up[1] = rising;
+  for (let i = 2; i < n; i++) {
+    let next = s + af * (ep - s);
+    next = rising ? Math.min(next, lows[i - 1], lows[i - 2]) : Math.max(next, highs[i - 1], highs[i - 2]);
+    if (rising ? lows[i] < next : highs[i] > next) {
+      rising = !rising;
+      next = ep;
+      ep = rising ? highs[i] : lows[i];
+      af = step;
+    } else if (rising ? highs[i] > ep : lows[i] < ep) {
+      ep = rising ? highs[i] : lows[i];
+      af = Math.min(max, af + step);
+    }
+    s = next;
+    sar[i] = s;
+    up[i] = rising;
+  }
+  return { sar, up };
+}
+
 // 매물대(가격대별 거래량). from~to 봉의 거래량을 그 봉의 저가~고가에 고르게 나눠, 그 구간의 최저~최고가를
 // bins 칸으로 나눈 칸에 쌓는다. vols 는 아래(낮은 가격) 칸부터, poc 는 가장 많이 쌓인 칸의 번호.
 // 가격 폭이 없거나 거래량이 하나도 없으면 null.
@@ -423,7 +457,7 @@ function meetAt(a, b) {
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
-    calcRSI, sma, bollinger, vwap, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    calcRSI, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,

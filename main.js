@@ -84,7 +84,7 @@ const storeOptions = {
     plainChart: false, // 차트만 보기(이동평균 · 보조 지표 · 기준선을 그리지 않는다)
     infoOpen: true, // 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지
     // 보조 지표(설정의 칩). 기본은 모두 꺼짐 — 이동평균 · 추세선과 겹치면 작은 차트가 빽빽해진다.
-    indicators: { bb: false, vwap: false, volAvg: false, prevHL: false, vp: false, rel: false },
+    indicators: { bb: false, vwap: false, volAvg: false, prevHL: false, vp: false, rel: false, sar: false },
   },
   // 메모장 · PowerShell 이 붙인 UTF-8 BOM 은 떼고 읽는다 — JSON.parse 는 BOM 에서 SyntaxError 를 낸다.
   deserialize: (text) => JSON.parse(text.replace(/^\uFEFF/, '')),
