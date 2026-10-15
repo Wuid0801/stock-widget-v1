@@ -1006,12 +1006,14 @@ const HLINE_GAP = 10;
 // 가로선 이름표 묶기. 이름표는 묶음의 맨 위 선 자리 · 색에 그리므로, 그 자리에서 HLINE_GAP 안으로
 // 들어오는 것끼리 `전일·전고` 처럼 한 이름표가 된다. 예전에는 뒤의 것을 그냥 뺐다 — SOXL 10/14 의
 // 전일 127.57 과 전고 127.92 처럼 겹치면 어느 선이 무엇인지 알 수 없었다.
+// 값(val)이 있는 것은 묶음의 vals 에 같은 순서로 모은다(마우스를 올렸을 때 오른쪽 끝에 적는 값).
 function hLineGroups(items) {
   const groups = [];
   for (const it of [...items].sort((a, b) => a.y - b.y)) {
     const g = groups[groups.length - 1];
     if (g && it.y - g.y < HLINE_GAP) g.text += `·${it.text}`;
-    else groups.push({ y: it.y, text: it.text, color: it.color });
+    else groups.push({ y: it.y, text: it.text, color: it.color, vals: [] });
+    if (it.val != null) groups[groups.length - 1].vals.push(it.val);
   }
   return groups;
 }
@@ -1050,7 +1052,12 @@ const hLinePlugin = {
 
     // 이름표는 선 바로 위에. 가장자리 표시도 같은 묶음에 넣어 안쪽 선의 이름표와 포개지지 않게 한다
     // (위 가장자리는 첫 줄 자리 top+10, 아래는 bottom). 가장자리는 가까운 선부터 적는다.
-    const labels = inside.map((ln) => ({ y: ln.y, text: ln.label, color: ln.color }));
+    // 차트에 마우스를 올린 동안(십자선이 뜨는 동안)은 값도 적는다 — 평소에는 이름만이라 빽빽하지 않고,
+    // 이평선 범례처럼 보고 싶을 때만 숫자가 보인다. 값은 오른쪽 끝(y축 눈금 옆)에 따로 적는다: 왼쪽
+    // 이름표에 붙이면 커서가 오른쪽 절반일 때 왼쪽에 뜨는 툴팁이 그 값을 가렸다.
+    const hovering = !!(c.tooltip && c.tooltip.getActiveElements && c.tooltip.getActiveElements().length);
+    const labels = inside.map((ln) => ({ y: ln.y, color: ln.color, text: ln.label,
+      val: hovering ? money(ln.value, opts.cur) : null }));
     const edge = (items, arrow) => `${arrow} ${items.map((ln) => `${ln.label} ${money(ln.value, opts.cur)}`).join(' · ')}`;
     above.sort((a, b) => b.y - a.y);
     below.sort((a, b) => a.y - b.y);
@@ -1061,7 +1068,11 @@ const hLinePlugin = {
     ctx.textBaseline = 'bottom';
     for (const g of hLineGroups(labels)) {
       ctx.fillStyle = g.color;
+      ctx.textAlign = 'left';
       ctx.fillText(g.text, area.left + 2, g.y - 1);
+      if (!g.vals.length) continue;
+      ctx.textAlign = 'right';
+      ctx.fillText(g.vals.join(' · '), area.right - 2, g.y - 1);
     }
     ctx.restore();
   },

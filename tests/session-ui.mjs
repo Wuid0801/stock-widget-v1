@@ -842,6 +842,26 @@ await test('horizontal lines: close labels merge instead of vanishing; out-of-ra
   plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [
     { value: 195, label: '전일', varName: '--prev-line' }, { value: 230, label: '전고', varName: '--prevhi-line' }] });
   assert.deepEqual(texts.map((t) => t.t), ['전일·▲ 전고 230']);
+
+
+  // 마우스를 올린 동안(툴팁 · 십자선이 잡은 봉이 있는 동안)은 값도 — 이평선 범례처럼. 값은 오른쪽 끝
+  // (y축 옆)에 따로 적는다: 왼쪽 이름표에 붙이면 커서 왼쪽에 뜨는 툴팁이 그 값을 가렸다.
+  const hoverLines = [{ value: 150, label: '전일', varName: '--prev-line' }, { value: 145, label: '전고', varName: '--prevhi-line' },
+    { value: 120, label: '평단', varName: '--avg-line' }, { value: 60, label: '전저', varName: '--prevlo-line' }];
+  const left = () => texts.filter((t) => t.x === 2).map((t) => t.t).sort();
+  const right = () => texts.filter((t) => t.x === 298).map((t) => `${t.t}@${t.y}`).sort();
+  texts.length = 0;
+  plugin.afterDatasetsDraw({ ...chartStub, tooltip: { getActiveElements: () => [{}] } }, {}, { cur: 'KRW', lines: hoverLines });
+  assert.deepEqual(left(), ['▼ 전저 60', '전일·전고', '평단'].sort(), '이름표는 그대로 왼쪽');
+  assert.deepEqual(right(), ['150 · 145@49', '120@79'].sort(), '값은 같은 높이의 오른쪽 끝에, 묶음은 묶음대로');
+  texts.length = 0;
+  plugin.afterDatasetsDraw({ ...chartStub, tooltip: { getActiveElements: () => [] } }, {}, { cur: 'KRW', lines: hoverLines });
+  assert.deepEqual(left(), ['▼ 전저 60', '전일·전고', '평단'].sort());
+  assert.deepEqual(right(), [], '마우스가 나가면 이름만');
+  texts.length = 0;
+  plugin.afterDatasetsDraw({ ...chartStub, tooltip: { getActiveElements: () => [{}] } }, {}, { cur: 'USD',
+    lines: [{ value: 127.57, label: '전일', varName: '--prev-line' }] });
+  assert.deepEqual(texts.filter((t) => t.x === 298).map((t) => t.t), ['127.57'], '값은 그 종목 통화 형식');
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른
