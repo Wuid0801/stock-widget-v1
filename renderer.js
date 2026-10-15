@@ -5,7 +5,8 @@ const UP = '#e24b4a';   // 상승 = 빨강 (한국 관례)
 const DOWN = '#185fa5'; // 하락 = 파랑
 
 const TF = {
-  '1D': { range: '1d', interval: '5m' },
+  // 1D 는 시간외(프리 · 애프터) 봉까지 받는다 — 미국은 야후, 국내는 네이버 NXT 분봉(main.js).
+  '1D': { range: '1d', interval: '5m', extended: true },
   '1W': { range: '5d', interval: '30m' },
   '1M': { range: '1mo', interval: '1d' },
   '3M': { range: '3mo', interval: '1d' },
@@ -1065,6 +1066,33 @@ const candlePlugin = {
   },
 };
 
+// 1D 시간외(프리 · 애프터) 구간의 옅은 배경. 선과 캔들 뒤에 깔려야 해서 beforeDatasetsDraw 이고,
+// 플러그인 목록에서 캔들보다 앞에 둔다. 칸 경계는 이웃한 두 봉의 가운데다.
+const extBandPlugin = {
+  id: 'extBand',
+  beforeDatasetsDraw(c, _args, opts) {
+    const ext = opts && opts.ext;
+    if (!ext || !ext.some(Boolean)) return;
+    const sx = c.scales.x;
+    const area = c.chartArea;
+    const ctx = c.ctx;
+    const step = ext.length > 1 ? Math.abs(sx.getPixelForValue(1) - sx.getPixelForValue(0)) : sx.width;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(area.left, area.top, area.width, area.height);
+    ctx.clip();
+    ctx.fillStyle = cssVar('--ext-band');
+    for (let i = 0; i < ext.length; i++) {
+      if (!ext[i] || ext[i - 1]) continue; // 구간의 첫 봉에서만
+      let j = i;
+      while (j + 1 < ext.length && ext[j + 1]) j++;
+      const x0 = sx.getPixelForValue(i) - step / 2;
+      ctx.fillRect(x0, area.top, sx.getPixelForValue(j) + step / 2 - x0, area.height);
+    }
+    ctx.restore();
+  },
+};
+
 // 교차 지점 표식. 골든은 선 아래에 ▲, 데드는 선 위에 ▼.
 // 평단가 점선과 마찬가지로 축을 건드리지 않도록 캔버스에 직접 그린다.
 const crossMarkPlugin = {
@@ -1156,7 +1184,7 @@ function drawChart(arg) {
   lastChart = arg;
   const {
     closes, times, up, mas = [], cur = 'KRW',
-    volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [],
+    volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
   } = arg;
   const color = up ? UP : DOWN;
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
@@ -1182,7 +1210,7 @@ function drawChart(arg) {
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
-    plugins: [candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
+    plugins: [extBandPlugin, candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
     data: {
       // 1Y · 3Y 를 확대하면 몇 주 · 몇 달만 보이므로 연/월 라벨로는 눈금이 같은 값으로
       // 반복된다(26/03 · 26/03 · 26/04). 그때는 1M · 3M 과 같은 월/일로 쓴다.
@@ -1309,6 +1337,7 @@ function drawChart(arg) {
         hLine: { lines: hLines },
         crossMark: { list: crosses },
         candle: candles ? { opens, highs, lows, closes } : {},
+        extBand: { ext },
         tooltip: {
           // 이동평균 값은 툴팁이 아니라 위쪽 범례에 띄운다.
           // 툴팁은 켠 이평선 수만큼 세로로 늘어나서, 9개면 197px 까지 커져
@@ -1327,6 +1356,9 @@ function drawChart(arg) {
             title: (items) => {
               const it = items[0];
               if (!it) return '';
+              // 1D 시간외 봉은 어느 세션인지 붙인다(배경만으로는 무슨 구간인지 모른다)
+              const session = ext && ext[it.dataIndex];
+              if (session) return `${it.label} ${session === 'pre' ? '프리' : '애프터'}`;
               if (!YEAR_TF.has(state.timeframe)) return it.label;
               const d = new Date(times[it.dataIndex]);
               const p = (n) => String(n).padStart(2, '0');
@@ -1668,16 +1700,29 @@ async function loadChart() {
   const q = quotes[item.symbol];
   const closes = r.closes.slice();
   const times = r.times.slice();
+  // 1D 시간외 봉(main.js): 봉마다 'pre' · 'after', 정규장은 null. 그 구간의 배경을 옅게 칠한다.
+  const ext = r.ext ? r.ext.slice() : null;
 
   // Yahoo 1D 봉은 20분 전에서 끊긴다. 끝점을 이어붙이거나(장중 현재가 · 장 마감 뒤 종가)
   // 야후 종가 봉을 거래소 종가로 맞춰 차트 끝과 위에 표시된 가격이 어긋나 보이지 않게 한다.
   // 미국 종목은 야후 분봉이 늦지 않아 맞출 것이 없다(intradayEnd 의 날짜 · 시각도 한국 기준이다).
+  // 기준은 정규장의 마지막 봉이다 — 뒤에 애프터 봉이 붙어 있어도. 끝점은 시각 순서대로 끼운다.
+  const lastReg = ext ? ext.lastIndexOf(null) : closes.length - 1;
   const end = state.timeframe === '1D' && !isUs(item.symbol)
-    ? intradayEnd(q, r.volumes && r.volumes[r.volumes.length - 1], Date.now()) : null;
-  if (end && end.replace) closes[closes.length - 1] = end.value;
-  else if (end) {
-    closes.push(end.value);
-    times.push(end.at);
+    ? intradayEnd(q, r.volumes && r.volumes[lastReg], Date.now()) : null;
+  let endAt = -1; // 끼운 끝점의 자리 — 아래 봉 단위 배열들도 같은 자리를 채운다
+  if (end && end.replace) {
+    if (lastReg >= 0) closes[lastReg] = end.value;
+  } else if (end) {
+    const later = times.findIndex((t) => t > end.at);
+    const i = later < 0 ? closes.length : later;
+    // 애프터 봉보다 뒤("지금")로 가는 끝점은 붙이지 않는다 — 선이 애프터에서 정규장 값으로 되돌아간다.
+    if (!(lastReg >= 0 && lastReg < closes.length - 1 && i > lastReg + 1)) {
+      closes.splice(i, 0, end.value);
+      times.splice(i, 0, end.at);
+      if (ext) ext.splice(i, 0, null);
+      endAt = i;
+    }
   }
 
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
@@ -1711,10 +1756,13 @@ async function loadChart() {
   const crosses = confirmedCrosses(found, times.length);
   renderCrossBadge(crosses, times);
 
-  // 1D 는 현재가를 끝에 이어붙였으므로 봉 단위 배열들보다 한 칸 길다 → 마지막 칸을 채운다
+  // 1D 는 끝점을 끼웠으므로 봉 단위 배열들보다 한 칸 길다 → 그 칸을 채운다
   const pad = (src, fill) => {
-    const a = src ? src.slice(0, closes.length) : [];
-    while (a.length < closes.length) a.push(typeof fill === 'function' ? fill(a.length) : fill);
+    const at = (i) => (typeof fill === 'function' ? fill(i) : fill);
+    if (!src) return closes.map((_, i) => at(i));
+    const a = src.slice(0, r.closes.length);
+    if (endAt >= 0) a.splice(endAt, 0, at(endAt));
+    while (a.length < closes.length) a.push(at(a.length));
     return a;
   };
   const volumes = pad(r.volumes, 0);
@@ -1783,13 +1831,15 @@ async function loadChart() {
     // 갱신에서 차트를 한 번 더 만들지만(hover 범례가 한 번 지워진다), 서명이 늘 화면 상태를
     // 담아 토글 때처럼 "서명에 빠져 다시 안 그려지는" 일이 생기지 않는다.
     + `|${zoom ? `${zoom.start}-${zoom.end}` : ''}`
-    + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`;
+    + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`
+    // 애프터 봉이 뒤에 붙으면 정규장 끝점(종가)은 마지막 칸이 아니다 — 그 값과 시간외 봉 수도 본다.
+    + `|${ext ? ext.filter(Boolean).length : ''}|${endAt >= 0 ? closes[endAt] : ''}|${lastReg >= 0 ? closes[lastReg] : ''}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends,
+    volumes, opens, highs, lows, crosses, hLines, trends, ext,
   });
 }
 

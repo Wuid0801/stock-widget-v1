@@ -26,10 +26,12 @@ await page.waitForFunction(() => /\d{2}:\d{2}:\d{2}/.test(document.getElementByI
 
 const probe = () => page.evaluate(() => {
   const c = Chart.getChart(document.getElementById('chart'));
+  // 1D 의 시간외 봉(국내 NXT 프리 · 애프터)은 야후 정규장 시계열에 없다 → 정규장 봉만 대조한다
+  const ext = c && c.config.options.plugins.extBand && c.config.options.plugins.extBand.ext;
   return {
     name: document.getElementById('dname').textContent,
     tf: [...document.querySelectorAll('#tf button')].find(b => b.classList.contains('on')).textContent,
-    data: c ? c.data.datasets[0].data : null,
+    data: c ? c.data.datasets[0].data.filter((_, i) => !(ext && ext[i])) : null,
     labels: c ? [c.data.labels[0], c.data.labels.at(-1)] : null,
   };
 });

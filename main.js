@@ -661,12 +661,115 @@ async function fillGaps(symbol, stamps, q) {
   });
 }
 
-ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
+// --- 1D 시간외 봉 ---------------------------------------------------------------
+// 1D 는 정규장만 그렸다. 프리 · 애프터마켓 봉을 시각 순서대로 이어 붙이고 봉마다 세션을 단다
+// (ext: 'pre' · 'after', 정규장은 null) — 렌더러가 그 구간의 배경을 옅게 칠한다.
+// 미국은 야후가 includePrePost 로 같이 주고, 어디까지가 정규장인지는 응답의 tradingPeriods 가 알려 준다.
+// 국내는 야후가 15:30 까지만 줘서(includePrePost 도 같다) 네이버 NXT 분봉을 5분봉으로 묶어 붙인다.
+// NXT 는 프리(08:00~08:50) · 애프터(15:40~20:00)를 연속 매매로 연다. ETF 는 NXT 에 없어 빈 응답이다.
+const STEP_5M = 300000;
+const EXT_WINDOWS = [['pre', '0800', '0850'], ['after', '1530', '2000']];
+const EXT_TTL = 30000;
+const naverMinutes = new Map(); // '코드|YYYYMMDD|창' → { at, bars, done }
+const kstClock = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(11, 16).replace(':', '');
+
+// 네이버 분봉(1분) → 5분봉. 시각은 칸의 시작이다(야후 5분봉과 같다).
+// 이름과 달리 accumulatedTradingVolume 은 그 1분의 거래량이다(2026-10-14 실측 — 하루 누적이 아니다).
+function bucket5m(rows, session) {
+  const out = [];
+  const sorted = [...rows].sort((a, b) => String(a?.localDateTime).localeCompare(String(b?.localDateTime)));
+  for (const r of sorted) {
+    const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(String(r?.localDateTime ?? ''));
+    const c = Number(r?.currentPrice);
+    if (!m || !(c > 0)) continue;
+    const at = Math.floor(Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+09:00`) / STEP_5M) * STEP_5M;
+    const pick = (v) => (Number(v) > 0 ? Number(v) : c);
+    const v = Number(r.accumulatedTradingVolume) || 0;
+    const last = out[out.length - 1];
+    if (last && last.time === at) {
+      last.close = c;
+      last.high = Math.max(last.high, pick(r.highPrice));
+      last.low = Math.min(last.low, pick(r.lowPrice));
+      last.volume += v;
+    } else {
+      out.push({ time: at, open: pick(r.openPrice), high: pick(r.highPrice), low: pick(r.lowPrice), close: c, volume: v, ext: session });
+    }
+  }
+  return out;
+}
+
+// 그날 한 창(프리 또는 애프터)의 5분봉. 다 지난 창(지난 날 · 끝난 시각)은 바뀌지 않으므로 계속 기억하고,
+// 진행 중인 창은 30초만 쓴다(1D 차트 캐시와 같다). 실패는 기억하지 않는다.
+async function naverWindow(code, day, [name, from, to], now) {
+  const key = `${code}|${day}|${name}`;
+  const hit = naverMinutes.get(key);
+  if (hit && (hit.done || now - hit.at < EXT_TTL)) return hit.bars;
+  const rows = await naverJson(`https://api.stock.naver.com/chart/domestic/NXT/item/${code}/minute`
+    + `?startDateTime=${day}${from}&endDateTime=${day}${to}`);
+  const bars = bucket5m(Array.isArray(rows) ? rows : [], name);
+  naverMinutes.set(key, { at: now, bars, done: day < kstDay(now) || kstClock(now) >= to });
+  return bars;
+}
+
+const toSeries = (bars) => ({
+  closes: bars.map((b) => b.close), times: bars.map((b) => b.time), volumes: bars.map((b) => b.volume),
+  opens: bars.map((b) => b.open), highs: bars.map((b) => b.high), lows: bars.map((b) => b.low),
+  ext: bars.map((b) => b.ext || null),
+});
+
+// 국내 1D 에 그날 NXT 프리 · 애프터 봉을 붙인다. 그날 = 오늘이다 — 프리마켓이 열리면 새 하루라
+// 08:00 부터는 어제 정규장이 빠진다. 오늘 시간외가 아직 없으면(08:00 전 · 휴장일) 야후 봉의 날을 쓴다.
+// 그날이 아닌 봉은 버린다. 네이버가 실패하면 던지고, 부르는 쪽이 정규장만 그린다.
+async function withNaverExtended(code, series, now) {
+  const today = kstDay(now);
+  const clock = kstClock(now);
+  const dayBars = async (day) => (await Promise.all(EXT_WINDOWS
+    .filter(([, from]) => day < today || clock >= from)
+    .map((w) => naverWindow(code, day, w, now)))).flat();
+  let day = today;
+  let ext = await dayBars(today);
+  const yahooDay = series.times.length ? kstDay(series.times[series.times.length - 1]) : null;
+  if (!ext.length && yahooDay && yahooDay !== today) {
+    day = yahooDay;
+    ext = await dayBars(yahooDay);
+  }
+  if (!ext.length) return series;
+  const bars = series.times.map((t, i) => ({ time: t, open: series.opens[i], high: series.highs[i],
+    low: series.lows[i], close: series.closes[i], volume: series.volumes[i], ext: null }));
+  const taken = new Set(bars.map((b) => b.time));
+  return toSeries([...bars, ...ext.filter((b) => !taken.has(b.time))]
+    .filter((b) => kstDay(b.time) === day)
+    .sort((a, b) => a.time - b.time));
+}
+
+// 시간외는 거래가 드물어 5분 칸이 군데군데 빈다(SOXL 애프터 48칸 중 18칸, 2026-10-14). x축이 봉 순서라
+// 그대로 두면 네 시간이 한 시간 반처럼 눌린다 — 같은 세션 안의 빈 칸을 직전 종가로 채운다(거래량 0).
+// 세션이 바뀌는 곳(프리 → 정규장 → 애프터)은 채우지 않는다.
+function fillExtGaps(s) {
+  const bars = [];
+  for (let i = 0; i < s.times.length; i++) {
+    if (i > 0 && s.ext[i] && s.ext[i] === s.ext[i - 1]) {
+      const c = s.closes[i - 1];
+      for (let t = s.times[i - 1] + STEP_5M; t < s.times[i]; t += STEP_5M) {
+        bars.push({ time: t, open: c, high: c, low: c, close: c, volume: 0, ext: s.ext[i] });
+      }
+    }
+    bars.push({ time: s.times[i], open: s.opens[i], high: s.highs[i], low: s.lows[i],
+      close: s.closes[i], volume: s.volumes[i], ext: s.ext[i] });
+  }
+  return toSeries(bars);
+}
+
+ipcMain.handle('yf:chart', async (_e, { symbol, range, interval, extended }) => {
   if (!SYMBOL_RE.test(String(symbol ?? '')) || !RANGES.has(range) || !INTERVALS.has(interval)) {
     return { ok: false, error: '잘못된 요청' };
   }
+  // 시간외는 1D(5분봉)에만 붙인다. 지수는 시간외가 없다.
+  const ext = extended === true && range === '1d' && interval === '5m';
+  const usExt = ext && US_RE.test(symbol);
+  const krExt = ext ? /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol) : null;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
-    + `?range=${range}&interval=${interval}`;
+    + `?range=${range}&interval=${interval}${usExt ? '&includePrePost=true' : ''}`;
   try {
     const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -701,7 +804,20 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       highs.push(rawHighs[i] ?? rawCloses[i]);
       lows.push(rawLows[i] ?? rawCloses[i]);
     }
-    if (!closes.length) return { ok: false, error: '빈 데이터' };
+
+    let series = { closes, times, volumes, opens, highs, lows, ext: null };
+    if (usExt) {
+      const reg = (result.meta?.tradingPeriods?.regular || []).flat()
+        .find((p) => Number.isFinite(p?.start) && Number.isFinite(p?.end));
+      if (reg) series.ext = times.map((t) => (t < reg.start * 1000 ? 'pre' : t >= reg.end * 1000 ? 'after' : null));
+    }
+    if (krExt) {
+      // 장 시작 직후 야후가 빈 응답이어도(20분 지연) 프리 봉은 그린다
+      try { series = await withNaverExtended(krExt[1], series, Date.now()); } catch { /* 정규장만 그린다 */ }
+    }
+    if (series.ext && series.ext.some(Boolean)) series = fillExtGaps(series);
+    else delete series.ext; // 시간외가 없으면 응답 모양은 예전 그대로
+    if (!series.closes.length) return { ok: false, error: '빈 데이터' };
 
     return {
       ok: true,
@@ -711,12 +827,7 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval }) => {
       currency: result.meta?.currency ?? 'KRW',
       week52High: result.meta?.fiftyTwoWeekHigh ?? null,
       week52Low: result.meta?.fiftyTwoWeekLow ?? null,
-      closes,
-      times,
-      volumes,
-      opens,
-      highs,
-      lows,
+      ...series,
     };
   } catch (err) {
     return { ok: false, error: err.message || '요청 실패' };

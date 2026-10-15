@@ -417,6 +417,64 @@ await test('1D US chart: no end point from the live quote; the over-market line 
   assert.equal(draws.at(-1).hLines.find((l) => l.varName === '--over-line')?.label, '애프터');
 });
 
+// 1D 에 시간외 봉이 붙으면(main.js: 국내 NXT 프리 · 애프터, 미국 야후) 정규장 끝점(확인된 종가 · 현재가)은
+// 마지막 칸이 아니라 정규장 마지막 봉 자리에 맞춰야 한다. 끝에 붙이면 선이 애프터에서 종가로 되돌아간다.
+await test('1D with extended bars: the regular end point sits before the after bars, arrays stay aligned', async () => {
+  const { c, run } = harness(['loadChart']);
+  const draws = [];
+  const T = (s) => Date.parse(`2026-09-10T${s}:00+09:00`);
+  const hm = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(11, 16);
+  let bars;
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
+    renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+  });
+  run('let lastDrawSig = null;');
+  const quote = (patch = {}) => run(`quotes['005930.KS'] = ${JSON.stringify({ price: 103, prevClose: 95, change: 8,
+    live: true, open: false, session: 'after', priceSession: 'after', isTrading: true,
+    tradedAt: '2026-09-10T16:05:00+09:00', regularClose: 101, closeTime: '1530', ...patch })};`);
+  const series = (closes, at, ext, volumes) => ({ ok: true, closes, times: at.map(T), volumes, ext,
+    opens: closes.slice(), highs: closes.map((v) => v + 1), lows: closes.map((v) => v - 1) });
+  const draw = async (patch) => { run('lastDrawSig = null;'); quote(patch); await c.loadChart(); return draws.at(-1); };
+
+  bars = series([99, 98, 100, 102, 103], ['08:00', '09:00', '15:00', '15:40', '15:45'],
+    ['pre', null, null, 'after', 'after'], [5, 10, 20, 7, 3]);
+  let d = await draw();
+  assert.deepEqual(d.closes, [99, 98, 100, 101, 102, 103], '확인된 종가가 15:30 자리에');
+  assert.deepEqual(d.times.map(hm), ['08:00', '09:00', '15:00', '15:30', '15:40', '15:45']);
+  assert.deepEqual(d.ext, ['pre', null, null, null, 'after', 'after'], '끼운 끝점은 정규장');
+  assert.deepEqual(d.volumes, [5, 10, 20, 0, 7, 3]);
+  assert.deepEqual([d.opens[3], d.highs[3], d.lows[3]], [101, 101, 101]);
+  assert.deepEqual([d.highs[4], d.lows[4]], [103, 101], '뒤의 애프터 봉은 제 값 그대로');
+  assert.deepEqual(bars.closes, [99, 98, 100, 102, 103], '받은 봉은 그대로');
+
+  // 종가가 바뀌면(마지막 칸은 그대로여도) 다시 그린다
+  const before = draws.length;
+  quote({ regularClose: 101.5 });
+  await c.loadChart();
+  assert.equal(draws.length, before + 1, 'redraws when only the middle end point changes');
+
+  // 야후 종가 봉(거래량 0)이 들어오면 그 봉을 맞춘다 — 마지막 애프터 봉이 아니라
+  bars = series([99, 98, 100, 100.5, 102, 103], ['08:00', '09:00', '15:00', '15:30', '15:40', '15:45'],
+    ['pre', null, null, null, 'after', 'after'], [5, 10, 20, 0, 7, 3]);
+  d = await draw();
+  assert.deepEqual(d.closes, [99, 98, 100, 101, 102, 103]);
+
+  // 종료 시각을 몰라 "지금" 으로 가는 끝점은 애프터 봉 뒤에 붙이지 않는다
+  bars = series([99, 98, 100, 102, 103], ['08:00', '09:00', '15:00', '15:40', '15:45'],
+    ['pre', null, null, 'after', 'after'], [5, 10, 20, 7, 3]);
+  d = await draw({ closeTime: null });
+  assert.deepEqual(d.closes, [99, 98, 100, 102, 103]);
+
+  // 장 시작 직후 야후가 비어 프리 봉만 있으면 현재가는 그 뒤에 붙는다
+  bars = series([99, 98.5], ['08:00', '08:45'], ['pre', 'pre'], [5, 4]);
+  d = await draw({ session: 'regular', priceSession: 'regular', open: true, price: 104, regularClose: null });
+  assert.deepEqual(d.closes, [99, 98.5, 104]);
+  assert.deepEqual(d.ext, ['pre', 'pre', null]);
+});
+
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른
 // 값들보다 뒤처진다. 상세 캔들은 네이버 실시간이므로, 맞춰주지 않으면 한 화면이
 // 서로 다른 순간을 가리킨다. 지나간 봉은 건드리면 안 된다.
@@ -925,7 +983,7 @@ await test('drawChart draws trend lines on top of every other dataset, and drops
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
   });
@@ -1049,7 +1107,7 @@ await test('3Y labels read like 1Y: YY/MM axis, full date in the tooltip, MM/DD 
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
   });
