@@ -46,7 +46,7 @@ function harness(extra = []) {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -479,8 +479,9 @@ await test('1D with extended bars: the regular end point sits before the after b
 await test('indicators: saved value is cleaned; chips toggle, save and redraw', () => {
   const { c, run, elements } = harness(['renderIndChips']);
   assert.equal(JSON.stringify(run("cleanIndicators({ bb: true, vwap: 'yes', bogus: true })")),
-    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false}', '아는 키만, true 일 때만');
-  assert.equal(JSON.stringify(run('cleanIndicators(undefined)')), '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false}');
+    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false}', '아는 키만, true 일 때만');
+  assert.equal(JSON.stringify(run('cleanIndicators(undefined)')),
+    '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false}');
   const kids = [];
   let saves = 0;
   let loads = 0;
@@ -489,8 +490,8 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   Object.assign(c, { save: () => { saves++; }, loadChart: () => { loads++; }, cssVar: (n) => n });
   run("state.indicators = cleanIndicators({ bb: true });");
   run('renderIndChips()');
-  const shown = () => kids.slice(-4);
-  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저']);
+  const shown = () => kids.slice(-6);
+  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비']);
   assert.equal(shown()[0].className, 'on');
   assert.equal(shown()[0].style.color, '--bb-line', '켜진 칩은 그 선의 색');
   assert.equal(shown()[1].className, undefined);
@@ -540,8 +541,9 @@ await test('indicators: loadChart passes only the enabled overlays — bands and
   assert.equal(d.volAvg, null, '꺼 두면 아무것도 넘기지 않는다');
 
   const before = draws.length;
-  d = await draw('1M', { bb: true, volAvg: true }, daily);
+  d = await draw('1M', { bb: true, volAvg: true, vp: true }, daily);
   assert.equal(draws.length, before + 1, '칩만 바꿔도 다시 그린다');
+  assert.equal(d.profile, true, '매물대는 일봉 기간에 그린다(구간은 drawChart 가 정한다)');
   const full = c.bollinger(C, 20, 2);
   assert.equal(d.bands.upper.length, 22);
   assert.equal(d.bands.upper[21], full.upper[N - 1], '5년치 일봉으로 계산해 차트 날짜에 맞춘다');
@@ -555,8 +557,9 @@ await test('indicators: loadChart passes only the enabled overlays — bands and
   const oneDay = { ok: true, closes: [99, 100, 102, 101, 103], times: ['08:00', '09:00', '09:05', '15:00', '15:40'].map(T1),
     volumes: [10, 100, 300, 0, 50], opens: [99, 100, 102, 101, 103], highs: [99, 101, 103, 101, 103], lows: [99, 99, 101, 101, 103],
     ext: ['pre', null, null, null, 'after'] };
-  d = await draw('1D', { bb: true, vwap: true, prevHL: true }, oneDay);
+  d = await draw('1D', { bb: true, vwap: true, prevHL: true, vp: true }, oneDay);
   assert.equal(d.bands, null, '볼린저는 일봉 기간만');
+  assert.equal(d.profile, false, '매물대도 일봉 기간만');
   const tp1 = (101 + 99 + 100) / 3;
   const tp2 = (103 + 101 + 102) / 3;
   assert.equal(d.vwapLine[0], null, '프리 봉은 빼고 그 칸은 비운다');
@@ -602,7 +605,7 @@ await test('indicators: drawChart draws the band as a filled pair, VWAP on the p
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
   });
@@ -639,6 +642,7 @@ await test('indicators: legend shows BB low~high on hover, VWAP its latest value
   c.document.createElement = () => node();
   box.appendChild = (s) => items.push(s);
   Object.assign(c, { cssVar: (n) => n, maColor: () => '#000' });
+  run('lastProfile = null;');
   run(`lastChart = { cur: 'KRW', mas: [], trends: [], bands: { upper: [110, 120], lower: [90, 95] },
     vwapLine: [100, 102, null] };`);
   const read = () => items.map((s) => `${s.text}=${s.kids[0].textContent}`);
@@ -651,6 +655,131 @@ await test('indicators: legend shows BB low~high on hover, VWAP its latest value
   items.length = 0;
   run('lastChart.bands = null; lastChart.vwapLine = null; renderMaLegend();');
   assert.equal(elements.get('maLegend').hidden, true);
+  // 매물대는 가장 많이 거래된 가격대를 늘 보인다
+  items.length = 0;
+  run('lastProfile = { lo: 100, step: 5, poc: 2, vols: [1, 2, 9] }; renderMaLegend();');
+  assert.equal(elements.get('maLegend').hidden, false);
+  assert.deepEqual([...read()], ['매물대=110~115']);
+});
+
+// 지수 대비 수익률(보조 지표): 기간 배지에 종목 수익률 - 같은 기간 지수 수익률(%p).
+await test('indicators: period badge adds the excess return over the index, with the index return in its tooltip', () => {
+  const { run, elements } = harness(['renderPeriod']);
+  run(formatting);
+  run("hexA = () => 'bg'; cssVar = () => '#888';");
+  const el = () => elements.get('period');
+  run("state.timeframe = '1M'; renderPeriod(100, 105.2, { name: '코스피', pct: 2.1 });");
+  assert.equal(el().hidden, false);
+  assert.match(el().innerHTML, /^1M \+5\.20%<span style="color:#e24b4a"> · 초과 \+3\.10%p<\/span>$/, el().innerHTML);
+  assert.equal(el().title, '같은 기간 코스피 +2.10% — 종목이 3.10%p 앞섬');
+  run("renderPeriod(100, 101, { name: '코스닥', pct: 4 });");
+  assert.match(el().innerHTML, /초과 -3\.00%p/);
+  assert.match(el().innerHTML, /color:#185fa5/, '뒤처지면 파랑');
+  assert.match(el().title, /3\.00%p 뒤처짐/);
+  run('renderPeriod(100, 101);');
+  assert.equal(el().innerHTML, '1M +1.00%', '끄면 예전 그대로');
+  assert.equal(el().title, '');
+  run("state.timeframe = '1D'; renderPeriod(100, 101, { name: '코스피', pct: 1 });");
+  assert.equal(el().hidden, true, '1D 는 기간 배지가 없다');
+});
+
+await test('indicators: loadChart fetches the matching index with the chart — KOSPI, KOSDAQ or S&P 500 — and uses the live index value', async () => {
+  const { c, run } = harness(['loadChart', 'alignByDay', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange']);
+  const asked = [];
+  const periods = [];
+  const day = (d) => Date.parse(`${d}T00:00:00Z`);
+  const series = (closes) => ({ ok: true, closes, times: closes.map((_, i) => day(`2026-09-0${i + 1}`)),
+    volumes: closes.map(() => 1), opens: closes, highs: closes, lows: closes });
+  const charts = { '^KS11': series([2000, 2100]), '^KQ11': series([800, 760]), '^GSPC': series([5000, 5100]) };
+  Object.assign(c, {
+    fetchChartCached: async (s) => { asked.push(s); return charts[s] || series([100, 110]); },
+    err: () => {}, quoteErrText: () => '', renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW', drawChart: () => {},
+    renderPeriod: (first, last, rel) => periods.push({ first, last, rel }),
+  });
+  run("let lastDrawSig = null; state.watchlist = [{ symbol: '005930.KS', name: 'a' }, { symbol: '247540.KQ', name: 'b' }, { symbol: 'SOXL', name: 'c' }];");
+  const view = async (symbol, tf = '1M', rel = true) => {
+    asked.length = 0;
+    run(`lastDrawSig = null; state.selected = '${symbol}'; state.timeframe = '${tf}';
+      state.indicators = cleanIndicators({ rel: ${rel} }); quotes['${symbol}'] = { price: 110, prevClose: 100, change: 10 };`);
+    await c.loadChart();
+    return periods.at(-1);
+  };
+  let p = await view('005930.KS');
+  assert.deepEqual([...asked], ['005930.KS', '^KS11'], '코스피 상장은 코스피');
+  assert.equal(p.rel.name, '코스피');
+  assert.equal(p.rel.pct, 5, '지수 차트 마지막 값으로');
+  run("quotes['^KS11'] = { price: 2200 };"); // 위 지수 줄의 실시간 값
+  p = await view('005930.KS');
+  assert.equal(p.rel.pct, 10, '국내 지수는 실시간 지수 값을 쓴다');
+  p = await view('247540.KQ');
+  assert.deepEqual([...asked], ['247540.KQ', '^KQ11'], '코스닥 상장은 코스닥');
+  assert.equal(p.rel.pct, -5);
+  p = await view('SOXL');
+  assert.deepEqual([...asked], ['SOXL', '^GSPC'], '미국은 S&P 500');
+  assert.equal(p.rel.name, 'S&P 500');
+  p = await view('SOXL', '1M', false);
+  assert.deepEqual([...asked], ['SOXL'], '끄면 지수를 받지 않는다');
+  assert.equal(p.rel, null);
+  p = await view('SOXL', '1D');
+  assert.deepEqual([...asked], ['SOXL'], '1D 는 기간 배지가 없어 받지 않는다');
+  run("state.selected = '^KS11'; state.timeframe = '1M'; quotes['^KS11'] = { price: 2200 }; lastDrawSig = null;");
+  asked.length = 0;
+  await c.loadChart();
+  assert.deepEqual([...asked], ['^KS11'], '지수 자체를 볼 때는 비교하지 않는다');
+});
+
+// 매물대(보조 지표): drawChart 가 보이는 구간으로 계산해 플러그인에 넘긴다. 플러그인은 오른쪽 끝에서 왼쪽으로 그린다.
+await test('indicators: volume profile is computed over the visible range and drawn from the right edge', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: () => 'x', cssVar: (n) => n,
+  });
+  const day = 86400000;
+  const t0 = Date.parse('2026-07-01T00:00:00Z');
+  run(`state.timeframe = '3M';
+    var T_ = Array.from({ length: 30 }, (_, i) => ${t0} + i * ${day});
+    var C_ = Array.from({ length: 30 }, (_, i) => 100 + i);
+    var arg_ = { closes: C_, times: T_, up: true, volumes: C_.map(() => 10), highs: C_.map((v) => v + 1), lows: C_.map((v) => v - 1),
+      profile: true };`);
+  run('drawChart(arg_);');
+  let p = configs.at(-1).options.plugins.profile.profile;
+  assert.equal(p.lo, 99);
+  assert.equal(p.hi, 130);
+  assert.equal(p.vols.length, 20);
+  run('zoom = { start: T_[10], end: T_[19] }; drawChart(arg_);');
+  p = configs.at(-1).options.plugins.profile.profile;
+  assert.equal(p.lo, 109, '확대하면 그 구간의 매물대');
+  assert.equal(p.hi, 120);
+  run('zoom = null; arg_.profile = false; drawChart(arg_);');
+  assert.equal(configs.at(-1).options.plugins.profile.profile, null, '끄면 넘기지 않는다');
+});
+
+await test('indicators: profile plugin bars grow leftward from the right edge, the busiest price darker', () => {
+  const { c, run } = harness();
+  run(source.slice(source.indexOf('const VP_MAX_WIDTH'), source.indexOf('// 교차 지점 표식')));
+  const plugin = run('profilePlugin');
+  const rects = [];
+  const ctx = { save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, set fillStyle(v) { this.fs = v; },
+    fillRect(x, y, w, h) { rects.push({ x, y, w, h, fs: this.fs }); } };
+  c.cssVar = (n) => n;
+  const chartStub = { ctx, chartArea: { left: 0, right: 200, top: 0, bottom: 100, width: 200, height: 100 },
+    scales: { y: { getPixelForValue: (v) => 100 - v } } };
+  plugin.beforeDatasetsDraw(chartStub, {}, { profile: { lo: 0, step: 10, poc: 1, vols: [5, 10, 0, 2.5] } });
+  assert.equal(rects.length, 3, '빈 칸은 그리지 않는다');
+  assert.deepEqual(rects.map((r) => r.w), [30, 60, 15], '가장 긴 막대가 차트 폭의 30%');
+  assert.ok(rects.every((r) => r.x + r.w === 200), '오른쪽 끝에 붙는다');
+  assert.deepEqual(rects.map((r) => r.fs), ['--vp-bar', '--vp-poc', '--vp-bar']);
+  assert.equal(rects[1].y, 80.5, '칸의 위쪽(가격 20)이 y 80, 1px 틈');
+  assert.equal(rects[1].h, 9);
+  rects.length = 0;
+  plugin.beforeDatasetsDraw(chartStub, {}, { profile: null });
+  assert.equal(rects.length, 0);
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른
@@ -1161,7 +1290,7 @@ await test('drawChart draws trend lines on top of every other dataset, and drops
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
   });
@@ -1285,7 +1414,7 @@ await test('3Y labels read like 1Y: YY/MM axis, full date in the tooltip, MM/DD 
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
   });

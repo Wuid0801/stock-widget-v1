@@ -63,6 +63,8 @@
     --bb-fill: rgba(159, 176, 200, 0.08); /* 볼린저 밴드 사이 */
     --vwap-line: #f0b429; /* VWAP (1D) */
     --vol-avg: rgba(232, 236, 242, 0.55); /* 거래량 평균선 */
+    --vp-bar: rgba(232, 236, 242, 0.14); /* 매물대 가로 막대 */
+    --vp-poc: rgba(232, 236, 242, 0.32); /* 매물대 — 가장 많이 거래된 가격대 */
     /* 지지·저항 추세선 (3M · 1Y). 등락 색(빨강/파랑)과 겹치지 않는 색으로 둔다 */
     --sup-line: #5fd0a6; /* 저점을 잇는 지지선 */
     --res-line: #e8a94f; /* 고점을 잇는 저항선 */
@@ -135,6 +137,8 @@
     --bb-fill: rgba(107, 122, 144, 0.08); /* 볼린저 밴드 사이 */
     --vwap-line: #a86b00; /* VWAP (1D) */
     --vol-avg: rgba(26, 31, 39, 0.5); /* 거래량 평균선 */
+    --vp-bar: rgba(26, 31, 39, 0.1); /* 매물대 가로 막대 */
+    --vp-poc: rgba(26, 31, 39, 0.26); /* 매물대 — 가장 많이 거래된 가격대 */
     --sup-line: #10795a; /* 저점을 잇는 지지선 */
     --res-line: #8a5a10; /* 고점을 잇는 저항선 */
     --crosshair: rgba(0, 0, 0, 0.3);
@@ -694,7 +698,7 @@
 
         <div class="sect">보조 지표 <span class="sechint">켜 둔 것만 차트에 그립니다</span></div>
         <div class="machips" id="indChips"></div>
-        <div class="ohint">볼린저는 1M · 3M · 1Y · 3Y, VWAP · 전일 고저는 1D, 거래량 평균은 모든 기간에 나옵니다. 칩에 마우스를 올리면 설명이 보입니다.</div>
+        <div class="ohint">볼린저 · 매물대는 1M · 3M · 1Y · 3Y, VWAP · 전일 고저는 1D, 지수 대비는 1M 이상의 기간 배지, 거래량 평균은 모든 기간에 나옵니다. 칩에 마우스를 올리면 설명이 보입니다.</div>
         <div class="sect">
           목표가 알림
           <label class="toggle"><input type="checkbox" id="alertOn" /> 사용</label>

@@ -1,6 +1,6 @@
 // 보조 지표(볼린저 밴드 · VWAP) 계산 — 앱을 띄우지 않고 indicators.js 를 검증한다.
 // 기대값은 손으로 셀 수 있는 작은 예로 고정했다.
-import { bollinger, vwap } from '../indicators.js';
+import { bollinger, vwap, volumeProfile, returnSince } from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -43,6 +43,40 @@ const near = (a, b) => a != null && Math.abs(a - b) < 1e-9;
 
   v = vwap([1, 2], [1, 2], [1, 2], [0, 0]);
   check('거래량이 아직 없으면 비운다', v.every((x) => x === null));
+}
+
+// --- 매물대 ----------------------------------------------------------------------
+{
+  // 가격 100~110 을 10칸(칸마다 1). 첫 봉 100~110 거래량 1000 → 칸마다 100.
+  // 둘째 봉 105~107 거래량 600 → 105~106, 106~107 칸에 300씩. 셋째 봉은 108 한 가격에 50.
+  let p = volumeProfile([110, 107, 108], [100, 105, 108], [1000, 600, 50], 0, 2, 10);
+  check('구간의 최저~최고가를 칸으로 나눈다', p.lo === 100 && p.hi === 110 && near(p.step, 1));
+  check('봉의 거래량을 그 봉의 저가~고가에 고르게 나눈다',
+    near(p.vols[0], 100) && near(p.vols[5], 400) && near(p.vols[6], 400) && near(p.vols[9], 100), JSON.stringify(p.vols));
+  check('한 가격뿐인 봉은 그 칸에 통째로', near(p.vols[8], 150), String(p.vols[8]));
+  check('가장 많이 쌓인 칸(같으면 아래 칸)', p.poc === 5, String(p.poc));
+
+  p = volumeProfile([110, 107, 108], [100, 105, 108], [1000, 600, 50], 1, 2, 10);
+  check('보이는 구간(from~to)만 본다 — 확대하면 그 구간의 매물대', p.lo === 105 && p.hi === 108, `${p.lo}~${p.hi}`);
+  check('최고가 한 가격은 맨 위 칸', near(p.vols[9], 50), JSON.stringify(p.vols));
+
+  check('가격 폭이 없으면 null', volumeProfile([5, 5], [5, 5], [10, 10], 0, 1, 10) === null);
+  check('거래량이 하나도 없으면 null', volumeProfile([10, 12], [9, 11], [0, 0], 0, 1, 10) === null);
+}
+
+// --- 같은 기간 수익률(지수 대비) ----------------------------------------------------
+{
+  const day = (d) => Date.parse(`${d}T00:00:00Z`);
+  const times = ['2026-09-01', '2026-09-02', '2026-09-04', '2026-09-07'].map(day);
+  const closes = [100, 102, 104, 110];
+  check('종목 첫 봉과 같은 날 지수 봉부터', near(returnSince(times, closes, day('2026-09-02'), 112.2), 10));
+  // 9/3 봉이 없다 → 9/2(102)부터: 107.1 / 102 = +5%
+  check('같은 날이 없으면(휴장 차이) 그 앞의 마지막 봉부터', near(returnSince(times, closes, day('2026-09-03'), 107.1), 5));
+  // 시각이 달라도 날짜로 맞춘다 — 지수 봉이 13:30 UTC(미국 일봉)에 찍혀 있고 종목 첫 봉이 그날 00:00 UTC 여도 그날 봉부터
+  const late = times.map((t) => t + 13.5 * 3600000);
+  check('시각이 아니라 날짜로 맞춘다', near(returnSince(late, closes, day('2026-09-02'), 112.2), 10));
+  check('지수 시계열이 더 늦게 시작하면 첫 봉부터', near(returnSince(times, closes, day('2026-08-01'), 110), 10));
+  check('마지막 값이 없으면 null', returnSince(times, closes, day('2026-09-02'), null) === null);
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');

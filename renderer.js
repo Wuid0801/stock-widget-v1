@@ -63,7 +63,10 @@ const INDICATORS = [
   { key: 'vwap', label: 'VWAP', varName: '--vwap-line', title: '거래량 가중 평균가 — 그날 정규장 봉만 (1D)' },
   { key: 'volAvg', label: '거래량 평균', varName: '--vol-avg', title: '거래량 20봉 평균선 · 평균의 2배 넘는 막대 강조 (모든 기간)' },
   { key: 'prevHL', label: '전일 고저', varName: '--prev-line', title: '어제 고가 · 저가 점선 (1D)' },
+  { key: 'vp', label: '매물대', varName: '--vp-poc', title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
+  { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%p) — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
 ];
+const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸 약 7px
 const BB_PERIOD = 20;
 const BB_K = 2;
 const VOL_AVG = 20;   // 거래량 평균 봉 수
@@ -841,16 +844,43 @@ function trendCheckTip(r, symbol) {
 }
 
 // 선택 구간의 수익률 배지. 1D는 위의 일간 등락과 같은 값이라 표시하지 않는다.
-function renderPeriod(first, last) {
+// rel(지수 대비, 보조 지표)이 있으면 종목 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%p)을 붙인다.
+function renderPeriod(first, last, rel = null) {
   const el = document.getElementById('period');
   if (state.timeframe === '1D' || !first || last == null) { el.hidden = true; return; }
 
   const pct = ((last - first) / first) * 100;
-  const color = pct === 0 ? cssVar('--flat') : (pct > 0 ? UP : DOWN);
+  const tone = (v) => (v === 0 ? cssVar('--flat') : (v > 0 ? UP : DOWN));
+  const color = tone(pct);
   el.hidden = false;
-  el.textContent = `${state.timeframe} ${fmtPct(pct)}`;
+  // 글자는 숫자와 고정된 기간 이름뿐이라 innerHTML 로 써도 된다
+  let html = `${state.timeframe} ${fmtPct(pct)}`;
+  el.title = '';
+  if (rel) {
+    const ex = pct - rel.pct;
+    html += `<span style="color:${tone(ex)}"> · 초과 ${ex > 0 ? '+' : ''}${ex.toFixed(2)}%p</span>`;
+    el.title = `같은 기간 ${rel.name} ${fmtPct(rel.pct)} — 종목이 ${Math.abs(ex).toFixed(2)}%p ${ex >= 0 ? '앞섬' : '뒤처짐'}`;
+  }
+  el.innerHTML = html;
   el.style.color = color;
   el.style.background = hexA(color, 0.16);
+}
+
+// 지수 대비 수익률의 비교 지수. 코스피 상장(.KS)은 코스피, 코스닥 상장(.KQ)은 코스닥, 미국은 S&P 500.
+// 지수 자체(^KS11)는 어디에도 걸리지 않아 null 이다.
+function benchmarkOf(symbol) {
+  if (/\.KQ$/i.test(symbol)) return { symbol: '^KQ11', name: '코스닥' };
+  if (/\.KS$/i.test(symbol)) return { symbol: '^KS11', name: '코스피' };
+  if (isUs(symbol)) return { symbol: '^GSPC', name: 'S&P 500' };
+  return null;
+}
+
+// 같은 기간 지수 수익률. 국내 지수의 마지막 값은 실시간 지수(위 지수 줄과 같은 값)를 쓴다 — 종목도 현재가다.
+function benchReturn(bench, got, from) {
+  if (!bench || !got || !got.ok) return null;
+  const live = quotes[bench.symbol] && quotes[bench.symbol].price;
+  const pct = returnSince(got.times, got.closes, from, live > 0 ? live : got.closes[got.closes.length - 1]);
+  return pct == null ? null : { name: bench.name, pct };
 }
 
 const hexA = (hex, a) => {
@@ -861,6 +891,7 @@ const hexA = (hex, a) => {
 // 이동평균선 범례. 실제로 그린 선만, 기간 숫자 뒤에 그 색을 붙여 보여준다.
 // 차트에 마우스를 올리면 그 시점의 값까지 같이 보여준다(툴팁 대신 여기에 띄운다).
 let hoverIdx = null;
+let lastProfile = null; // 지금 차트의 매물대(drawChart 가 보이는 구간으로 계산) — 범례 · 그리기가 같이 쓴다
 function renderMaLegend() {
   const box = document.getElementById('maLegend');
   const mas = (lastChart && lastChart.mas) || [];
@@ -869,7 +900,8 @@ function renderMaLegend() {
   const trends = (lastChart && !zoom && lastChart.trends) || [];
   const bands = (lastChart && lastChart.bands) || null;
   const vw = (lastChart && lastChart.vwapLine) || null;
-  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw;
+  const vp = lastChart ? lastProfile : null;
+  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp;
   box.innerHTML = '';
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
@@ -904,6 +936,12 @@ function renderMaLegend() {
     let i = hoverIdx;
     if (i == null) for (i = vw.length - 1; i > 0 && vw[i] == null; i--);
     add('VWAP', vw[i], cssVar('--vwap-line'), '거래량 가중 평균가 — 그날 정규장 봉');
+  }
+  // 매물대는 가장 많이 거래된 가격대(진하게 칠한 칸)를 늘 보여 준다
+  if (vp) {
+    const from = vp.lo + vp.poc * vp.step;
+    add('매물대', `${money(from, lastChart.cur)}~${money(from + vp.step, lastChart.cur)}`,
+      cssVar('--vp-poc'), '보이는 구간에서 거래가 가장 많았던 가격대');
   }
   // 추세선은 마우스를 안 올렸을 때 마지막 봉(오늘) 값을 보여준다.
   // 이동평균과 달리 개수가 둘로 고정이라 늘 떠 있어도 줄이 넘치지 않는다.
@@ -1122,6 +1160,36 @@ const extBandPlugin = {
   },
 };
 
+// 매물대(보조 지표) — 가격대별 거래량을 차트 오른쪽 끝에서 왼쪽으로 옅은 가로 막대로. 가장 긴 막대가
+// 차트 폭의 30% 이고, 가장 많이 거래된 칸은 진하게. 선 · 캔들 뒤에 깔려야 해서 beforeDatasetsDraw 다.
+// 칸의 위아래는 y축이 그 가격을 두는 자리라 축 범위가 바뀌어도 맞는다.
+const VP_MAX_WIDTH = 0.3;
+const profilePlugin = {
+  id: 'profile',
+  beforeDatasetsDraw(c, _args, opts) {
+    const p = opts && opts.profile;
+    if (!p) return;
+    const sy = c.scales.y;
+    const area = c.chartArea;
+    const ctx = c.ctx;
+    const max = p.vols[p.poc];
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(area.left, area.top, area.width, area.height);
+    ctx.clip();
+    for (let b = 0; b < p.vols.length; b++) {
+      if (!(p.vols[b] > 0)) continue;
+      const top = sy.getPixelForValue(p.lo + (b + 1) * p.step);
+      const bottom = sy.getPixelForValue(p.lo + b * p.step);
+      const w = (p.vols[b] / max) * area.width * VP_MAX_WIDTH;
+      ctx.fillStyle = cssVar(b === p.poc ? '--vp-poc' : '--vp-bar');
+      // 칸 사이 1px 틈 — 붙으면 한 덩어리로 보인다
+      ctx.fillRect(area.right - w, top + 0.5, w, Math.max(1, bottom - top - 1));
+    }
+    ctx.restore();
+  },
+};
+
 // 교차 지점 표식. 골든은 선 아래에 ▲, 데드는 선 위에 ▼.
 // 평단가 점선과 마찬가지로 축을 건드리지 않도록 캔버스에 직접 그린다.
 const crossMarkPlugin = {
@@ -1214,7 +1282,7 @@ function drawChart(arg) {
   const {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
-    bands = null, vwapLine = null, volAvg = null,
+    bands = null, vwapLine = null, volAvg = null, profile = false,
   } = arg;
   const color = up ? UP : DOWN;
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
@@ -1228,6 +1296,8 @@ function drawChart(arg) {
   const candles = candleMode(bars, daily, state.chartMode) && opens.length > 0;
   renderChartMode(bars, daily); // 전환 아이콘도 같은 기준으로 보인다
   document.getElementById('zoomReset').hidden = !zr;
+  // 매물대(보조 지표)는 보이는 구간으로 — 확대하면 그 구간의 매물대다. 범례도 이 값을 쓴다.
+  lastProfile = profile ? volumeProfile(highs, lows, volumes, zr ? zr.from : 0, zr ? zr.to : closes.length - 1, VP_BINS) : null;
   hoverIdx = null;
   renderMaLegend(); // 테마를 바꿔도 여기서 다시 그려지므로 색이 따라온다
   if (chart) chart.destroy();
@@ -1240,7 +1310,7 @@ function drawChart(arg) {
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
-    plugins: [extBandPlugin, candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
+    plugins: [extBandPlugin, profilePlugin, candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
     data: {
       // 1Y · 3Y 를 확대하면 몇 주 · 몇 달만 보이므로 연/월 라벨로는 눈금이 같은 값으로
       // 반복된다(26/03 · 26/03 · 26/04). 그때는 1M · 3M 과 같은 월/일로 쓴다.
@@ -1426,6 +1496,7 @@ function drawChart(arg) {
         crossMark: { list: crosses },
         candle: candles ? { opens, highs, lows, closes } : {},
         extBand: { ext },
+        profile: { profile: lastProfile },
         tooltip: {
           // 이동평균 값은 툴팁이 아니라 위쪽 범례에 띄운다.
           // 툴팁은 켠 이평선 수만큼 세로로 늘어나서, 9개면 197px 까지 커져
@@ -1827,7 +1898,10 @@ async function loadChart() {
   // 이전 요청은 버려야 헤더와 차트가 서로 다른 종목을 가리키지 않는다.
   const seq = ++chartSeq;
   const tf = TF[state.timeframe];
-  const got = await fetchChartCached(item.symbol, tf);
+  // 지수 대비 수익률(보조 지표)은 같은 기간의 지수 차트가 필요하다 — 종목 차트와 함께 받는다(같은 캐시).
+  const bench = state.indicators && state.indicators.rel && state.timeframe !== '1D' ? benchmarkOf(item.symbol) : null;
+  const [got, benchGot] = await Promise.all([fetchChartCached(item.symbol, tf),
+    bench ? fetchChartCached(bench.symbol, tf).catch(() => null) : null]);
   if (seq !== chartSeq) return;
   const r = got.ok && tf.years ? lastYears(got, tf.years) : got; // 3Y: 5년치에서 3년만
 
@@ -1874,7 +1948,8 @@ async function loadChart() {
   }
 
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
-  renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1]);
+  renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1],
+    benchReturn(bench, benchGot, r.times[0]));
 
   // 이동평균선은 일봉 타임프레임(1M/3M/1Y/3Y)에서만 의미가 있다.
   // 1D(5분봉)/1W(30분봉)에 "5일선"을 그리면 이름과 실제가 안 맞는다.
@@ -2005,6 +2080,7 @@ async function loadChart() {
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
     volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg,
+    profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
   });
 }
 
