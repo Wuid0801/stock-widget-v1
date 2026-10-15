@@ -41,3 +41,7 @@ Captured on 2026-10-14 · 15, Asia/Seoul, from
 
 The regular session and a live after-market had not been seen yet; the tests build them
 from these records by changing only status and time fields.
+
+- `naver-us-index-20261015.json`: 10-15 11:2x KST, `https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX`
+  (Nasdaq Composite, S&P 500) after the 10-14 New York close, `marketStatus` `CLOSE`. Only the fields the index line reads
+  (plus their `Raw` twins) are kept.

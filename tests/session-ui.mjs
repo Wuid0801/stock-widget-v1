@@ -45,7 +45,7 @@ function harness(extra = []) {
   Object.assign(c, indicators, backtest, {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
   });
-  const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'pollingIsOpen', 'priceSessionOf',
+  const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
     'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
@@ -355,6 +355,10 @@ await test('US live quote: price from Naver; Yahoo daily untouched and cached br
   assert.equal(ttls.at(-1), 60000, 'Yahoo US daily is not delayed, so it keeps the RSI current');
   await c.loadQuote({ symbol: '005930.KS' }, { ...live, price: 250000, prevClose: 249000, tradedAt: '2026-09-10T18:29:00+09:00' });
   assert.equal(ttls.at(-1), run('DAILY_TTL'), 'domestic live keeps the long cache');
+  // 미국 지수 · 환율(지수 줄)도 일봉을 건드리지 않는다. 캐시는 길게 — 세 개를 1분마다 5년치씩 받지 않는다.
+  await c.loadQuote({ symbol: '^IXIC', name: '나스닥' }, { ...live, price: 130, session: 'regular', priceSession: 'regular' });
+  assert.equal(JSON.stringify(run("quotes['^IXIC'].daily.closes")), '[128.4,127.57]', '지수 줄의 미국 지수도 한국 날짜로 봉을 덧붙이지 않는다');
+  assert.equal(ttls.at(-1), run('DAILY_TTL'));
 });
 
 await test('US header: never 20분지연 — the Naver session when live, 확인중 on Yahoo\'s regular price', () => {
@@ -379,6 +383,12 @@ await test('US header: never 20분지연 — the Naver session when live, 확인
     run(`state.selected = '${s}'; quotes['${s}'] = {price:100, live:false, session:'unknown', source:'Yahoo', fetchedAt:Date.now()};`);
     run('renderUpdated()');
     assert.match(header().innerHTML, /20분지연/, s);
+  }
+  // 미국 지수 · 환율(지수 줄)의 야후 값은 늦지 않다
+  for (const s of ['^GSPC', 'KRW=X']) {
+    run(`state.selected = '${s}'; quotes['${s}'] = {price:100, live:false, session:'unknown', source:'Yahoo', fetchedAt:Date.now()};`);
+    run('renderUpdated()');
+    assert.doesNotMatch(header().innerHTML, /20분지연/, s);
   }
 });
 
@@ -415,6 +425,11 @@ await test('1D US chart: no end point from the live quote; the over-market line 
     assert.deepEqual(draws.at(-1).closes, [128, 127.57], patch.session);
   }
   assert.equal(draws.at(-1).hLines.find((l) => l.varName === '--over-line')?.label, '애프터');
+  // 지수 줄의 미국 지수도 같다 — 열려 있어도 끝점을 덧붙이지 않는다
+  run(`lastDrawSig = null; state.selected = '^IXIC'; quotes['^IXIC'] = { price: 130, prevClose: 128, change: 2, live: true,
+    open: true, session: 'regular', priceSession: 'regular', isTrading: true };`);
+  await c.loadChart();
+  assert.deepEqual(draws.at(-1).closes, [128, 127.57], '^IXIC');
 });
 
 // 1D 에 시간외 봉이 붙으면(main.js: 국내 NXT 프리 · 애프터, 미국 야후) 정규장 끝점(확인된 종가 · 현재가)은
@@ -1182,22 +1197,51 @@ await test('index numbers keep two decimals like the index line; stocks keep the
   assert.equal(run("curOf('AAPL')"), 'USD');
 });
 
-await test('index line marks the selected index and only known indices are clickable', () => {
-  const { c, run, elements } = harness(['renderIndices']);
+// 지수 줄: 코스피 · 코스닥 → 나스닥 · S&P 500 → 원/달러, 한 장씩. 다섯 개는 340px 한 줄에 들어가지 않는다.
+await test('index line shows one page at a time, marks the selected index, and turns pages unless hovered or viewing one', () => {
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices']);
   run(formatting);
   run(source.match(/^let indexItems = .*$/m)[0]);
+  run(source.match(/^let indexPage = .*$/m)[0]);
+  run(source.match(/^let indexHover = .*$/m)[0]);
   Object.assign(c, { cssVar: () => '#888888', esc: String });
-  run(`state.selected = '^KQ11'; indexItems = [
+  run(`state.selected = '005930.KS'; indexItems = [
     { code: 'KOSPI', name: '코스피', value: 7003.74, pct: 0.46 },
     { code: 'KOSDAQ', name: '코스닥', value: 893.29, pct: -0.11 },
+    { code: 'NASDAQ', name: '나스닥', value: 26692.87, pct: -1.88 },
+    { code: 'SPX', name: 'S&P 500', value: 6600.1, pct: -1.2 },
+    { code: 'USDKRW', name: '원/달러', value: 1351.4, pct: 0.63 },
     { code: 'KPI200', name: '코스피200', value: 950, pct: 0 }];`);
   c.renderIndices();
   const box = elements.get('indices');
+  const shown = () => [...box.innerHTML.matchAll(/data-symbol="([^"]+)"/g)].map((m) => m[1]).join(' ');
   assert.equal(box.hidden, false);
+  assert.equal(shown(), '^KS11 ^KQ11', '첫 장은 국내');
   assert.match(box.innerHTML, /<span class="ix" data-symbol="\^KS11" title="코스피 차트 보기">/);
-  assert.match(box.innerHTML, /<span class="ix on" data-symbol="\^KQ11" title="코스닥 차트 보기">/);
-  assert.match(box.innerHTML, /<span class="ix"><span class="ixn">코스피200/, 'unknown index is shown but not clickable');
   assert.match(box.innerHTML, /7,003\.74/);
+  assert.doesNotMatch(box.innerHTML, /코스피200/, '모르는 지수는 보이지 않는다');
+  c.tickIndices();
+  assert.equal(shown(), '^IXIC ^GSPC', '다음 장은 미국');
+  assert.match(box.innerHTML, /^<div class="ixpage in">/, '넘길 때는 등장 애니메이션');
+  assert.match(box.innerHTML, /26,692\.87/);
+  c.tickIndices();
+  assert.equal(shown(), 'KRW=X', '그다음은 원/달러');
+  c.tickIndices();
+  assert.equal(shown(), '^KS11 ^KQ11', '처음으로 돌아온다');
+  run('indexHover = true;');
+  c.tickIndices();
+  assert.equal(shown(), '^KS11 ^KQ11', '마우스를 올리면 멈춘다');
+  run("indexHover = false; state.selected = '^GSPC';");
+  c.renderIndices();
+  assert.equal(shown(), '^IXIC ^GSPC', '보고 있는 지수의 장을 보인다');
+  assert.match(box.innerHTML, /<span class="ix on" data-symbol="\^GSPC"/);
+  c.tickIndices();
+  assert.equal(shown(), '^IXIC ^GSPC', '보는 동안은 넘기지 않는다');
+  assert.doesNotMatch(box.innerHTML, /ixpage in/, '같은 장을 4초마다 다시 등장시키지도 않는다(깜빡임)');
+  run("state.selected = '005930.KS'; indexItems = indexItems.slice(0, 2);");
+  c.renderIndices();
+  c.tickIndices();
+  assert.equal(shown(), '^KS11 ^KQ11', '미국 지수 · 환율을 못 받으면 한 장 — 넘기지 않는다');
   run('indexItems = [];');
   c.renderIndices();
   assert.equal(box.hidden, true, 'no indices → the line hides (Naver failure)');
@@ -1545,17 +1589,17 @@ await test('a failing Yahoo daily fetch is retried at most once per refresh, and
   const d = dailyRun({ yahoo: (s) => (up ? daily(100000) : { ok: false, error: 'HTTP 429' }) });
   d.run(`state.watchlist = [{symbol:'005930.KS',name:'삼성전자'},{symbol:'000660.KS',name:'SK하이닉스'},
     {symbol:'035420.KS',name:'NAVER'}];`);
-  await d.refresh(); // 0초 — 다 받는다(종목 3 + 지수 2)
-  assert.equal(d.calls.length, 5);
+  await d.refresh(); // 0초 — 다 받는다(종목 3 + 지수 줄 5)
+  assert.equal(d.calls.length, 8);
   up = false;
   d.calls.length = 0;
   for (const sec of [120, 150, 180, 210]) { d.at(sec); await d.refresh(); } // 캐시 만료(60초) 뒤 네 번
-  assert.equal(d.calls.length, 4, `one request per refresh, not 5 — got ${d.calls.join(',')}`);
+  assert.equal(d.calls.length, 4, `one request per refresh, not 8 — got ${d.calls.join(',')}`);
   assert.equal(new Set(d.calls).size, 4, 'each refresh tries a different symbol — the failed ones rest');
   up = true;
   d.calls.length = 0;
   d.at(210 + 301); await d.refresh(); // 마지막 실패에서 5분 지남 — 모두 다시 받는다
-  assert.equal(d.calls.length, 5, 'after the rest every symbol fetches again');
+  assert.equal(d.calls.length, 8, 'after the rest every symbol fetches again');
   assert.ok(!d.run("quotes['005930.KS'].stale"), 'fresh again');
 });
 

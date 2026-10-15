@@ -424,42 +424,71 @@ async function domesticRealtime(symbols) {
   }
 }
 
-// 코스피/코스닥 지수 (실시간). 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
+// 지수 줄 (실시간): 코스피 · 코스닥, 나스닥 · S&P 500(네이버 해외 지수), 원/달러(야후 — 차트와
+// 보유 합계의 원화 환산이 같은 값을 쓴다). 셋을 함께 받고, 하나가 실패해도 나머지는 보인다.
+// 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
+const US_INDICES = { '.IXIC': { code: 'NASDAQ', name: '나스닥' }, '.INX': { code: 'SPX', name: 'S&P 500' } };
 ipcMain.handle('quote:indices', async () => {
-  const url = 'https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ';
   // 지수 헤더용 값. 빠진 값은 0 이 아니라 null — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
   const opt = (v) => {
     const s = String(v ?? '').replace(/,/g, '').trim();
     const n = s ? Number(s) : NaN;
     return Number.isFinite(n) ? n : null;
   };
-  try {
+  const naver = async (url) => {
     const res = await netFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
     });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-
-    const json = await res.json();
-    const items = (json.datas || []).map((d) => ({
-      code: d.itemCode,
-      name: d.stockName,
-      value: opt(d.closePriceRaw ?? d.closePrice),
-      // 지수도 종목처럼 내리면 음수다(2026-10-02 코스닥 -1.00 실측)
-      change: opt(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice),
-      pct: opt(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
-      open: opt(d.openPriceRaw ?? d.openPrice),
-      high: opt(d.highPriceRaw ?? d.highPrice),
-      low: opt(d.lowPriceRaw ?? d.lowPrice),
-      isOpen: d.marketStatus === 'OPEN',
-      tradedAt: d.localTradedAt || null,
-    // 종가 · 등락률이 비면 그 지수는 뺀다 — 0 으로 읽으면 지수 줄에 "코스피 0.00" 이 뜬다.
-    })).filter((i) => i.value > 0 && i.pct != null);
-
-    return items.length ? { ok: true, items } : { ok: false, error: '빈 응답' };
-  } catch (err) {
-    return { ok: false, error: err.message || '지수 조회 실패' };
-  }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()).datas || [];
+  };
+  const item = (d, code, name) => ({
+    code,
+    name,
+    value: opt(d.closePriceRaw ?? d.closePrice),
+    // 지수도 종목처럼 내리면 음수다(2026-10-02 코스닥 -1.00 실측)
+    change: opt(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice),
+    pct: opt(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
+    open: opt(d.openPriceRaw ?? d.openPrice),
+    high: opt(d.highPriceRaw ?? d.highPrice),
+    low: opt(d.lowPriceRaw ?? d.lowPrice),
+    isOpen: d.marketStatus === 'OPEN',
+    tradedAt: d.localTradedAt || null,
+  });
+  const parts = await Promise.allSettled([
+    naver('https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ')
+      .then((ds) => ds.map((d) => item(d, d.itemCode, d.stockName))),
+    naver('https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX')
+      .then((ds) => ds.filter((d) => US_INDICES[d.reutersCode])
+        .map((d) => item(d, US_INDICES[d.reutersCode].code, US_INDICES[d.reutersCode].name))),
+    usdKrwItem(),
+  ]);
+  // 종가 · 등락률이 비면 그 지수는 뺀다 — 0 으로 읽으면 지수 줄에 "코스피 0.00" 이 뜬다.
+  const items = parts.flatMap((p) => (p.status === 'fulfilled' ? p.value : []))
+    .filter((i) => i.value > 0 && i.pct != null);
+  if (items.length) return { ok: true, items };
+  const failed = parts.find((p) => p.status === 'rejected');
+  return { ok: false, error: failed ? failed.reason?.message || '지수 조회 실패' : '빈 응답' };
 });
+
+// 지수 줄의 원/달러. 야후 KRW=X 의 지금 값과 전일 종가. 30분 넘게 값이 그대로면 쉬는 중으로 본다(주말).
+async function usdKrwItem() {
+  const res = await netFetch('https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?range=1d&interval=1d',
+    { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const m = (await res.json())?.chart?.result?.[0]?.meta;
+  const value = Number(m?.regularMarketPrice);
+  const prev = Number(m?.chartPreviousClose);
+  if (!(value > 0) || !(prev > 0)) return [];
+  const at = Number(m.regularMarketTime) * 1000;
+  const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+  return [{
+    code: 'USDKRW', name: '원/달러', value, change: value - prev, pct: ((value - prev) / prev) * 100,
+    open: null, high: num(m.regularMarketDayHigh), low: num(m.regularMarketDayLow),
+    isOpen: Number.isFinite(at) && Date.now() - at < 30 * 60000,
+    tradedAt: Number.isFinite(at) ? new Date(at).toISOString() : null,
+  }];
+}
 
 // 원/달러 환율. 포트폴리오 합계에서 달러 종목을 원화로 환산할 때만 쓴다.
 // 심볼 'KRW=X' 는 '=' 때문에 yf:chart 의 심볼 허용 패턴에 걸린다.
@@ -589,7 +618,8 @@ ipcMain.handle('yf:search', async (_e, query) => {
 const RANGES = new Set(['1d', '5d', '1mo', '3mo', '1y', '5y', 'max']);
 const INTERVALS = new Set(['5m', '30m', '1d', '1mo']);
 // 지수는 야후 기호가 ^ 로 시작한다(^KS11 코스피 · ^KQ11 코스닥). 맨 앞 한 번만 받는다.
-const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}$/;
+// 환율은 끝에 =X 가 붙는다(KRW=X 원/달러 — 지수 줄에서 누르면 차트). = 는 그 자리 한 번만.
+const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}(?:=X)?$/;
 
 // 야후는 국내 종목 일봉을 가끔 하루 통째로 비워 준다(종가 · 거래량 null). 2025-09-19 · 2026-10-12 는
 // 모든 국내 종목이 비었고 1년이 지나도 채워지지 않았다(2026-10-13 확인). 비운 채 두면 차트에서 그날이

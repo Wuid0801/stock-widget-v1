@@ -1,0 +1,44 @@
+{
+  "datas": [
+    {
+      "reutersCode": ".IXIC",
+      "indexName": "나스닥 종합",
+      "closePrice": "26,692.87",
+      "compareToPreviousClosePrice": "-511.51",
+      "fluctuationsRatio": "-1.88",
+      "openPrice": "27,031.64",
+      "highPrice": "27,134.29",
+      "lowPrice": "26,602.12",
+      "marketStatus": "CLOSE",
+      "localTradedAt": "2026-10-14T17:15:59-04:00",
+      "closePriceRaw": "26692.87",
+      "compareToPreviousClosePriceRaw": "-511.51",
+      "fluctuationsRatioRaw": "-1.88",
+      "openPriceRaw": "27031.64",
+      "highPriceRaw": "27134.29",
+      "lowPriceRaw": "26602.12",
+      "accumulatedTradingVolumeRaw": "1651240000",
+      "accumulatedTradingValueRaw": ""
+    },
+    {
+      "reutersCode": ".INX",
+      "indexName": "S&P 500",
+      "closePrice": "7,718.94",
+      "compareToPreviousClosePrice": "-86.51",
+      "fluctuationsRatio": "-1.11",
+      "openPrice": "7,774.18",
+      "highPrice": "7,789.15",
+      "lowPrice": "7,693.31",
+      "marketStatus": "CLOSE",
+      "localTradedAt": "2026-10-14T16:36:08-04:00",
+      "closePriceRaw": "7718.94",
+      "compareToPreviousClosePriceRaw": "-86.51",
+      "fluctuationsRatioRaw": "-1.11",
+      "openPriceRaw": "7774.18",
+      "highPriceRaw": "7789.15",
+      "lowPriceRaw": "7693.31",
+      "accumulatedTradingVolumeRaw": "3388033000",
+      "accumulatedTradingValueRaw": ""
+    }
+  ]
+}

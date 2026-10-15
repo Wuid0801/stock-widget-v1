@@ -121,13 +121,18 @@ let dailyFailRound = -1;
 // (docs/DEVELOPMENT.md "왜 나눠 쓰는가"). 그래서 분봉은 개장 20분 뒤부터 들어온다.
 const YAHOO_KR_DELAY_MIN = 20;
 
-// 상단 지수 줄의 코스피 · 코스닥. 누르면 관심종목처럼 "선택"되어 헤더 · 차트가 지수로 바뀐다.
-// 기호는 야후 것이다(차트 · 일봉을 야후에서 받는다). code 는 네이버 지수 응답의 itemCode.
+// 상단 지수 줄. 누르면 관심종목처럼 "선택"되어 헤더 · 차트가 지수로 바뀐다.
+// 기호는 야후 것이다(차트 · 일봉을 야후에서 받는다). code 는 main.js quote:indices 의 code.
+// page 가 같은 것끼리 한 장 — 다섯 개는 340px 한 줄에 들어가지 않아 장을 넘긴다(국내 → 미국 → 환율).
+// overseas 는 야후 시세가 늦지 않고 하루가 한국 날짜와 다른 것(미국 지수 · 환율) — 미국 종목처럼 다룬다.
 // loadChart 가 selectedItem 을 부르므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
 // 마커 앞)에 있어야 한다.
 const INDICES = [
-  { symbol: '^KS11', code: 'KOSPI', name: '코스피' },
-  { symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥' },
+  { symbol: '^KS11', code: 'KOSPI', name: '코스피', page: 0 },
+  { symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥', page: 0 },
+  { symbol: '^IXIC', code: 'NASDAQ', name: '나스닥', page: 1, overseas: true },
+  { symbol: '^GSPC', code: 'SPX', name: 'S&P 500', page: 1, overseas: true },
+  { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 2, overseas: true },
 ];
 
 function isIndex(symbol) {
@@ -338,10 +343,14 @@ function moveSymbol(from, to) {
   renderList();
 }
 
-// --- 코스피/코스닥 지수 -----------------------------------------------------------
+// --- 지수 줄 ---------------------------------------------------------------------
 // 개별 종목이 빠질 때 시장 전체 흐름인지 바로 알 수 있게 한 줄로 보여준다.
 // 누르면 그 지수를 관심종목처럼 고른다(select) — 헤더 · 차트가 지수로 바뀐다.
-let indexItems = []; // 마지막으로 받은 네이버 지수 항목 — 선택만 바뀔 때 강조를 다시 그리는 데 쓴다
+// 다섯 개(코스피 · 코스닥 · 나스닥 · S&P 500 · 원/달러)는 한 줄에 들어가지 않아 장(INDICES 의 page)을
+// 보유 합계 줄처럼 FOLIO_MS 마다 넘긴다. 마우스를 올리면 멈추고, 보고 있는 지수가 있으면 그 장에 머문다.
+let indexItems = []; // 마지막으로 받은 지수 항목 — 선택만 바뀔 때 강조를 다시 그리는 데 쓴다
+let indexPage = 0;   // 지금 보이는 장(indexPages 의 번호)
+let indexHover = false;
 
 async function loadIndices() {
   const r = await api.indices();
@@ -350,18 +359,43 @@ async function loadIndices() {
   return indexItems;
 }
 
-function renderIndices() {
+// 받은 항목을 장으로 — INDICES 순서대로, 항목이 하나도 없는 장은 뺀다. 모르는 지수는 보이지 않는다.
+function indexPages() {
+  const pages = [];
+  for (const ix of INDICES) {
+    const it = indexItems.find((i) => i.code === ix.code);
+    if (!it) continue;
+    const page = pages.find((p) => p.no === ix.page);
+    if (page) page.items.push({ ix, it });
+    else pages.push({ no: ix.page, items: [{ ix, it }] });
+  }
+  return pages;
+}
+
+function renderIndices(animate = false) {
   const box = document.getElementById('indices');
-  box.hidden = !indexItems.length;
-  box.innerHTML = indexItems.map((i) => {
-    const ix = INDICES.find((x) => x.code === i.code); // 모르는 지수는 보이기만 하고 누를 수 없다
-    const color = i.pct === 0 ? cssVar('--flat') : (i.pct > 0 ? UP : DOWN);
-    const cls = ix && ix.symbol === state.selected ? 'ix on' : 'ix';
-    const attrs = ix ? ` data-symbol="${ix.symbol}" title="${ix.name} 차트 보기"` : '';
-    return `<span class="${cls}"${attrs}><span class="ixn">${esc(i.name)}</span>`
-      + `<span class="ixv">${i.value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
-      + `<span class="ixp" style="color:${color}">${fmtPct(i.pct)}</span></span>`;
-  }).join('');
+  const pages = indexPages();
+  box.hidden = !pages.length;
+  if (!pages.length) { box.innerHTML = ''; return; }
+  const shown = pages.findIndex((p) => p.items.some(({ ix }) => ix.symbol === state.selected));
+  if (shown >= 0) indexPage = shown; // 보고 있는 지수의 장
+  indexPage %= pages.length;
+  box.innerHTML = `<div class="ixpage${animate ? ' in' : ''}">${pages[indexPage].items.map(({ ix, it }) => {
+    const color = it.pct === 0 ? cssVar('--flat') : (it.pct > 0 ? UP : DOWN);
+    const cls = ix.symbol === state.selected ? 'ix on' : 'ix';
+    return `<span class="${cls}" data-symbol="${ix.symbol}" title="${ix.name} 차트 보기"><span class="ixn">${esc(ix.name)}</span>`
+      + `<span class="ixv">${it.value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+      + `<span class="ixp" style="color:${color}">${fmtPct(it.pct)}</span></span>`;
+  }).join('')}</div>`;
+}
+
+// FOLIO_MS 마다 다음 장으로. 한 장뿐이거나, 마우스가 올라가 있거나, 보고 있는 지수가 이 줄에 있으면 그대로.
+function tickIndices() {
+  const pages = indexPages();
+  if (indexHover || pages.length < 2) return;
+  if (pages.some((p) => p.items.some(({ ix }) => ix.symbol === state.selected))) return;
+  indexPage = (indexPage + 1) % pages.length;
+  renderIndices(true);
 }
 
 // --- 보유 종목 ---------------------------------------------------------------------
@@ -556,6 +590,12 @@ function isUs(symbol) {
   return !isDomestic(symbol) && !isIndex(symbol);
 }
 
+// 미국 종목과 미국 지수 · 환율. 야후 시세가 늦지 않고, 하루가 한국 날짜와 다르다 —
+// 20분지연 표시 · 일봉 맞추기 · 1D 끝점 맞추기를 하지 않고, 날짜는 UTC(뉴욕)로 센다.
+function isOverseas(symbol) {
+  return isUs(symbol) || INDICES.some((i) => i.symbol === symbol && i.overseas);
+}
+
 function pollingIsOpen(symbols, liveMap) {
   // 국내 · 미국 모두 네이버 실시간의 거래 상태를 본다. 하나라도 거래 중이거나 응답이 비었으면
   // (실패 · 네이버에 없는 미국 종목) 짧은 간격으로 재확인한다.
@@ -578,7 +618,7 @@ function renderUpdated() {
     ? `${p(fetched.getHours())}:${p(fetched.getMinutes())}:${p(fetched.getSeconds())}` : '';
   const fallback = q && !q.error && q.price != null && q.live === false;
   // 야후는 국내 종목 · 지수만 20분 늦다. 미국 종목은 늦지 않지만 정규장 가격뿐이라 세션을 모른다.
-  const delayed = fallback && !isUs(state.selected);
+  const delayed = fallback && !isOverseas(state.selected);
   // 야후까지 실패해 캐시 값을 보이는 중이면 시각은 실제로 받은 때다(fetchedAt) — 지금 시각을 붙이면
   // 몇 시간 묵은 가격이 정상적인 20분 지연 시세처럼 보인다.
   const stale = fallback && q.stale;
@@ -1659,9 +1699,10 @@ async function loadQuote(item, live) {
   // 실시간 가격이 따로 오면 일봉은 오래 캐시해도 된다.
   // 실시간이 없으면(폴백) 일봉의 가격을 그대로 쓰므로 짧게만 캐시한다.
   // 미국 종목은 실시간이 있어도 짧게 둔다 — 야후 미국 일봉은 늦지 않아 RSI 를 그대로 맞춰 주고,
-  // 아래에서 일봉을 건드리지 않는다.
-  const us = isUs(item.symbol);
-  const r = await dailyFor(item.symbol, live && !us ? DAILY_TTL : 60000);
+  // 아래에서 일봉을 건드리지 않는다. 미국 지수 · 환율도 일봉을 건드리지 않지만 캐시는 길게 둔다 —
+  // 세 개를 1분마다 5년치씩(약 80KB) 받기에는 지수 RSI 가 몇 분 늦는 것이 낫다.
+  const overseas = isOverseas(item.symbol);
+  const r = await dailyFor(item.symbol, live && !isUs(item.symbol) ? DAILY_TTL : 60000);
   if (!r || r.error) {
     quotes[item.symbol] = { error: r ? r.error : '조회 실패', fetchedAt: Date.now() };
     return;
@@ -1677,9 +1718,9 @@ async function loadQuote(item, live) {
     price = live.price;
     prevClose = live.prevClose;
   }
-  // 미국 종목은 일봉을 그대로 둔다. 프리 · 애프터 가격이 정규장 봉에 들어가고, 한국 날짜로
+  // 미국 종목 · 지수 · 환율은 일봉을 그대로 둔다. 프리 · 애프터 가격이 정규장 봉에 들어가고, 한국 날짜로
   // "오늘" 을 가르면 밤 22:30~05:00 의 정규장 하루가 둘로 쪼개진다.
-  if (live && !us) {
+  if (live && !overseas) {
     // 마지막 일봉 종가도 현재가로 맞춰 RSI가 20분 지난 값으로 계산되지 않게 한다.
     // 다만 마지막 봉이 아직 어제인데(장 전 프리마켓 · 개장 직후 — 야후 일봉은 20분 늦고 30분 캐시)
     // 실시간은 오늘 거래면, 어제 종가를 지우지 않고 오늘 봉을 덧붙인다. 덮으면 어제 봉의 이동평균
@@ -1779,7 +1820,7 @@ function seriesVolAvg(volumes, ext) {
 function prevDayRange(symbol, times) {
   const r = quotes[symbol] && quotes[symbol].recentBars;
   if (!r || !times.length) return null;
-  const day = (ms) => Math.floor((ms + (isUs(symbol) ? 0 : 9 * 3600000)) / 86400000);
+  const day = (ms) => Math.floor((ms + (isOverseas(symbol) ? 0 : 9 * 3600000)) / 86400000);
   const shown = day(times[times.length - 1]);
   for (let i = r.times.length - 1; i >= 0; i--) {
     if (day(r.times[i]) < shown && r.highs[i] > 0 && r.lows[i] > 0) return { high: r.highs[i], low: r.lows[i] };
@@ -1958,7 +1999,7 @@ async function loadChart() {
   // 미국 종목은 야후 분봉이 늦지 않아 맞출 것이 없다(intradayEnd 의 날짜 · 시각도 한국 기준이다).
   // 기준은 정규장의 마지막 봉이다 — 뒤에 애프터 봉이 붙어 있어도. 끝점은 시각 순서대로 끼운다.
   const lastReg = ext ? ext.lastIndexOf(null) : closes.length - 1;
-  const end = state.timeframe === '1D' && !isUs(item.symbol)
+  const end = state.timeframe === '1D' && !isOverseas(item.symbol)
     ? intradayEnd(q, r.volumes && r.volumes[lastReg], Date.now()) : null;
   let endAt = -1; // 끼운 끝점의 자리 — 아래 봉 단위 배열들도 같은 자리를 채운다
   if (end && end.replace) {
@@ -2960,6 +3001,10 @@ async function refreshNow() {
     const el = e.target.closest('.ix[data-symbol]');
     if (el) select(el.dataset.symbol);
   };
+  // 지수 줄의 장 넘기기 — 마우스를 올리면 멈춘다(누르려는 사이 넘어가지 않게)
+  document.getElementById('indices').onmouseenter = () => { indexHover = true; };
+  document.getElementById('indices').onmouseleave = () => { indexHover = false; };
+  setInterval(tickIndices, FOLIO_MS);
 
   document.getElementById('add').onclick = () => (searchEl.hidden ? openSearch() : closeSearch());
   document.getElementById('qclose').onclick = closeSearch;

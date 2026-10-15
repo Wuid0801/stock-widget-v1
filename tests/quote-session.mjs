@@ -284,7 +284,8 @@ await test('US invalid numbers and future stamps are rejected', () => {
 // No source rewriting, Electron launch, user profile, or real market dependency.
 const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const start = main.indexOf("ipcMain.handle('quote:realtime'");
-const end = main.indexOf('// 코스피/코스닥 지수', start);
+const end = main.indexOf('// 지수 줄 (실시간)', start);
+if (end < 0) throw new Error('main.js 의 지수 줄 주석을 찾지 못했다 — quote:realtime 끝을 못 자른다');
 let handler;
 let baseResponse = paused;
 let nxtResponse = { datas: [] };
