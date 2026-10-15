@@ -1007,15 +1007,20 @@ const HLINE_GAP = 10;
 // 들어오는 것끼리 `전일·전고` 처럼 한 이름표가 된다. 예전에는 뒤의 것을 그냥 뺐다 — SOXL 10/14 의
 // 전일 127.57 과 전고 127.92 처럼 겹치면 어느 선이 무엇인지 알 수 없었다.
 // 값(val)이 있는 것은 묶음의 vals 에 같은 순서로 모은다(마우스를 올렸을 때 오른쪽 끝에 적는 값).
+// 가장자리 표시(edge, `▲ 전일 232,000 …`)는 묶음의 뒤에 붙인다 — 앞에 두면 `▲ … ·전저` 처럼 범위 안의
+// 선까지 범위 밖으로 읽힌다. 색도 범위 안의 선이 있으면 그 색이다.
 function hLineGroups(items) {
   const groups = [];
   for (const it of [...items].sort((a, b) => a.y - b.y)) {
-    const g = groups[groups.length - 1];
-    if (g && it.y - g.y < HLINE_GAP) g.text += `·${it.text}`;
-    else groups.push({ y: it.y, text: it.text, color: it.color, vals: [] });
-    if (it.val != null) groups[groups.length - 1].vals.push(it.val);
+    let g = groups[groups.length - 1];
+    if (!g || it.y - g.y >= HLINE_GAP) groups.push(g = { y: it.y, names: [], edges: [], vals: [] });
+    (it.edge ? g.edges : g.names).push(it);
+    if (it.val != null) g.vals.push(it.val);
   }
-  return groups;
+  return groups.map((g) => {
+    const all = [...g.names, ...g.edges];
+    return { y: g.y, text: all.map((it) => it.text).join('·'), color: all[0].color, vals: g.vals };
+  });
 }
 
 // 가로 기준선(평단 · 전일 · 전고 · 전저 · 프리 · 애프터). 데이터셋으로 넣으면 값이 차트 범위 밖일 때
@@ -1050,29 +1055,33 @@ const hLinePlugin = {
       ctx.stroke();
     }
 
-    // 이름표는 선 바로 위에. 가장자리 표시도 같은 묶음에 넣어 안쪽 선의 이름표와 포개지지 않게 한다
-    // (위 가장자리는 첫 줄 자리 top+10, 아래는 bottom). 가장자리는 가까운 선부터 적는다.
+    // 이름표 자리(y 는 글자 아래끝)를 먼저 정하고 묶는다. 이름표는 선 바로 위에 — 다만 맨 위 경계에 붙은
+    // 선은 위로 그리면 글자가 차트 밖으로 나가 잘렸다(삼성전자 10/15 전저 230,000) — 그런 선은 선 아래에.
+    // 가장자리 표시도 같은 묶음에 넣어 안쪽 선의 이름표와 포개지지 않게 한다(위는 첫 줄, 아래는 맨 아래 줄).
+    // 가장자리는 가까운 선부터 적는다.
     // 차트에 마우스를 올린 동안(십자선이 뜨는 동안)은 값도 적는다 — 평소에는 이름만이라 빽빽하지 않고,
     // 이평선 범례처럼 보고 싶을 때만 숫자가 보인다. 값은 오른쪽 끝(y축 눈금 옆)에 따로 적는다: 왼쪽
     // 이름표에 붙이면 커서가 오른쪽 절반일 때 왼쪽에 뜨는 툴팁이 그 값을 가렸다.
+    const TEXT_H = 9;
+    const labelAt = (y) => (y - 1 - TEXT_H < area.top ? y + 1 + TEXT_H : y - 1);
     const hovering = !!(c.tooltip && c.tooltip.getActiveElements && c.tooltip.getActiveElements().length);
-    const labels = inside.map((ln) => ({ y: ln.y, color: ln.color, text: ln.label,
+    const labels = inside.map((ln) => ({ y: labelAt(ln.y), color: ln.color, text: ln.label,
       val: hovering ? money(ln.value, opts.cur) : null }));
     const edge = (items, arrow) => `${arrow} ${items.map((ln) => `${ln.label} ${money(ln.value, opts.cur)}`).join(' · ')}`;
     above.sort((a, b) => b.y - a.y);
     below.sort((a, b) => a.y - b.y);
-    if (above.length) labels.push({ y: area.top + HLINE_GAP, text: edge(above, '▲'), color: above[0].color });
-    if (below.length) labels.push({ y: area.bottom, text: edge(below, '▼'), color: below[0].color });
+    if (above.length) labels.push({ y: area.top + TEXT_H, text: edge(above, '▲'), color: above[0].color, edge: true });
+    if (below.length) labels.push({ y: area.bottom - 1, text: edge(below, '▼'), color: below[0].color, edge: true });
     ctx.setLineDash([]);
     ctx.font = '9px system-ui, sans-serif';
     ctx.textBaseline = 'bottom';
     for (const g of hLineGroups(labels)) {
       ctx.fillStyle = g.color;
       ctx.textAlign = 'left';
-      ctx.fillText(g.text, area.left + 2, g.y - 1);
+      ctx.fillText(g.text, area.left + 2, g.y);
       if (!g.vals.length) continue;
       ctx.textAlign = 'right';
-      ctx.fillText(g.vals.join(' · '), area.right - 2, g.y - 1);
+      ctx.fillText(g.vals.join(' · '), area.right - 2, g.y);
     }
     ctx.restore();
   },

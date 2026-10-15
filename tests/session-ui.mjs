@@ -841,8 +841,18 @@ await test('horizontal lines: close labels merge instead of vanishing; out-of-ra
   texts.length = 0;
   plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [
     { value: 195, label: '전일', varName: '--prev-line' }, { value: 230, label: '전고', varName: '--prevhi-line' }] });
-  assert.deepEqual(texts.map((t) => t.t), ['전일·▲ 전고 230']);
+  assert.deepEqual(texts.map((t) => t.t), ['전일·▲ 전고 230'], '범위 안의 선 이름이 앞, 가장자리 표시가 뒤');
 
+  // 맨 위 경계에 붙은 선(삼성전자 10/15 전저 230,000)의 이름표를 선 위에 그리면 차트 밖으로 나가 잘렸다 —
+  // 선 아래에 그리고, 위 가장자리 표시와 가까우면 합친다. 어떤 글자도(높이 9px) 차트 영역 밖으로 나가지 않는다.
+  texts.length = 0;
+  plugin.afterDatasetsDraw({ ...chartStub, tooltip: { getActiveElements: () => [{}] } }, {}, { cur: 'KRW', lines: [
+    { value: 200, label: '전저', varName: '--prevlo-line' }, // y = 0, 맨 위 경계
+    { value: 232, label: '전일', varName: '--prev-line' }, { value: 241, label: '전고', varName: '--prevhi-line' }] });
+  assert.ok(texts.every((t) => t.y - 9 >= 0 && t.y <= 100), `글자가 차트 안에: ${texts.map((t) => `${t.t}@${t.y}`).join(' | ')}`);
+  assert.deepEqual(texts.filter((t) => t.x === 2).map((t) => t.t), ['전저·▲ 전일 232 · 전고 241']);
+  assert.equal(texts.find((t) => t.x === 2).color, '--prevlo-line', '색은 범위 안의 선(전저) 것');
+  assert.deepEqual(texts.filter((t) => t.x === 298).map((t) => t.t), ['200'], '마우스를 올리면 그 값도 같은 줄 오른쪽에');
 
   // 마우스를 올린 동안(툴팁 · 십자선이 잡은 봉이 있는 동안)은 값도 — 이평선 범례처럼. 값은 오른쪽 끝
   // (y축 옆)에 따로 적는다: 왼쪽 이름표에 붙이면 커서 왼쪽에 뜨는 툴팁이 그 값을 가렸다.
