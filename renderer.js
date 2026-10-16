@@ -371,6 +371,8 @@ function moveSymbol(from, to) {
 let indexItems = []; // 마지막으로 받은 지수 항목 — 선택만 바뀔 때 강조를 다시 그리는 데 쓴다
 let indexPage = 0;   // 지금 보이는 장(indexPages 의 번호)
 let indexHover = false;
+let indexManualFor = null; // 점으로 장을 골랐을 때 보고 있던 것 — 그동안은 보고 있는 지수의 장으로 끌어오지 않는다
+let indexFlipAt = 0;       // 점으로 넘긴 시각 — 그 뒤 한 간격(FOLIO_MS)은 자동으로 넘기지 않는다
 
 async function loadIndices() {
   const r = await api.indices();
@@ -398,23 +400,38 @@ function renderIndices(animate = false) {
   box.hidden = !pages.length;
   if (!pages.length) { box.innerHTML = ''; return; }
   const shown = pages.findIndex((p) => p.items.some(({ ix }) => ix.symbol === state.selected));
-  if (shown >= 0) indexPage = shown; // 보고 있는 지수의 장
+  if (indexManualFor !== null && indexManualFor !== state.selected) indexManualFor = null; // 다른 것을 골랐다
+  if (shown >= 0 && indexManualFor === null) indexPage = shown; // 보고 있는 지수의 장(점으로 다른 장을 골랐으면 그대로)
   indexPage %= pages.length;
+  // 오른쪽 끝의 점 — 몇 번째 장인지 보이고 누르면 그 장으로(4초씩 기다리지 않게). 한 장뿐이면 없다.
+  const dots = pages.length < 2 ? '' : `<span class="ixdots">${pages.map((p, i) => `<button class="ixdot${i === indexPage ? ' on' : ''}" `
+    + `data-page="${i}" title="${p.items.map(({ ix }) => ix.name).join(' · ')}"></button>`).join('')}</span>`;
   box.innerHTML = `<div class="ixpage${animate ? ' in' : ''}">${pages[indexPage].items.map(({ ix, it }) => {
     const color = it.pct === 0 ? cssVar('--flat') : (it.pct > 0 ? UP : DOWN);
     const cls = ix.symbol === state.selected ? 'ix on' : 'ix';
     return `<span class="${cls}" data-symbol="${ix.symbol}" title="${ix.name} 차트 보기"><span class="ixn">${esc(ix.name)}</span>`
       + `<span class="ixv">${it.value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
       + `<span class="ixp" style="color:${color}">${fmtPct(it.pct)}</span></span>`;
-  }).join('')}</div>`;
+  }).join('')}</div>${dots}`;
 }
 
 // FOLIO_MS 마다 다음 장으로. 한 장뿐이거나, 마우스가 올라가 있거나, 보고 있는 지수가 이 줄에 있으면 그대로.
 function tickIndices() {
   const pages = indexPages();
   if (indexHover || pages.length < 2) return;
+  if (Date.now() - indexFlipAt < FOLIO_MS) return; // 점으로 막 넘겼다 — 누르자마자 넘어가지 않게
   if (pages.some((p) => p.items.some(({ ix }) => ix.symbol === state.selected))) return;
   indexPage = (indexPage + 1) % pages.length;
+  renderIndices(true);
+}
+
+// 점을 누르면 그 장으로. 지수를 보고 있어도 다른 장을 볼 수 있고, 다른 것을 고르면 원래 규칙(보고 있는 지수의
+// 장)으로 돌아간다. 없는 장 번호는 무시한다.
+function flipIndexPage(n) {
+  if (!(n >= 0 && n < indexPages().length)) return;
+  indexPage = n;
+  indexManualFor = state.selected;
+  indexFlipAt = Date.now();
   renderIndices(true);
 }
 
@@ -3447,6 +3464,8 @@ async function refreshNow() {
   document.getElementById('undoBtn').onclick = () => undoRemove();
   // 지수 줄은 30초마다 다시 그려지므로 항목이 아니라 줄에 한 번만 붙인다
   document.getElementById('indices').onclick = (e) => {
+    const dot = e.target.closest('.ixdot');
+    if (dot) { flipIndexPage(Number(dot.dataset.page)); return; }
     const el = e.target.closest('.ix[data-symbol]');
     if (el) select(el.dataset.symbol);
   };

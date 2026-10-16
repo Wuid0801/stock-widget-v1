@@ -241,6 +241,15 @@
   .indices .ixn { color: var(--mute); }
   .indices .ixv { color: var(--text-2); font-variant-numeric: tabular-nums; }
   .indices .ixp { font-variant-numeric: tabular-nums; }
+  /* 오른쪽 끝의 장 표시 점. 점은 5px 이지만 누르는 자리는 12px 로 넉넉히 */
+  .indices .ixdots { margin-left: auto; padding-left: 8px; display: flex; align-items: center; }
+  .indices .ixdot {
+    width: 12px; height: 14px; padding: 0; border: 0; background: transparent; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .indices .ixdot::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+  .indices .ixdot:hover::before { background: var(--text-3); }
+  .indices .ixdot.on::before { background: var(--text-2); }
   /* 누르면 그 지수 차트. 보고 있는 지수는 목록 선택 줄(.row.on)처럼 배경 + 왼쪽 2px 막대.
      안쪽 여백만큼 바깥 여백을 빼서 줄 높이와 간격은 그대로 둔다. 막대는 그림자로 그려
      4px 안쪽 여백 안에 겹치므로 골라도 글자가 밀리지 않는다. 한쪽 막대라 모서리는 각지게.

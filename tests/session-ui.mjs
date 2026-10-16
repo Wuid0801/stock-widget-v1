@@ -1877,6 +1877,9 @@ await test('index line shows one page at a time, marks the selected index, and t
   run(source.match(/^let indexItems = .*$/m)[0]);
   run(source.match(/^let indexPage = .*$/m)[0]);
   run(source.match(/^let indexHover = .*$/m)[0]);
+  run(source.match(/^let indexManualFor = .*$/m)[0]);
+  run(source.match(/^let indexFlipAt = .*$/m)[0]);
+  run(source.match(/^const FOLIO_MS = .*$/m)[0]);
   Object.assign(c, { cssVar: () => '#888888', esc: String });
   run(`state.selected = '005930.KS'; indexItems = [
     { code: 'KOSPI', name: '코스피', value: 7003.74, pct: 0.46 },
@@ -1918,6 +1921,59 @@ await test('index line shows one page at a time, marks the selected index, and t
   run('indexItems = [];');
   c.renderIndices();
   assert.equal(box.hidden, true, 'no indices → the line hides (Naver failure)');
+});
+
+// 지수 줄 오른쪽 끝의 점 — 몇 번째 장인지 보이고, 누르면 그 장으로 바로 간다(4초씩 기다리지 않게).
+await test('index line dots show the page and jump to it; the turn waits a full interval after a click; a viewed index can be paged away from until another pick', () => {
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage']);
+  run(formatting);
+  for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
+  run(source.match(/^const FOLIO_MS = .*$/m)[0]);
+  Object.assign(c, { cssVar: () => '#888888', esc: String });
+  run(`state.selected = '005930.KS'; indexItems = [
+    { code: 'KOSPI', name: '코스피', value: 7003.74, pct: 0.46 }, { code: 'KOSDAQ', name: '코스닥', value: 893.29, pct: -0.11 },
+    { code: 'NASDAQ', name: '나스닥', value: 26692.87, pct: -1.88 }, { code: 'SPX', name: 'S&P 500', value: 6600.1, pct: -1.2 },
+    { code: 'USDKRW', name: '원/달러', value: 1351.4, pct: 0.63 }];`);
+  const box = c.document.getElementById('indices');
+  const shown = () => [...box.innerHTML.matchAll(/data-symbol="([^"]+)"/g)].map((m) => m[1]).join(' ');
+  c.renderIndices();
+  assert.match(box.innerHTML, /<\/div><span class="ixdots"><button class="ixdot on" data-page="0" title="코스피 · 코스닥"><\/button><button class="ixdot" data-page="1" title="나스닥 · S&P 500"><\/button><button class="ixdot" data-page="2" title="원\/달러"><\/button><\/span>$/,
+    '장 수만큼 점, 지금 장이 진하다, 장의 지수 이름이 툴팁');
+
+  c.flipIndexPage(2);
+  assert.equal(shown(), 'KRW=X', '점을 누르면 그 장으로 바로');
+  assert.match(box.innerHTML, /^<div class="ixpage in">/);
+  assert.match(box.innerHTML, /data-page="2" title="원\/달러"/);
+  assert.match(box.innerHTML, /class="ixdot on" data-page="2"/);
+  c.tickIndices();
+  assert.equal(shown(), 'KRW=X', '누른 뒤 한 번의 간격(4초)은 넘기지 않는다');
+  const realNow = c.Date.now; // FixedDate 는 하네스끼리 같이 쓴다 — 끝에서 되돌린다
+  c.Date.now = () => NOW + run('FOLIO_MS');
+  c.tickIndices();
+  assert.equal(shown(), '^KS11 ^KQ11', '간격이 지나면 다시 넘긴다');
+
+  // 지수를 보고 있으면 그 장에 머무는데, 점으로 다른 장을 볼 수 있다 — 30초 갱신으로 다시 그려도 그대로
+  run("state.selected = '^GSPC';");
+  c.renderIndices();
+  assert.equal(shown(), '^IXIC ^GSPC');
+  c.flipIndexPage(0);
+  c.renderIndices();
+  assert.equal(shown(), '^KS11 ^KQ11', '보고 있는 지수가 있어도 고른 장을 둔다');
+  // 다른 것을 골랐다가 같은 지수를 다시 고르면 다시 그 지수의 장으로
+  run("state.selected = '005930.KS';");
+  c.renderIndices();
+  run("state.selected = '^GSPC';");
+  c.renderIndices();
+  assert.equal(shown(), '^IXIC ^GSPC', '고르는 것이 바뀌면 원래 규칙으로');
+  c.flipIndexPage(9);
+  assert.equal(shown(), '^IXIC ^GSPC', '없는 장은 무시한다');
+
+  run("state.selected = '005930.KS'; indexItems = indexItems.slice(0, 2);");
+  c.renderIndices();
+  assert.doesNotMatch(box.innerHTML, /ixdots/, '한 장뿐이면 점이 없다');
+  c.Date.now = realNow;
+  // 줄은 다시 그려지므로 점 누르기는 줄 상자에서 받는다(지수 누르기 — 그 차트 — 보다 먼저)
+  assert.match(source, /const dot = e\.target\.closest\('\.ixdot'\);\s*if \(dot\) \{ flipIndexPage\(Number\(dot\.dataset\.page\)\); return; \}/);
 });
 
 await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {
