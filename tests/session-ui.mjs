@@ -724,7 +724,7 @@ await test('indicators: SAR continues from the daily history on daily charts and
   assert.equal(run('sarFor("X", [1], [1], [1])'), null, '봉이 모자라면 없다');
 });
 
-await test('indicators: loadChart passes SAR on 1D and the daily periods only, and only when the chip is on', async () => {
+await test('indicators: loadChart passes SAR on 1D, 1W and the daily periods only, and only when the chip is on', async () => {
   const { c, run } = harness(['loadChart', 'sarFor']);
   const draws = [];
   let bars;
@@ -744,9 +744,8 @@ await test('indicators: loadChart passes SAR on 1D and the daily periods only, a
     await c.loadChart();
     return draws.at(-1).sar;
   };
-  for (const tf of ['1D', '1M', '3M', '1Y', '3Y']) assert.ok(await show(tf, true), `${tf} 에는 그린다`);
+  for (const tf of ['1D', '1W', '1M', '3M', '1Y', '3Y']) assert.ok(await show(tf, true), `${tf} 에는 그린다`);
   assert.equal((await show('1M', true)).data.length, 8);
-  assert.equal(await show('1W', true), null, '1W(30분봉)는 밤 사이 공백이 끼어 그리지 않는다');
   assert.equal(await show('전체', true), null, '전체(월봉 · 분기봉)도 그리지 않는다');
   assert.equal(await show('1M', false), null, '칩을 끄면 없다');
 });
@@ -778,6 +777,9 @@ await test('indicators: SAR legend shows the direction and how long it has held,
   run(`hoverIdx = null; state.timeframe = '1D'; lastChart.sar.rising = true; lastChart.sar.flipAt = ${at}; renderMaLegend();`);
   assert.deepEqual([...read()], [`SAR=상승 · ${run(`labelFor(${at}, '1D')`)}부터`], '1D 는 일 대신 전환 시각');
   assert.equal(items[0].kids[1].style.background, '--sar-up');
+  items.length = 0;
+  run("state.timeframe = '1W'; renderMaLegend();");
+  assert.deepEqual([...read()], [`SAR=상승 · ${run(`labelFor(${at}, '1W')`)}부터`], '1W 도 전환 시각(1W 축과 같은 날짜 · 시)');
 });
 
 await test('indicators: drawChart draws SAR as dots on the price axis, red below a rising trend and blue above a falling one', () => {
