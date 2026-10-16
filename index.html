@@ -592,6 +592,8 @@
   /* 지표 보기 — 차트 자리를 덮고 그 안에서 스크롤한다. 열려 있는 동안은 차트 버튼(캔들 · 차트만 보기 ·
      전체)과 차트 위 범례를 숨긴다 — 지표 화면에는 뜻이 없다. 여는 버튼은 제목줄(업종 오른쪽)에 있다. */
   .metrics { position: absolute; inset: 0; z-index: 1; overflow-y: auto; padding: 4px; background: var(--panel); font-size: 10px; color: var(--text); }
+  .metrics::-webkit-scrollbar { width: 5px; }
+  .metrics::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 3px; }
   .metrics[hidden] { display: none; }
   .metrics:not([hidden]) ~ .chartctl { display: none; }
   .detail:has(#metricsView:not([hidden])) #maLegend { display: none; }

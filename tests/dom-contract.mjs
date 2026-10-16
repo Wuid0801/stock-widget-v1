@@ -91,5 +91,17 @@ for (const id of ['hold', 'w52', 'trendCheck']) {
     || new RegExp(`\\.infotoggle\\.off\\s*~\\s*#${id}\\s*,`).test(html));
 }
 
+// --- 스크롤바 ------------------------------------------------------------------
+// 스크롤하는 곳은 모두 위젯 스크롤바(5px 얇은 막대, --scroll 색)를 쓴다. 규칙이 빠지면 운영체제 기본
+// 스크롤바(넓은 회색 막대 · 화살표)가 나와 위젯과 어울리지 않는다 — 지표 보기가 처음에 그랬다.
+const scrollers = [...html.matchAll(/([#.][\w-]+)\s*\{[^}]*overflow-y:\s*(?:auto|scroll)/g)].map((m) => m[1]);
+check('스크롤하는 곳이 있다', scrollers.length > 0, scrollers.join(' '));
+for (const sel of scrollers) {
+  const esc = sel.replace('.', '\\.');
+  check(`${sel} 는 위젯 스크롤바를 쓴다`,
+    new RegExp(`${esc}::-webkit-scrollbar\\s*\\{[^}]*width:\\s*5px`).test(html)
+      && new RegExp(`${esc}::-webkit-scrollbar-thumb\\s*\\{[^}]*var\\(--scroll\\)`).test(html));
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);
