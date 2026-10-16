@@ -174,5 +174,34 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   check('네이버에 없는 미국 종목은 ok:false', d.ok === false && /네이버/.test(d.error), d.error);
 }
 
+// --- 7. 관심종목 일정(naver:events) — 목록의 실적 · 배당락 D-day -------------------------------
+// 종목마다 하루 몇 번 받으므로 가볍게: 국내는 종목 상세 1건(실적 발표일), 미국은 해외 종목 정보 1건(배당락일).
+{
+  const events = (symbol) => handlers['naver:events']({}, symbol);
+  calls.length = 0;
+  let e = await events('005930.KS');
+  check('국내 — 실적 발표 일정', e.ok && JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }]),
+    JSON.stringify(e));
+  check('국내는 종목 상세 한 건만 묻는다', calls.length === 1 && /\/api\/stock\/005930\/integration$/.test(calls[0].url) && calls[0].signal,
+    calls.map((c) => c.url).join(' '));
+  e = await events('069500.KS');
+  check('일정이 없으면(ETF) 빈 목록 — 실패가 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+  calls.length = 0;
+  e = await events('AAPL');
+  check('미국 — 배당락일(2026.08.10. → 2026-08-10)', e.ok && JSON.stringify(e.events) === JSON.stringify([{ kind: 'exdiv', title: '배당락일', date: '2026-08-10' }]),
+    JSON.stringify(e));
+  check('미국은 해외 종목 정보 한 건만 묻는다(네이버 코드는 기억해 둔 것)', calls.length === 1 && /\/stock\/AAPL\.O\/basic$/.test(calls[0].url),
+    calls.map((c) => c.url).join(' '));
+  e = await events('SOXL');
+  check('미국 ETF 도 배당락일', e.ok && e.events[0].date === '2026-09-22', JSON.stringify(e));
+  calls.length = 0;
+  for (const s of ['^KS11', 'KRW=X', '']) check(`${JSON.stringify(s)} 는 일정을 묻지 않는다`, (await events(s)).ok === false);
+  check('지수 · 환율로는 요청이 나가지 않는다', calls.length === 0);
+  blocked = ['/integration'];
+  e = await events('005930.KS');
+  check('받지 못하면 ok:false(다음 갱신에 다시 묻게)', e.ok === false && typeof e.error === 'string');
+  blocked = [];
+}
+
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');
 process.exit(fails ? 1 : 0);

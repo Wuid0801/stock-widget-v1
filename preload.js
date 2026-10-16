@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   sector: (symbol) => ipcRenderer.invoke('yf:sector', symbol),
   detail: (symbol) => ipcRenderer.invoke('naver:detail', symbol),
   rank: (req) => ipcRenderer.invoke('naver:rank', req),
+  events: (symbol) => ipcRenderer.invoke('naver:events', symbol),
   realtimeQuotes: (symbols) => ipcRenderer.invoke('quote:realtime', symbols),
   indices: () => ipcRenderer.invoke('quote:indices'),
   fxUsdKrw: () => ipcRenderer.invoke('fx:usdkrw'),

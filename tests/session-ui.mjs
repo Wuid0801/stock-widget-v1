@@ -49,6 +49,7 @@ function harness(extra = []) {
     clearChart: () => {},
     renderMetrics: () => {},
     renderRank: () => {},
+    loadEvents: async () => {}, // 갱신이 부르는 관심종목 일정 — 진짜는 extra 로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
     'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', ...extra];
@@ -2829,6 +2830,73 @@ await test('holdings: list row shows quantity and my return only for held stocks
   assert.equal(c.holdSub('000660.KS'), '', '보유가 아니면 아무것도 붙이지 않는다');
   run(`quotes['005930.KS'] = {};`);
   assert.equal(c.holdSub('005930.KS'), '<span class="hsub">10주</span>', '현재가가 없으면 수량만');
+});
+
+// 관심종목 일정 — 실적 발표(국내) · 배당락(미국)이 14일 안이면 이름 옆에 작게 D-day. 지표 화면을 열어야만 보이던 것.
+await test('events: list chip counts days by the Korean date, shows the nearest event within 14 days, and skips past ones', () => {
+  const { c, run } = harness(['eventBadge', 'eventChip']);
+  c.esc = (s) => String(s).replace(/</g, '&lt;');
+  const at = (kst) => Date.parse(`${kst}+09:00`);
+  run(`eventCache.set('005930.KS', { at: 0, events: [{ kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }] });
+    eventCache.set('AAPL', { at: 0, events: [{ kind: 'exdiv', title: '배당락일', date: '2026-10-16' }] });
+    eventCache.set('X', { at: 0, events: [{ kind: 'ir', title: '지난 일정', date: '2026-10-01' }, { kind: 'ir', title: '<b>먼 일정</b>', date: '2026-11-30' }] });`);
+  const badge = (s, kst) => run(`JSON.stringify(eventBadge('${s}', ${at(kst)}))`);
+  assert.equal(badge('005930.KS', '2026-10-16T09:00:00'), JSON.stringify({ label: '실적 D-13', title: '2026년 3분기 경영실적 발표 · 10/29' }));
+  assert.equal(badge('005930.KS', '2026-10-15T23:59:00'), JSON.stringify({ label: '실적 D-14', title: '2026년 3분기 경영실적 발표 · 10/29' }), '14일까지');
+  assert.equal(badge('005930.KS', '2026-10-14T23:59:00'), 'null', '15일 남으면 아직 없다');
+  assert.equal(badge('005930.KS', '2026-10-16T00:01:00'), JSON.stringify({ label: '실적 D-13', title: '2026년 3분기 경영실적 발표 · 10/29' }),
+    '한국 날짜로 센다(00:01 KST 는 UTC 로 전날)');
+  assert.equal(badge('005930.KS', '2026-10-29T15:00:00'), JSON.stringify({ label: '실적 D-day', title: '2026년 3분기 경영실적 발표 · 10/29' }));
+  assert.equal(badge('005930.KS', '2026-10-30T09:00:00'), 'null', '지난 일정은 없다');
+  assert.equal(badge('AAPL', '2026-10-16T10:00:00'), JSON.stringify({ label: '배당락 D-day', title: '배당락일 · 10/16' }));
+  assert.equal(badge('X', '2026-10-16T10:00:00'), 'null', '지난 것과 먼 것뿐이면 없다');
+  assert.equal(badge('NONE', '2026-10-16T10:00:00'), 'null', '아직 안 받았으면 없다');
+  run(`eventCache.get('X').events.push({ kind: 'exdiv', title: '배당락일', date: '2026-10-25' }, { kind: 'ir', title: '<b>가까운</b>', date: '2026-10-20' });`);
+  assert.equal(JSON.parse(badge('X', '2026-10-16T10:00:00')).label, '실적 D-4', '가장 가까운 것');
+  const realNow = c.Date.now; // FixedDate 는 하네스끼리 같이 쓴다 — 끝에서 되돌린다
+  c.Date.now = () => at('2026-10-16T10:00:00');
+  assert.equal(run("eventChip('X')"), '<span class="evchip" title="&lt;b>가까운&lt;/b> · 10/20">실적 D-4</span>', '제목은 이스케이프');
+  assert.equal(run("eventChip('NONE')"), '');
+  c.Date.now = realNow;
+  // 목록 줄은 이름 옆에 칩을 둔다(이름은 말줄임, 칩은 늘 보인다)
+  assert.match(realFunction('renderList'), /<span class="nrow"><span class="name">\$\{esc\(item\.name\)\}<\/span>\$\{eventChip\(item\.symbol\)\}<\/span>/);
+});
+
+await test('events: the watchlist schedule is fetched one stock at a time, kept for six hours, retried after a failure, and redraws the list once', async () => {
+  const { c, run } = harness(['loadEvents']);
+  const asked = [];
+  const fail = new Set(['000660.KS']);
+  let lists = 0;
+  c.api.events = async (s) => { asked.push(s); return fail.has(s) ? { ok: false, error: 'x' } : { ok: true, events: [{ kind: 'ir', title: s, date: '2026-10-29' }] }; };
+  c.renderList = () => { lists++; };
+  run("state.watchlist.push({ symbol: '^KS11', name: '코스피' });");
+  await c.loadEvents();
+  assert.deepEqual([...asked], ['005930.KS', '000660.KS'], '목록 순서대로, 지수는 묻지 않는다');
+  assert.equal(lists, 1, '받은 것이 있으면 목록을 한 번 다시 그린다');
+  assert.equal(run("eventCache.has('000660.KS')"), false, '실패는 기억하지 않는다');
+  asked.length = 0;
+  await c.loadEvents();
+  assert.deepEqual([...asked], ['000660.KS'], '받아 둔 종목은 6시간 동안 다시 묻지 않고, 실패한 종목만 다시');
+  assert.equal(lists, 1, '새로 받은 것이 없으면 다시 그리지 않는다');
+  const realNow = c.Date.now; // FixedDate 는 하네스끼리 같이 쓴다 — 끝에서 되돌린다
+  c.Date.now = () => NOW + 6 * 3600000;
+  asked.length = 0;
+  fail.clear();
+  await c.loadEvents();
+  assert.deepEqual([...asked], ['005930.KS', '000660.KS'], '6시간이 지나면 다시');
+  assert.equal(lists, 2);
+  c.Date.now = realNow;
+  // 받는 중에 또 부르면(30초 갱신이 겹치면) 그냥 돌아간다
+  const pending = [];
+  c.api.events = (s) => { asked.push(s); return new Promise((r) => pending.push(() => r({ ok: true, events: [] }))); };
+  run('eventCache.clear();');
+  asked.length = 0;
+  const first = c.loadEvents();
+  await c.loadEvents();
+  assert.deepEqual([...asked], ['005930.KS'], '겹쳐 부르면 묻지 않는다');
+  while (pending.length) { pending.shift()(); await new Promise((r) => setImmediate(r)); }
+  await first;
+  assert.match(realFunction('refreshAll'), /loadEvents\(\)\.catch\(console\.error\);/, '갱신마다 부르되 기다리지 않는다');
 });
 
 await test('holdings: detail adds, validates, edits, cancels and deletes; refresh keeps typed values', () => {

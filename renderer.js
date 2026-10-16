@@ -194,6 +194,11 @@ const rankCache = new Map(); // 'kr|up' -> { at, d(naver:rank 응답) }
 const rankLoading = new Set();
 let rankShown = { key: null, html: null }; // 지금 목록에 쓴 것
 const RANK_TTL = 60000;
+// 관심종목 일정(실적 발표 · 배당락). 종목마다 6시간 쓴다 — 하루 몇 번이면 충분하고, 종목 수만큼 요청이 나간다.
+const eventCache = new Map(); // symbol -> { at, events: [{ kind: 'ir' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
+let eventsBusy = false;
+const EVENT_TTL = 6 * 3600000;
+const EVENT_DAYS = 14; // 이만큼 남았을 때부터 목록에 보인다
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
 let marketOpen = true;
@@ -288,6 +293,53 @@ function candleTag(q, cur) {
   return `<span title="${esc(t)}">${candleSvg(c)}</span>`;
 }
 
+// --- 관심종목 일정 ----------------------------------------------------------------
+// 목록 이름 옆의 일정 칩 — 가장 가까운 일정이 EVENT_DAYS 안이면 '실적 D-3' · '배당락 D-day'. 지표 화면을 열어야만
+// 보이던 것. 날짜는 한국 날짜로 센다(네이버가 주는 D-day 숫자는 받은 날 기준이라 날을 넘기면 틀린다). 지난 일정은 없다.
+function eventBadge(symbol, nowMs = Date.now()) {
+  const hit = eventCache.get(symbol);
+  if (!hit || !hit.events) return null;
+  const today = Math.floor((nowMs + 9 * 3600000) / 86400000);
+  let best = null;
+  for (const e of hit.events) {
+    const t = Date.parse(`${e.date}T00:00:00Z`);
+    if (!Number.isFinite(t)) continue;
+    const dd = Math.floor(t / 86400000) - today;
+    if (dd < 0 || dd > EVENT_DAYS) continue;
+    if (!best || dd < best.dd) best = { ...e, dd };
+  }
+  if (!best) return null;
+  return { label: `${best.kind === 'ir' ? '실적' : '배당락'} ${best.dd === 0 ? 'D-day' : `D-${best.dd}`}`,
+    title: `${best.title} · ${best.date.slice(5).replace('-', '/')}` };
+}
+
+function eventChip(symbol) {
+  const b = eventBadge(symbol);
+  return b ? `<span class="evchip" title="${esc(b.title)}">${b.label}</span>` : '';
+}
+
+// 관심종목의 일정을 받는다(main 의 naver:events — 국내 실적 발표일 · 미국 배당락일). 갱신마다 부르되 기다리지 않고,
+// 6시간이 지난 종목만 목록 순서대로 하나씩 받는다(한꺼번에 몰리지 않게). 실패한 종목은 기억하지 않아 다음 갱신에
+// 다시 묻는다. 받는 중에 또 불리면(30초 갱신이 겹치면) 그냥 돌아간다. 새로 받은 것이 있으면 목록을 한 번 다시 그린다.
+async function loadEvents() {
+  if (eventsBusy) return;
+  eventsBusy = true;
+  let changed = false;
+  try {
+    for (const item of [...state.watchlist]) {
+      if (isIndex(item.symbol)) continue;
+      const hit = eventCache.get(item.symbol);
+      if (hit && Date.now() - hit.at < EVENT_TTL) continue;
+      let r = null;
+      try { r = await api.events(item.symbol); } catch { /* 다음 갱신에 다시 */ }
+      if (r && r.ok) { eventCache.set(item.symbol, { at: Date.now(), events: r.events || [] }); changed = true; }
+    }
+  } finally {
+    eventsBusy = false;
+  }
+  if (changed) renderList();
+}
+
 // --- 리스트 -------------------------------------------------------------------
 // 관심종목은 store에서 오므로, 추가/삭제 UI를 붙일 때는
 // state.watchlist를 수정하고 save() + renderList()만 호출하면 된다.
@@ -312,7 +364,7 @@ function renderList() {
 
     row.innerHTML = `
       <span class="dot" style="background:${lv.color}"></span>
-      <span class="nm"><span class="name">${esc(item.name)}</span>${holdSub(item.symbol)}</span>
+      <span class="nm"><span class="nrow"><span class="name">${esc(item.name)}</span>${eventChip(item.symbol)}</span>${holdSub(item.symbol)}</span>
       <span class="px" style="color:${color}">${q && q.price != null ? money(q.price, curOf(item.symbol)) : '—'}</span>
       <span class="chg" style="color:${color}">${
         q && q.pct != null ? fmtPct(q.pct) : (q && q.error ? '오류' : '')
@@ -2680,6 +2732,7 @@ async function refreshAll() {
     err(quoteErrText());
     renderDetail();
     renderRank(); // 순위 패널이 열려 있으면 1분이 지난 탭을 다시 받는다
+    loadEvents().catch(console.error); // 관심종목 일정 — 6시간 지난 종목만, 기다리지 않는다
     await renderFolio();
     await loadChart();
 

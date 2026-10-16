@@ -715,6 +715,31 @@ ipcMain.handle('naver:detail', async (_e, symbol) => {
   }
 });
 
+// ---- 관심종목 일정(목록의 실적 · 배당락 D-day) -----------------------------------------
+// 렌더러가 종목마다 하루 몇 번(6시간마다) 부르므로 가볍게 한 건씩: 국내는 종목 상세의 실적 발표 일정, 미국은 해외
+// 종목 정보의 배당락일(네이버 해외 응답에는 실적 발표일이 없다). 일정이 없으면 빈 목록(실패가 아니다).
+// 돌려주는 값: { ok, events: [{ kind: 'ir' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
+ipcMain.handle('naver:events', async (_e, symbol) => {
+  const s = String(symbol ?? '');
+  if (!SYMBOL_RE.test(s)) return { ok: false, error: '잘못된 요청' };
+  try {
+    const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(s);
+    if (kr) {
+      const ir = (await naverJson(`https://m.stock.naver.com/api/stock/${kr[1]}/integration`))?.irScheduleInfo;
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(ir?.irScheduleDate ?? '')) ? ir.irScheduleDate : null;
+      return { ok: true, events: date ? [{ kind: 'ir', title: String(ir.title ?? '실적 발표'), date }] : [] };
+    }
+    if (!US_RE.test(s)) return { ok: false, error: '일정이 없는 종목' }; // 지수 · 환율
+    const code = await naverUsCode(s);
+    if (!code) return { ok: false, error: '네이버에 없는 종목' };
+    const b = await naverJson(`https://api.stock.naver.com/stock/${encodeURIComponent(code)}/basic`);
+    const m = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(detailInfos(b?.stockItemTotalInfos).get('exDividendAt') || ''); // '2026.08.10.'
+    return { ok: true, events: m ? [{ kind: 'exdiv', title: '배당락일', date: `${m[1]}-${m[2]}-${m[3]}` }] : [] };
+  } catch (err) {
+    return { ok: false, error: err.message || '일정 조회 실패' };
+  }
+});
+
 // ---- 시장 순위(헤더의 순위 버튼이 여는 패널) ------------------------------------------
 // 국내: 인기 검색 · 급등 · 급락 · 거래대금(코스피 + 코스닥), 미국: 급등 · 급락 · 거래대금 · 시총 상위(나스닥 + 뉴욕).
 // 네이버 순위는 거르는 매개변수가 없고, 그대로 쓰면 잡음이 위를 차지한다(2026-10-16 국내 급등 20위 중 일반 주식은

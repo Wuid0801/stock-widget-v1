@@ -300,6 +300,13 @@
   /* 이름 칸. 보유 종목은 이름 아래 작은 줄(.hsub)이 붙는다 — "10주 · 손익 +12.50%" */
   .row .nm { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
   .row .name { font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  /* 이름 + 일정 칩(실적 · 배당락 D-day). 이름만 줄어들며 말줄임하고 칩은 늘 보인다 */
+  .row .nrow { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .row .nrow .name { min-width: 0; }
+  .row .evchip {
+    flex: 0 0 auto; font-size: 9px; line-height: 13px; padding: 0 4px; border-radius: 3px;
+    color: var(--accent); background: var(--chip);
+  }
   .row .hsub {
     margin-top: 1px; font-size: 9.5px; color: var(--mute); font-variant-numeric: tabular-nums;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
