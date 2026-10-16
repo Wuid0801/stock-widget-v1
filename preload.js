@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   fetchChart: (params) => ipcRenderer.invoke('yf:chart', params),
   search: (query) => ipcRenderer.invoke('yf:search', query),
   sector: (symbol) => ipcRenderer.invoke('yf:sector', symbol),
+  detail: (symbol) => ipcRenderer.invoke('naver:detail', symbol),
   realtimeQuotes: (symbols) => ipcRenderer.invoke('quote:realtime', symbols),
   indices: () => ipcRenderer.invoke('quote:indices'),
   fxUsdKrw: () => ipcRenderer.invoke('fx:usdkrw'),

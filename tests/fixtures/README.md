@@ -45,3 +45,18 @@ from these records by changing only status and time fields.
 - `naver-us-index-20261015.json`: 10-15 11:2x KST, `https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX`
   (Nasdaq Composite, S&P 500) after the 10-14 New York close, `marketStatus` `CLOSE`. Only the fields the index line reads
   (plus their `Raw` twins) are kept.
+
+## Metrics view (naver:detail)
+
+`naver-detail-20261016.json`: captured 2026-10-16 13:3x KST (KRX regular session) for the metrics view, only the fields
+`main.js` reads. Keys are Naver codes; each holds the raw responses of one symbol:
+
+- `005930` (Samsung Electronics) · `069500` (KODEX 200 ETF): `integration` (`https://m.stock.naver.com/api/stock/{code}/integration`,
+  peers cut to 6), `trend` (`/trend?pageSize=20`), `quarter` (`/finance/quarter`, rows cut to 매출액 · 영업이익 · 당기순이익 · ROE;
+  the ETF has `financeInfo: null`), `realtime` (`https://polling.finance.naver.com/api/realtime/domestic/stock/{code}`).
+- `AAPL.O` · `SOXL.K` (US ETF): `basic` (`https://api.stock.naver.com/stock/{code}/basic`), `integration` (consensus,
+  `industryCompareInfo.globalStocks` cut to 6), `quarter` (`/finance/quarter`, rows cut to 매출액 · PBR · EBIT · 당기순이익;
+  SOXL has no columns), `search` (autocomplete result that maps the Yahoo ticker to the Naver code).
+
+The integration volume (21,217,698) is KRX + NXT while the realtime one (11,822,115) is KRX only; the two were
+captured a few minutes apart.

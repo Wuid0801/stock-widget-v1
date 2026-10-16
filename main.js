@@ -581,6 +581,140 @@ ipcMain.handle('yf:sector', async (_e, symbol) => {
   }
 });
 
+// ---- 지표 보기(차트 대신 보는 화면) ------------------------------------------------
+// 국내: 네이버 종목 상세(가치 지표 · 컨센서스 · 실적 일정 · 동종 업종 · ETF 지표) · 투자자별 매매동향(20일) ·
+// 분기 실적 · KRX 실시간 거래량. 미국: 네이버 해외 종목 정보 · 상세(컨센서스 · 동종 업종) · 분기 실적.
+// 요청은 따로 받아 하나가 실패하면 그 칸만 비운다(전부 실패하면 ok:false). 응답 모양은 2026-10-16 실측
+// (tests/fixtures/naver-detail-20261016.json). 렌더러가 지표 화면을 열었을 때만 부른다.
+//
+// 오늘 거래량은 KRX 실시간이다 — 종목 상세의 거래량은 NXT 를 더한 값이라(삼성전자 10/16 2,122만 = KRX 1,179만 +
+// NXT 952만) 야후 일봉 · 매매동향의 날짜별 거래량(KRX, 둘이 같다)으로 낸 평균과 견주면 배수가 부푼다.
+// NXT 포함 거래량은 totalVolume 으로 따로 둔다.
+const DETAIL_VALUATION = [['per', 'PER'], ['cnsPer', '추정 PER'], ['pbr', 'PBR'], ['eps', 'EPS'], ['bps', 'BPS'],
+  ['dividendYieldRatio', '배당수익률'], ['dividend', '주당배당금'], ['exDividendAt', '배당락일']];
+const detailNum = (v) => {
+  const n = Number(String(v ?? '').replace(/[,%+]/g, ''));
+  return v == null || v === '' || !Number.isFinite(n) ? null : n;
+};
+// 네이버 표기('9.82배', '22,292원')는 그대로 쓴다. 값이 없다는 표기는 뺀다.
+const detailInfos = (list) => {
+  const map = new Map((Array.isArray(list) ? list : []).map((x) => [x.code, x.value]));
+  const get = (code) => {
+    const v = map.get(code);
+    return v == null || ['', '-', 'N/A'].includes(String(v).trim()) ? null : String(v);
+  };
+  return { get, valuation: DETAIL_VALUATION.filter(([c]) => get(c)).map(([c, label]) => ({ label, value: get(c) })) };
+};
+// '2025.06.' · '2025.06.28' → '25.06'
+const quarterTitle = (t) => String(t).replace(/^\d{2}(\d{2})\.(\d{2}).*$/, '$1.$2');
+function detailQuarters(titles, rows, pickRows, unit) {
+  if (!Array.isArray(titles) || !titles.length || !Array.isArray(rows)) return null;
+  const out = pickRows.map(([title, label]) => {
+    const r = rows.find((x) => x.title === title);
+    return r && { title: label, values: titles.map((t) => detailNum(r.columns?.[t.key]?.value)) };
+  }).filter(Boolean);
+  if (!out.length) return null;
+  return { unit, cols: titles.map((t) => ({ title: quarterTitle(t.title), estimate: t.isConsensus === 'Y' })), rows: out };
+}
+const detailConsensus = (c, currency) => (c && detailNum(c.priceTargetMean) != null ? {
+  target: detailNum(c.priceTargetMean), high: detailNum(c.priceTargetHigh), low: detailNum(c.priceTargetLow),
+  opinion: detailNum(c.recommMean), date: c.createDate || null, currency: c.currencyType?.code || currency,
+} : null);
+const detailPeers = (list) => (Array.isArray(list) ? list : []).slice(0, 6)
+  .map((p) => ({ name: String(p.stockName ?? ''), pct: detailNum(p.fluctuationsRatio) }))
+  .filter((p) => p.name && p.pct != null);
+// 요청들을 따로 받아 실패는 null 로. 전부 실패하면 첫 오류를 던진다.
+async function settleAll(urls) {
+  const got = await Promise.allSettled(urls.map((u) => naverJson(u)));
+  if (got.every((g) => g.status === 'rejected')) throw got[0].reason;
+  return got.map((g) => (g.status === 'fulfilled' ? g.value : null));
+}
+
+async function krDetail(code) {
+  const [I, trend, quarter, rt] = await settleAll([
+    `https://m.stock.naver.com/api/stock/${code}/integration`,
+    `https://m.stock.naver.com/api/stock/${code}/trend?pageSize=20`,
+    `https://m.stock.naver.com/api/stock/${code}/finance/quarter`,
+    `https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`,
+  ]);
+  const info = detailInfos(I?.totalInfos);
+  const etfKey = I?.etfKeyIndicator || null;
+  const live = rt?.datas?.[0];
+  const fin = quarter?.financeInfo;
+  return {
+    market: 'kr',
+    kind: etfKey || I?.stockEndType === 'etf' ? 'etf' : 'stock',
+    today: {
+      volume: detailNum(live?.accumulatedTradingVolumeRaw ?? live?.accumulatedTradingVolume),
+      at: live?.localTradedAt || null,
+      totalVolume: detailNum(info.get('accumulatedTradingVolume')),
+      value: info.get('accumulatedTradingValue'),
+      marketValue: info.get('marketValue') || etfKey?.marketValue || null,
+      foreignRate: info.get('foreignRate'),
+    },
+    valuation: info.valuation,
+    consensus: detailConsensus(I?.consensusInfo, 'KRW'),
+    trend: Array.isArray(trend) ? trend.map((r) => ({
+      date: String(r.bizdate), foreign: detailNum(r.foreignerPureBuyQuant), organ: detailNum(r.organPureBuyQuant),
+      individual: detailNum(r.individualPureBuyQuant), foreignRatio: detailNum(r.foreignerHoldRatio),
+    })) : null,
+    ir: I?.irScheduleInfo?.irScheduleDate ? { title: String(I.irScheduleInfo.title ?? ''),
+      date: I.irScheduleInfo.irScheduleDate, dday: detailNum(I.irScheduleInfo.irScheduleDday) } : null,
+    // 단위는 억원(삼성전자 2025.06 매출액 745,663 = 74.6조)
+    quarters: detailQuarters(fin?.trTitleList, fin?.rowList, [['매출액', '매출액'], ['영업이익', '영업이익'], ['당기순이익', '당기순이익']], '억원'),
+    // ETF 의 "동종 업종" 자리에는 인기 ETF(미국 S&P500 등)가 와서 업종 비교로 읽히면 틀린 정보다 — 비운다
+    peers: etfKey ? [] : detailPeers(I?.industryCompareInfo),
+    etf: etfKey ? {
+      nav: detailNum(etfKey.nav),
+      deviation: etfKey.deviationRate == null ? null : (etfKey.deviationSign === '-' ? -1 : 1) * Number(etfKey.deviationRate),
+      issuer: etfKey.issuerName || info.get('issueName'),
+      baseIndex: info.get('etfBaseIdx'),
+      dividendYield: detailNum(etfKey.dividendYieldTtm),
+    } : null,
+  };
+}
+
+async function usDetail(code) {
+  const c = encodeURIComponent(code);
+  const [B, I, Q] = await settleAll([
+    `https://api.stock.naver.com/stock/${c}/basic`,
+    `https://api.stock.naver.com/stock/${c}/integration`,
+    `https://api.stock.naver.com/stock/${c}/finance/quarter`,
+  ]);
+  const info = detailInfos(B?.stockItemTotalInfos);
+  return {
+    market: 'us',
+    kind: B?.stockEndType === 'etf' ? 'etf' : 'stock',
+    today: {
+      volume: detailNum(B?.accumulatedTradingVolumeRaw), at: B?.localTradedAt || null, totalVolume: null,
+      value: info.get('accumulatedTradingValue'), marketValue: info.get('marketValue'), foreignRate: null,
+    },
+    valuation: info.valuation,
+    consensus: detailConsensus(I?.consensusInfo, 'USD'),
+    trend: null, // 투자자별 매매동향은 국내만
+    ir: null,    // 네이버 해외 응답에는 실적 발표 일정이 없다
+    // 단위는 USD 백만. 영업이익 대신 EBIT 를 준다.
+    quarters: detailQuarters(Q?.trTitleList, Q?.rowList, [['매출액', '매출액'], ['EBIT', '영업이익(EBIT)'], ['당기순이익', '당기순이익']], 'USD 백만'),
+    peers: detailPeers(I?.industryCompareInfo?.globalStocks),
+    etf: null,
+  };
+}
+
+ipcMain.handle('naver:detail', async (_e, symbol) => {
+  const s = String(symbol ?? '');
+  if (!SYMBOL_RE.test(s)) return { ok: false, error: '잘못된 요청' };
+  try {
+    const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(s);
+    if (kr) return { ok: true, ...(await krDetail(kr[1])) };
+    if (!US_RE.test(s)) return { ok: false, error: '지표가 없는 종목' }; // 지수 · 환율
+    const code = await naverUsCode(s);
+    if (!code) return { ok: false, error: '네이버에 없는 종목' };
+    return { ok: true, ...(await usDetail(code)) };
+  } catch (err) {
+    return { ok: false, error: err.message || '지표 조회 실패' };
+  }
+});
+
 // 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버 자동완성을 쓴다.
 // (주식·ETF 모두 한글명으로 잡히고 코스피/코스닥까지 알려준다)
 ipcMain.handle('yf:search', async (_e, query) => {

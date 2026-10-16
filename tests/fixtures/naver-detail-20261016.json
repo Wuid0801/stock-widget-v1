@@ -1,0 +1,1387 @@
+{
+  "005930": {
+    "integration": {
+      "stockEndType": "stock",
+      "itemCode": "005930",
+      "stockName": "삼성전자",
+      "totalInfos": [
+        {
+          "code": "lastClosePrice",
+          "key": "전일",
+          "value": "210,000"
+        },
+        {
+          "code": "openPrice",
+          "key": "시가",
+          "value": "213,000",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "highPrice",
+          "key": "고가",
+          "value": "220,500",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "lowPrice",
+          "key": "저가",
+          "value": "210,500",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "accumulatedTradingVolume",
+          "key": "거래량",
+          "value": "21,217,698"
+        },
+        {
+          "code": "accumulatedTradingValue",
+          "key": "대금",
+          "value": "4조 5,732억"
+        },
+        {
+          "code": "marketValue",
+          "key": "시총",
+          "value": "1,280조 3,350억"
+        },
+        {
+          "code": "foreignRate",
+          "key": "외인소진율",
+          "value": "45.98%"
+        },
+        {
+          "code": "highPriceOf52Weeks",
+          "key": "52주 최고",
+          "value": "380,000"
+        },
+        {
+          "code": "lowPriceOf52Weeks",
+          "key": "52주 최저",
+          "value": "93,500"
+        },
+        {
+          "code": "per",
+          "key": "PER",
+          "value": "9.82배",
+          "valueDesc": "2026.06."
+        },
+        {
+          "code": "eps",
+          "key": "EPS",
+          "value": "22,292원",
+          "valueDesc": "2026.06."
+        },
+        {
+          "code": "cnsPer",
+          "key": "추정PER",
+          "value": "4.81배"
+        },
+        {
+          "code": "cnsEps",
+          "key": "추정EPS",
+          "value": "45,521원"
+        },
+        {
+          "code": "pbr",
+          "key": "PBR",
+          "value": "2.54배",
+          "valueDesc": "2026.06."
+        },
+        {
+          "code": "bps",
+          "key": "BPS",
+          "value": "86,052원",
+          "valueDesc": "2026.06."
+        },
+        {
+          "code": "dividendYieldRatio",
+          "key": "배당수익률",
+          "value": "0.76%",
+          "valueDesc": "2025.12."
+        },
+        {
+          "code": "dividend",
+          "key": "주당배당금",
+          "value": "1,668원",
+          "valueDesc": "2025.12."
+        }
+      ],
+      "consensusInfo": {
+        "itemCode": "005930",
+        "createDate": "2026-10-15",
+        "recommMean": "4.00",
+        "priceTargetMean": "495,227"
+      },
+      "irScheduleInfo": {
+        "itemCode": "005930",
+        "stockName": "삼성전자",
+        "title": "2026년 3분기 경영실적 발표",
+        "irScheduleDate": "2026-10-29",
+        "irScheduleDday": 13
+      },
+      "etfKeyIndicator": null,
+      "industryCompareInfo": [
+        {
+          "itemCode": "000660",
+          "stockName": "SK하이닉스",
+          "fluctuationsRatio": "3.25"
+        },
+        {
+          "itemCode": "402340",
+          "stockName": "SK스퀘어",
+          "fluctuationsRatio": "3.92"
+        },
+        {
+          "itemCode": "042700",
+          "stockName": "한미반도체",
+          "fluctuationsRatio": "8.48"
+        },
+        {
+          "itemCode": "036930",
+          "stockName": "주성엔지니어링",
+          "fluctuationsRatio": "3.18"
+        },
+        {
+          "itemCode": "007660",
+          "stockName": "이수페타시스",
+          "fluctuationsRatio": "3.74"
+        },
+        {
+          "itemCode": "039030",
+          "stockName": "이오테크닉스",
+          "fluctuationsRatio": "6.50"
+        }
+      ]
+    },
+    "trend": [
+      {
+        "bizdate": "20261015",
+        "foreignerPureBuyQuant": "-7,280,040",
+        "foreignerHoldRatio": "45.98%",
+        "organPureBuyQuant": "+2,391,459",
+        "individualPureBuyQuant": "+4,658,533",
+        "accumulatedTradingVolume": "34,330,565"
+      },
+      {
+        "bizdate": "20261014",
+        "foreignerPureBuyQuant": "-829,758",
+        "foreignerHoldRatio": "46.16%",
+        "organPureBuyQuant": "+310,050",
+        "individualPureBuyQuant": "+505,494",
+        "accumulatedTradingVolume": "19,009,052"
+      },
+      {
+        "bizdate": "20261013",
+        "foreignerPureBuyQuant": "-5,943,474",
+        "foreignerHoldRatio": "46.18%",
+        "organPureBuyQuant": "+1,016,744",
+        "individualPureBuyQuant": "+5,221,370",
+        "accumulatedTradingVolume": "26,790,913"
+      },
+      {
+        "bizdate": "20261012",
+        "foreignerPureBuyQuant": "-2,178,086",
+        "foreignerHoldRatio": "46.30%",
+        "organPureBuyQuant": "-1,719,656",
+        "individualPureBuyQuant": "+3,855,827",
+        "accumulatedTradingVolume": "19,771,955"
+      },
+      {
+        "bizdate": "20261008",
+        "foreignerPureBuyQuant": "-1,307,041",
+        "foreignerHoldRatio": "46.35%",
+        "organPureBuyQuant": "-4,087,636",
+        "individualPureBuyQuant": "+5,259,380",
+        "accumulatedTradingVolume": "21,259,056"
+      },
+      {
+        "bizdate": "20261007",
+        "foreignerPureBuyQuant": "-118,283",
+        "foreignerHoldRatio": "46.38%",
+        "organPureBuyQuant": "-819,541",
+        "individualPureBuyQuant": "+957,691",
+        "accumulatedTradingVolume": "16,395,504"
+      },
+      {
+        "bizdate": "20261006",
+        "foreignerPureBuyQuant": "-2,064,174",
+        "foreignerHoldRatio": "46.37%",
+        "organPureBuyQuant": "-193,422",
+        "individualPureBuyQuant": "+1,273,618",
+        "accumulatedTradingVolume": "12,913,819"
+      },
+      {
+        "bizdate": "20261002",
+        "foreignerPureBuyQuant": "-350,942",
+        "foreignerHoldRatio": "46.41%",
+        "organPureBuyQuant": "+614,278",
+        "individualPureBuyQuant": "-2,217,946",
+        "accumulatedTradingVolume": "11,501,250"
+      },
+      {
+        "bizdate": "20261001",
+        "foreignerPureBuyQuant": "-758,236",
+        "foreignerHoldRatio": "46.41%",
+        "organPureBuyQuant": "+46,127",
+        "individualPureBuyQuant": "-1,292,880",
+        "accumulatedTradingVolume": "13,741,073"
+      },
+      {
+        "bizdate": "20260930",
+        "foreignerPureBuyQuant": "-3,191,284",
+        "foreignerHoldRatio": "46.40%",
+        "organPureBuyQuant": "-1,409,182",
+        "individualPureBuyQuant": "+2,546,037",
+        "accumulatedTradingVolume": "16,477,580"
+      },
+      {
+        "bizdate": "20260929",
+        "foreignerPureBuyQuant": "-2,508,369",
+        "foreignerHoldRatio": "46.47%",
+        "organPureBuyQuant": "+53,759",
+        "individualPureBuyQuant": "+422,277",
+        "accumulatedTradingVolume": "15,963,864"
+      },
+      {
+        "bizdate": "20260928",
+        "foreignerPureBuyQuant": "-4,999,903",
+        "foreignerHoldRatio": "46.52%",
+        "organPureBuyQuant": "-2,410,724",
+        "individualPureBuyQuant": "+5,330,121",
+        "accumulatedTradingVolume": "21,346,064"
+      },
+      {
+        "bizdate": "20260923",
+        "foreignerPureBuyQuant": "+4,513,767",
+        "foreignerHoldRatio": "46.64%",
+        "organPureBuyQuant": "+1,346,883",
+        "individualPureBuyQuant": "-7,630,126",
+        "accumulatedTradingVolume": "20,864,376"
+      },
+      {
+        "bizdate": "20260922",
+        "foreignerPureBuyQuant": "+659,851",
+        "foreignerHoldRatio": "46.55%",
+        "organPureBuyQuant": "+259,459",
+        "individualPureBuyQuant": "-2,707,452",
+        "accumulatedTradingVolume": "18,157,410"
+      },
+      {
+        "bizdate": "20260921",
+        "foreignerPureBuyQuant": "+4,080,410",
+        "foreignerHoldRatio": "46.56%",
+        "organPureBuyQuant": "+4,186,614",
+        "individualPureBuyQuant": "-10,152,588",
+        "accumulatedTradingVolume": "22,261,519"
+      },
+      {
+        "bizdate": "20260918",
+        "foreignerPureBuyQuant": "-1,673,323",
+        "foreignerHoldRatio": "46.46%",
+        "organPureBuyQuant": "+2,746,972",
+        "individualPureBuyQuant": "-2,975,813",
+        "accumulatedTradingVolume": "17,489,615"
+      },
+      {
+        "bizdate": "20260917",
+        "foreignerPureBuyQuant": "-2,170,687",
+        "foreignerHoldRatio": "46.48%",
+        "organPureBuyQuant": "+196,838",
+        "individualPureBuyQuant": "-39,299",
+        "accumulatedTradingVolume": "11,827,514"
+      },
+      {
+        "bizdate": "20260916",
+        "foreignerPureBuyQuant": "-1,906,839",
+        "foreignerHoldRatio": "46.52%",
+        "organPureBuyQuant": "+1,660,246",
+        "individualPureBuyQuant": "-1,730,267",
+        "accumulatedTradingVolume": "11,757,106"
+      },
+      {
+        "bizdate": "20260915",
+        "foreignerPureBuyQuant": "-1,088,039",
+        "foreignerHoldRatio": "46.56%",
+        "organPureBuyQuant": "-2,321,959",
+        "individualPureBuyQuant": "+1,379,866",
+        "accumulatedTradingVolume": "11,435,506"
+      },
+      {
+        "bizdate": "20260914",
+        "foreignerPureBuyQuant": "-3,466,765",
+        "foreignerHoldRatio": "46.57%",
+        "organPureBuyQuant": "-1,817,020",
+        "individualPureBuyQuant": "+3,570,705",
+        "accumulatedTradingVolume": "17,776,098"
+      }
+    ],
+    "quarter": {
+      "itemCode": "005930",
+      "financePeriodType": "quarter",
+      "financeInfo": {
+        "trTitleList": [
+          {
+            "isConsensus": "N",
+            "title": "2025.06.",
+            "key": "202506"
+          },
+          {
+            "isConsensus": "N",
+            "title": "2025.09.",
+            "key": "202509"
+          },
+          {
+            "isConsensus": "N",
+            "title": "2025.12.",
+            "key": "202512"
+          },
+          {
+            "isConsensus": "N",
+            "title": "2026.03.",
+            "key": "202603"
+          },
+          {
+            "isConsensus": "N",
+            "title": "2026.06.",
+            "key": "202606"
+          },
+          {
+            "isConsensus": "Y",
+            "title": "2026.09.",
+            "key": "202609"
+          }
+        ],
+        "rowList": [
+          {
+            "title": "매출액",
+            "columns": {
+              "202506": {
+                "value": "745,663",
+                "cx": null
+              },
+              "202509": {
+                "value": "860,617",
+                "cx": null
+              },
+              "202512": {
+                "value": "938,374",
+                "cx": null
+              },
+              "202603": {
+                "value": "1,338,734",
+                "cx": null
+              },
+              "202606": {
+                "value": "1,714,995",
+                "cx": null
+              },
+              "202609": {
+                "value": "2,007,657",
+                "cx": null
+              }
+            }
+          },
+          {
+            "title": "영업이익",
+            "columns": {
+              "202506": {
+                "value": "46,761",
+                "cx": null
+              },
+              "202509": {
+                "value": "121,661",
+                "cx": null
+              },
+              "202512": {
+                "value": "200,737",
+                "cx": null
+              },
+              "202603": {
+                "value": "572,328",
+                "cx": null
+              },
+              "202606": {
+                "value": "894,924",
+                "cx": null
+              },
+              "202609": {
+                "value": "1,069,435",
+                "cx": null
+              }
+            }
+          },
+          {
+            "title": "당기순이익",
+            "columns": {
+              "202506": {
+                "value": "51,164",
+                "cx": null
+              },
+              "202509": {
+                "value": "122,257",
+                "cx": null
+              },
+              "202512": {
+                "value": "196,417",
+                "cx": null
+              },
+              "202603": {
+                "value": "472,253",
+                "cx": null
+              },
+              "202606": {
+                "value": "716,245",
+                "cx": null
+              },
+              "202609": {
+                "value": "883,532",
+                "cx": null
+              }
+            }
+          },
+          {
+            "title": "ROE",
+            "columns": {
+              "202506": {
+                "value": "7.95",
+                "cx": null
+              },
+              "202509": {
+                "value": "8.37",
+                "cx": null
+              },
+              "202512": {
+                "value": "10.85",
+                "cx": null
+              },
+              "202603": {
+                "value": "19.16",
+                "cx": null
+              },
+              "202606": {
+                "value": "31.39",
+                "cx": null
+              },
+              "202609": {
+                "value": "-",
+                "cx": null
+              }
+            }
+          }
+        ]
+      }
+    },
+    "realtime": {
+      "datas": [
+        {
+          "itemCode": "005930",
+          "accumulatedTradingVolume": "11,822,115",
+          "accumulatedTradingVolumeRaw": "11822115",
+          "accumulatedTradingValue": "2조 5,444억",
+          "localTradedAt": "2026-10-16T13:30:41.947981+09:00",
+          "marketStatus": "OPEN"
+        }
+      ]
+    }
+  },
+  "069500": {
+    "integration": {
+      "stockEndType": "etf",
+      "itemCode": "069500",
+      "stockName": "KODEX 200",
+      "totalInfos": [
+        {
+          "code": "lastClosePrice",
+          "key": "전일",
+          "value": "87,025"
+        },
+        {
+          "code": "openPrice",
+          "key": "시가",
+          "value": "88,635",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "highPrice",
+          "key": "고가",
+          "value": "90,695",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "lowPrice",
+          "key": "저가",
+          "value": "87,510",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "accumulatedTradingVolume",
+          "key": "거래량",
+          "value": "24,951,712"
+        },
+        {
+          "code": "accumulatedTradingValue",
+          "key": "대금",
+          "value": "2조 2,264억"
+        },
+        {
+          "code": "highPriceOf52WeeksAdjusted",
+          "key": "52주 최고",
+          "value": "152,148"
+        },
+        {
+          "code": "highPriceOf52Weeks",
+          "key": "원주가 기준",
+          "value": "152,455"
+        },
+        {
+          "code": "lowPriceOf52WeeksAdjusted",
+          "key": "52주 최저",
+          "value": "51,731"
+        },
+        {
+          "code": "lowPriceOf52Weeks",
+          "key": "원주가 기준",
+          "value": "52,250"
+        },
+        {
+          "code": "oneMonthEarnRate",
+          "key": "최근 1개월 수익률",
+          "value": "-16.54%",
+          "compareToPreviousPrice": {
+            "code": "5",
+            "text": "하락",
+            "name": "FALLING"
+          }
+        },
+        {
+          "code": "threeMonthEarnRate",
+          "key": "최근 3개월 수익률",
+          "value": "-25.30%",
+          "compareToPreviousPrice": {
+            "code": "5",
+            "text": "하락",
+            "name": "FALLING"
+          }
+        },
+        {
+          "code": "sixMonthEarnRate",
+          "key": "최근 6개월 수익률",
+          "value": "-5.48%",
+          "compareToPreviousPrice": {
+            "code": "5",
+            "text": "하락",
+            "name": "FALLING"
+          }
+        },
+        {
+          "code": "oneYearEarnRate",
+          "key": "최근 1년 수익률",
+          "value": "+71.54%",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "nav",
+          "key": "NAV",
+          "value": "90,354.69"
+        },
+        {
+          "code": "fundPay",
+          "key": "펀드보수",
+          "value": "0.15%"
+        },
+        {
+          "code": "etfBaseIdx",
+          "key": "기초지수",
+          "value": "코스피 200"
+        },
+        {
+          "code": "issueName",
+          "key": "운용사",
+          "value": "삼성자산운용(ETF)"
+        }
+      ],
+      "consensusInfo": null,
+      "irScheduleInfo": null,
+      "etfKeyIndicator": {
+        "issuerName": "삼성자산운용(ETF)",
+        "marketValue": "21조 4,372억",
+        "dividendYieldTtm": 0.98,
+        "totalNav": "20조 6,848억",
+        "nav": "87,038.98",
+        "deviationSign": "-",
+        "deviationRate": 0.02,
+        "totalFee": 0.15,
+        "returnRate1m": -16.54,
+        "returnRate3m": -25.3,
+        "returnRate1y": 71.54
+      },
+      "industryCompareInfo": [
+        {
+          "itemCode": "360750",
+          "stockName": "TIGER 미국S&P500",
+          "fluctuationsRatio": "0.75"
+        },
+        {
+          "itemCode": "133690",
+          "stockName": "TIGER 미국나스닥100",
+          "fluctuationsRatio": "1.10"
+        },
+        {
+          "itemCode": "488770",
+          "stockName": "KODEX 머니마켓액티브",
+          "fluctuationsRatio": "0.02"
+        },
+        {
+          "itemCode": "379800",
+          "stockName": "KODEX 미국S&P500",
+          "fluctuationsRatio": "0.81"
+        },
+        {
+          "itemCode": "379810",
+          "stockName": "KODEX 미국나스닥100",
+          "fluctuationsRatio": "1.08"
+        },
+        {
+          "itemCode": "102110",
+          "stockName": "TIGER 200",
+          "fluctuationsRatio": "3.78"
+        }
+      ]
+    },
+    "trend": [
+      {
+        "bizdate": "20261015",
+        "foreignerPureBuyQuant": "+563,327",
+        "foreignerHoldRatio": "22.24%",
+        "organPureBuyQuant": "-3,269,883",
+        "individualPureBuyQuant": "+2,529,136",
+        "accumulatedTradingVolume": "44,778,477"
+      },
+      {
+        "bizdate": "20261014",
+        "foreignerPureBuyQuant": "+95,412",
+        "foreignerHoldRatio": "22.05%",
+        "organPureBuyQuant": "-326,277",
+        "individualPureBuyQuant": "+246,324",
+        "accumulatedTradingVolume": "31,923,229"
+      },
+      {
+        "bizdate": "20261013",
+        "foreignerPureBuyQuant": "-240,990",
+        "foreignerHoldRatio": "22.04%",
+        "organPureBuyQuant": "-1,428,171",
+        "individualPureBuyQuant": "+1,587,623",
+        "accumulatedTradingVolume": "41,869,608"
+      },
+      {
+        "bizdate": "20261012",
+        "foreignerPureBuyQuant": "-564,199",
+        "foreignerHoldRatio": "22.19%",
+        "organPureBuyQuant": "-234,334",
+        "individualPureBuyQuant": "+719,361",
+        "accumulatedTradingVolume": "29,236,913"
+      },
+      {
+        "bizdate": "20261008",
+        "foreignerPureBuyQuant": "+509,151",
+        "foreignerHoldRatio": "22.54%",
+        "organPureBuyQuant": "-1,136,310",
+        "individualPureBuyQuant": "+591,956",
+        "accumulatedTradingVolume": "24,470,186"
+      },
+      {
+        "bizdate": "20261007",
+        "foreignerPureBuyQuant": "+168,033",
+        "foreignerHoldRatio": "22.26%",
+        "organPureBuyQuant": "-631,738",
+        "individualPureBuyQuant": "+436,771",
+        "accumulatedTradingVolume": "19,510,593"
+      },
+      {
+        "bizdate": "20261006",
+        "foreignerPureBuyQuant": "+183,417",
+        "foreignerHoldRatio": "22.25%",
+        "organPureBuyQuant": "-552,182",
+        "individualPureBuyQuant": "+384,065",
+        "accumulatedTradingVolume": "25,383,736"
+      },
+      {
+        "bizdate": "20261002",
+        "foreignerPureBuyQuant": "-177,968",
+        "foreignerHoldRatio": "22.24%",
+        "organPureBuyQuant": "+595,597",
+        "individualPureBuyQuant": "-416,935",
+        "accumulatedTradingVolume": "26,144,725"
+      },
+      {
+        "bizdate": "20261001",
+        "foreignerPureBuyQuant": "+26,761",
+        "foreignerHoldRatio": "22.39%",
+        "organPureBuyQuant": "+238,344",
+        "individualPureBuyQuant": "-267,031",
+        "accumulatedTradingVolume": "26,709,163"
+      },
+      {
+        "bizdate": "20260930",
+        "foreignerPureBuyQuant": "+243,705",
+        "foreignerHoldRatio": "22.73%",
+        "organPureBuyQuant": "-353,227",
+        "individualPureBuyQuant": "+109,182",
+        "accumulatedTradingVolume": "20,648,747"
+      },
+      {
+        "bizdate": "20260929",
+        "foreignerPureBuyQuant": "+54,854",
+        "foreignerHoldRatio": "22.58%",
+        "organPureBuyQuant": "-207,776",
+        "individualPureBuyQuant": "+131,233",
+        "accumulatedTradingVolume": "20,262,541"
+      },
+      {
+        "bizdate": "20260928",
+        "foreignerPureBuyQuant": "+61,929",
+        "foreignerHoldRatio": "22.44%",
+        "organPureBuyQuant": "-689,176",
+        "individualPureBuyQuant": "+623,855",
+        "accumulatedTradingVolume": "23,611,461"
+      },
+      {
+        "bizdate": "20260923",
+        "foreignerPureBuyQuant": "+29,519",
+        "foreignerHoldRatio": "22.06%",
+        "organPureBuyQuant": "+143,503",
+        "individualPureBuyQuant": "-156,736",
+        "accumulatedTradingVolume": "21,157,647"
+      },
+      {
+        "bizdate": "20260922",
+        "foreignerPureBuyQuant": "+6,422",
+        "foreignerHoldRatio": "21.99%",
+        "organPureBuyQuant": "+141,556",
+        "individualPureBuyQuant": "-150,476",
+        "accumulatedTradingVolume": "25,168,267"
+      },
+      {
+        "bizdate": "20260921",
+        "foreignerPureBuyQuant": "-290,459",
+        "foreignerHoldRatio": "21.96%",
+        "organPureBuyQuant": "+873,167",
+        "individualPureBuyQuant": "-526,879",
+        "accumulatedTradingVolume": "20,877,625"
+      },
+      {
+        "bizdate": "20260918",
+        "foreignerPureBuyQuant": "-174,955",
+        "foreignerHoldRatio": "22.04%",
+        "organPureBuyQuant": "+873,804",
+        "individualPureBuyQuant": "-678,027",
+        "accumulatedTradingVolume": "20,895,190"
+      },
+      {
+        "bizdate": "20260917",
+        "foreignerPureBuyQuant": "-324,234",
+        "foreignerHoldRatio": "22.09%",
+        "organPureBuyQuant": "+286,520",
+        "individualPureBuyQuant": "+45,283",
+        "accumulatedTradingVolume": "25,623,002"
+      },
+      {
+        "bizdate": "20260916",
+        "foreignerPureBuyQuant": "-307,973",
+        "foreignerHoldRatio": "22.15%",
+        "organPureBuyQuant": "+660,482",
+        "individualPureBuyQuant": "-345,019",
+        "accumulatedTradingVolume": "22,839,754"
+      },
+      {
+        "bizdate": "20260915",
+        "foreignerPureBuyQuant": "+327,962",
+        "foreignerHoldRatio": "22.49%",
+        "organPureBuyQuant": "-229,828",
+        "individualPureBuyQuant": "-63,748",
+        "accumulatedTradingVolume": "28,181,360"
+      },
+      {
+        "bizdate": "20260914",
+        "foreignerPureBuyQuant": "+15,314",
+        "foreignerHoldRatio": "22.42%",
+        "organPureBuyQuant": "-711,948",
+        "individualPureBuyQuant": "+669,549",
+        "accumulatedTradingVolume": "25,008,928"
+      }
+    ],
+    "quarter": {
+      "itemCode": "069500",
+      "financePeriodType": "quarter",
+      "financeInfo": null
+    },
+    "realtime": {
+      "datas": [
+        {
+          "itemCode": "069500",
+          "accumulatedTradingVolume": "25,182,200",
+          "accumulatedTradingVolumeRaw": "25182200",
+          "accumulatedTradingValue": "2조 2,471억",
+          "localTradedAt": "2026-10-16T13:30:41.977963+09:00",
+          "marketStatus": "OPEN"
+        }
+      ]
+    }
+  },
+  "AAPL.O": {
+    "basic": {
+      "stockEndType": "stock",
+      "reutersCode": "AAPL.O",
+      "stockName": "애플",
+      "symbolCode": "AAPL",
+      "accumulatedTradingVolumeRaw": "39767256",
+      "localTradedAt": "2026-10-15T16:00:00-04:00",
+      "stockItemTotalInfos": [
+        {
+          "code": "basePrice",
+          "key": "전일",
+          "value": "342.96"
+        },
+        {
+          "code": "openPrice",
+          "key": "시가",
+          "value": "346.95",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "highPrice",
+          "key": "고가",
+          "value": "347.85",
+          "compareToPreviousPrice": {
+            "code": "2",
+            "text": "상승",
+            "name": "RISING"
+          }
+        },
+        {
+          "code": "lowPrice",
+          "key": "저가",
+          "value": "341.60",
+          "compareToPreviousPrice": {
+            "code": "5",
+            "text": "하락",
+            "name": "FALLING"
+          }
+        },
+        {
+          "code": "accumulatedTradingVolume",
+          "key": "거래량",
+          "value": "39,767,256"
+        },
+        {
+          "code": "accumulatedTradingValue",
+          "key": "대금",
+          "value": "137억 USD",
+          "valueDesc": "18조 3,765억원"
+        },
+        {
+          "code": "marketValue",
+          "key": "시총",
+          "value": "4조 9,912억 USD",
+          "valueDesc": "6,710조 6,813억원"
+        },
+        {
+          "code": "industryGroupKor",
+          "key": "업종",
+          "value": "전화 및 소형 장치"
+        },
+        {
+          "code": "highPriceOf52Weeks",
+          "key": "52주 최고",
+          "keyDesc": "2026.10.13.",
+          "value": "348.15"
+        },
+        {
+          "code": "lowPriceOf52Weeks",
+          "key": "52주 최저",
+          "keyDesc": "2026.01.20.",
+          "value": "243.42"
+        },
+        {
+          "code": "per",
+          "key": "PER",
+          "keyDesc": "2026.06.",
+          "value": "39.35배"
+        },
+        {
+          "code": "eps",
+          "key": "EPS",
+          "keyDesc": "2026.06.",
+          "value": "8.69"
+        },
+        {
+          "code": "pbr",
+          "key": "PBR",
+          "keyDesc": "2026.06.",
+          "value": "46.47배"
+        },
+        {
+          "code": "bps",
+          "key": "BPS",
+          "keyDesc": "2026.06.",
+          "value": "7.36"
+        },
+        {
+          "code": "dividend",
+          "key": "주당배당금",
+          "keyDesc": "2026.08.",
+          "value": "1.08"
+        },
+        {
+          "code": "dividendYieldRatio",
+          "key": "배당수익률",
+          "keyDesc": "2026.08.",
+          "value": "0.31%"
+        },
+        {
+          "code": "dividendAt",
+          "key": "배당일",
+          "value": "2026.08.13."
+        },
+        {
+          "code": "exDividendAt",
+          "key": "배당락일",
+          "value": "2026.08.10."
+        },
+        {
+          "code": "faceValueDivisionRate",
+          "key": "액면변경",
+          "keyDesc": "2020.08.31.",
+          "value": "1:4 분할"
+        },
+        {
+          "code": "faceValue",
+          "key": "액면가",
+          "value": "N/A"
+        }
+      ]
+    },
+    "integration": {
+      "consensusInfo": {
+        "reutersCode": "AAPL.O",
+        "createDate": "2026-10-08",
+        "recommMean": "3.70",
+        "priceTargetMean": "324.89",
+        "priceTargetHigh": "405.00",
+        "priceTargetLow": "215.00",
+        "currencyType": {
+          "code": "USD",
+          "text": "US dollar",
+          "name": "USD"
+        }
+      },
+      "industryCompareInfo": {
+        "globalStocks": [
+          {
+            "reutersCode": "DELL.K",
+            "symbolCode": "DELL",
+            "stockName": "델테크놀로지",
+            "fluctuationsRatio": "-6.80"
+          },
+          {
+            "reutersCode": "SNDK.O",
+            "symbolCode": "SNDK",
+            "stockName": "샌디스크",
+            "fluctuationsRatio": "-0.61"
+          },
+          {
+            "reutersCode": "STX.O",
+            "symbolCode": "STX",
+            "stockName": "씨게이트",
+            "fluctuationsRatio": "-3.19"
+          },
+          {
+            "reutersCode": "6758.T",
+            "symbolCode": "6758",
+            "stockName": "소니 그룹",
+            "fluctuationsRatio": "2.50"
+          },
+          {
+            "reutersCode": "SONY.K",
+            "symbolCode": "SONY",
+            "stockName": "소니 그룹 ADR",
+            "fluctuationsRatio": "1.35"
+          },
+          {
+            "reutersCode": "WDC.O",
+            "symbolCode": "WDC",
+            "stockName": "웨스턴 디지털",
+            "fluctuationsRatio": "-2.10"
+          }
+        ]
+      }
+    },
+    "quarter": {
+      "unit": "USD(백만). %, 배 생략",
+      "trTitleList": [
+        {
+          "isConsensus": "N",
+          "title": "2025.06.28",
+          "key": "2025.06.28"
+        },
+        {
+          "isConsensus": "N",
+          "title": "2025.09.27",
+          "key": "2025.09.27"
+        },
+        {
+          "isConsensus": "N",
+          "title": "2025.12.27",
+          "key": "2025.12.27"
+        },
+        {
+          "isConsensus": "N",
+          "title": "2026.03.28",
+          "key": "2026.03.28"
+        },
+        {
+          "isConsensus": "N",
+          "title": "2026.06.27",
+          "key": "2026.06.27"
+        }
+      ],
+      "rowList": [
+        {
+          "title": "매출액",
+          "columns": {
+            "2025.09.27": {
+              "value": "102,466.00",
+              "krw": "1,377,450.44",
+              "cx": null
+            },
+            "2026.06.27": {
+              "value": "109,417.00",
+              "krw": "1,470,892.73",
+              "cx": null
+            },
+            "2026.03.28": {
+              "value": "111,184.00",
+              "krw": "1,494,646.51",
+              "cx": null
+            },
+            "2025.12.27": {
+              "value": "143,756.00",
+              "krw": "1,932,511.91",
+              "cx": null
+            },
+            "2025.06.28": {
+              "value": "94,036.00",
+              "krw": "1,264,125.95",
+              "cx": null
+            }
+          }
+        },
+        {
+          "title": "PBR",
+          "columns": {
+            "2025.09.27": {
+              "value": "49.70",
+              "krw": "49.70",
+              "cx": null
+            },
+            "2026.06.27": {
+              "value": "45.74",
+              "krw": "45.74",
+              "cx": null
+            },
+            "2026.03.28": {
+              "value": "45.87",
+              "krw": "45.87",
+              "cx": null
+            },
+            "2025.12.27": {
+              "value": "45.19",
+              "krw": "45.19",
+              "cx": null
+            },
+            "2025.06.28": {
+              "value": "58.33",
+              "krw": "58.33",
+              "cx": null
+            }
+          }
+        },
+        {
+          "title": "EBIT",
+          "columns": {
+            "2025.09.27": {
+              "value": "32,427.00",
+              "krw": "435,916.16",
+              "cx": null
+            },
+            "2026.06.27": {
+              "value": "35,695.00",
+              "krw": "479,847.89",
+              "cx": null
+            },
+            "2026.03.28": {
+              "value": "35,885.00",
+              "krw": "482,402.06",
+              "cx": null
+            },
+            "2025.12.27": {
+              "value": "50,852.00",
+              "krw": "683,603.44",
+              "cx": null
+            },
+            "2025.06.28": {
+              "value": "28,203.00",
+              "krw": "379,132.93",
+              "cx": null
+            }
+          }
+        },
+        {
+          "title": "당기순이익",
+          "columns": {
+            "2025.09.27": {
+              "value": "26,980.00",
+              "krw": "362,692.14",
+              "cx": null
+            },
+            "2026.06.27": {
+              "value": "29,789.00",
+              "krw": "400,453.53",
+              "cx": null
+            },
+            "2026.03.28": {
+              "value": "29,578.00",
+              "krw": "397,617.05",
+              "cx": null
+            },
+            "2025.12.27": {
+              "value": "42,097.00",
+              "krw": "565,909.97",
+              "cx": null
+            },
+            "2025.06.28": {
+              "value": "23,434.00",
+              "krw": "315,023.26",
+              "cx": null
+            }
+          }
+        }
+      ]
+    },
+    "search": {
+      "result": {
+        "items": [
+          {
+            "code": "AAPL",
+            "name": "애플",
+            "nationCode": "USA",
+            "reutersCode": "AAPL.O"
+          }
+        ]
+      }
+    }
+  },
+  "SOXL.K": {
+    "basic": {
+      "stockEndType": "etf",
+      "reutersCode": "SOXL.K",
+      "stockName": "Direxion Daily Semiconductor Bull 3X ETF",
+      "symbolCode": "SOXL",
+      "accumulatedTradingVolumeRaw": "139897321",
+      "localTradedAt": "2026-10-15T16:00:00-04:00",
+      "stockItemTotalInfos": [
+        {
+          "code": "basePrice",
+          "key": "전일",
+          "value": "110.54"
+        },
+        {
+          "code": "openPrice",
+          "key": "시가",
+          "value": "98.35",
+          "compareToPreviousPrice": {
+            "code": "5",
+            "text": "하락",
+            "name": "FALLING"
+          }
+        },
+        {
+          "code": "highPrice",
+          "key": "고가",
+          "value": "108.80",
+          "compareToPreviousPrice": {
+            "code": "5",
+            "text": "하락",
+            "name": "FALLING"
+          }
+        },
+        {
+          "code": "lowPrice",
+          "key": "저가",
+          "value": "95.23",
+          "compareToPreviousPrice": {
+            "code": "5",
+            "text": "하락",
+            "name": "FALLING"
+          }
+        },
+        {
+          "code": "accumulatedTradingVolume",
+          "key": "거래량",
+          "value": "139,897,321"
+        },
+        {
+          "code": "accumulatedTradingValue",
+          "key": "대금",
+          "value": "142억 USD",
+          "valueDesc": "19조 1,457억원"
+        },
+        {
+          "code": "marketValue",
+          "key": "시총",
+          "value": "174억 USD",
+          "valueDesc": "23조 3,818억원"
+        },
+        {
+          "code": "industryGroupKor",
+          "key": "업종",
+          "value": "-"
+        },
+        {
+          "code": "highPriceOf52Weeks",
+          "key": "52주 최고",
+          "keyDesc": "2026.06.22.",
+          "value": "302.00"
+        },
+        {
+          "code": "lowPriceOf52Weeks",
+          "key": "52주 최저",
+          "keyDesc": "2025.11.21.",
+          "value": "28.12"
+        },
+        {
+          "code": "per",
+          "key": "PER",
+          "value": "N/A"
+        },
+        {
+          "code": "eps",
+          "key": "EPS",
+          "value": "N/A"
+        },
+        {
+          "code": "pbr",
+          "key": "PBR",
+          "value": "N/A"
+        },
+        {
+          "code": "bps",
+          "key": "BPS",
+          "value": "N/A"
+        },
+        {
+          "code": "dividend",
+          "key": "주당배당금",
+          "keyDesc": "2026.09.",
+          "value": "0.09"
+        },
+        {
+          "code": "dividendYieldRatio",
+          "key": "배당수익률",
+          "keyDesc": "2026.09.",
+          "value": "0.08%"
+        },
+        {
+          "code": "dividendAt",
+          "key": "배당일",
+          "value": "2026.09.29."
+        },
+        {
+          "code": "exDividendAt",
+          "key": "배당락일",
+          "value": "2026.09.22."
+        },
+        {
+          "code": "faceValueDivisionRate",
+          "key": "액면변경",
+          "keyDesc": "2021.03.02.",
+          "value": "1:14.9 분할"
+        },
+        {
+          "code": "faceValue",
+          "key": "액면가",
+          "value": "N/A"
+        }
+      ]
+    },
+    "integration": {
+      "consensusInfo": null,
+      "industryCompareInfo": null
+    },
+    "quarter": {
+      "unit": "USD(백만). %, 배 생략",
+      "trTitleList": [],
+      "rowList": [
+        {
+          "title": "매출액",
+          "columns": {}
+        },
+        {
+          "title": "PBR",
+          "columns": {}
+        },
+        {
+          "title": "EBIT",
+          "columns": {}
+        },
+        {
+          "title": "당기순이익",
+          "columns": {}
+        }
+      ]
+    },
+    "search": {
+      "result": {
+        "items": [
+          {
+            "code": "SOXL",
+            "name": "Direxion Daily Semiconductor Bull 3X ETF",
+            "nationCode": "USA",
+            "reutersCode": "SOXL.K"
+          }
+        ]
+      }
+    }
+  }
+}

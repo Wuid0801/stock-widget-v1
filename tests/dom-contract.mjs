@@ -33,6 +33,17 @@ if (nameTag && sectorTag) {
   check('#dname 이 #dsector 보다 먼저 나온다', sectorTag.index > nameTag.index);
   check('#dname 이 #dsector 를 감싸지 않는다 (사이에 닫는 태그가 있다)',
     between.includes('</span>'), between.replace(/\s+/g, ' ').slice(0, 80));
+
+  // 지표 보기 버튼은 업종 오른쪽, 이름 줄(#dnameRow) 밖에 둔다. 안에 넣으면 긴 업종을 말줄임할 때
+  // 버튼까지 잘리고, #dname 안이면 textContent 에 '지표' 가 섞인다.
+  const btnTag = /<(\w+)[^>]*\bid="metricsBtn"/.exec(html);
+  check('#metricsBtn 이 업종 뒤에 있다', !!btnTag && btnTag.index > sectorTag.index);
+  if (btnTag) {
+    const afterSector = html.slice(sectorTag.index, btnTag.index);
+    check('#metricsBtn 은 이름 줄(#dnameRow) 밖에 있다 (사이에 줄을 닫는 태그가 있다)',
+      afterSector.includes('</div>'), afterSector.replace(/\s+/g, ' ').slice(0, 80));
+    check('#metricsBtn 은 차트 상자 앞(제목줄)에 있다', btnTag.index < html.indexOf('class="chartbox"'));
+  }
 }
 
 // --- 스크립트 로드 순서 --------------------------------------------------------

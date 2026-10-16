@@ -48,6 +48,7 @@ const CALLS = {
   'quote:indices': [],
   'fx:usdkrw': [],
   'yf:sector': ['005930.KS'],
+  'naver:detail': ['005930.KS'],
   'yf:search': ['삼성'],
   'yf:chart': [{ symbol: '005930.KS', range: '1d', interval: '5m' }],
 };

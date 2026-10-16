@@ -493,6 +493,16 @@
   /* 업종 — 종목명보다 한 단계 더 흐리고 작게. 값이 없으면 자리를 차지하지 않는다 */
   .dsector { font-size: 9px; color: var(--faint); }
   .dsector:not(:empty)::before { content: ' · '; }
+  /* 이름 줄 + 지표 버튼. 이름 줄만 줄어들며 말줄임하고 버튼은 늘 보인다 */
+  .dnamebar { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .dnamebar .dname { min-width: 0; }
+  .mxbtn {
+    flex: 0 0 auto; height: 14px; padding: 0 4px; border: 1px solid var(--field-border); border-radius: 3px;
+    background: transparent; color: var(--faint); font-size: 9px; line-height: 12px; cursor: pointer;
+  }
+  .mxbtn:hover { color: var(--text-3); }
+  .mxbtn.on { color: var(--text); border-color: var(--text-3); }
+  .mxbtn[hidden] { display: none; }
   .dprice { font-size: 19px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
   /* 현재가와 오늘 캔들을 한 줄로. 캔들 높이(22px)를 현재가 줄 높이에 맞춰 뒀다 */
   .dpricerow { display: flex; align-items: center; gap: 7px; }
@@ -579,6 +589,25 @@
   }
   #chartMode:hover, #plainChart:hover { opacity: 1; color: var(--text-3); }
   #chartMode[hidden], #plainChart[hidden] { display: none; }
+  /* 지표 보기 — 차트 자리를 덮고 그 안에서 스크롤한다. 열려 있는 동안은 차트 버튼(캔들 · 차트만 보기 ·
+     전체)과 차트 위 범례를 숨긴다 — 지표 화면에는 뜻이 없다. 여는 버튼은 제목줄(업종 오른쪽)에 있다. */
+  .metrics { position: absolute; inset: 0; z-index: 1; overflow-y: auto; padding: 4px; background: var(--panel); font-size: 10px; color: var(--text); }
+  .metrics[hidden] { display: none; }
+  .metrics:not([hidden]) ~ .chartctl { display: none; }
+  .detail:has(#metricsView:not([hidden])) #maLegend { display: none; }
+  .metrics section { margin-bottom: 7px; }
+  .metrics h5 { margin: 0 0 2px; font-size: 10px; font-weight: 600; color: var(--text-3); }
+  .metrics h5 span { font-weight: 400; color: var(--mute); }
+  .metrics p { margin: 0 0 2px; line-height: 1.45; }
+  .metrics b { font-weight: 600; }
+  .mxmute, .mxnote { color: var(--mute); }
+  .mxi { white-space: nowrap; }
+  .mxsrc { margin-top: 4px; font-size: 9px; }
+  .mxt { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  .mxt th, .mxt td { padding: 1px 3px; text-align: right; font-weight: 400; white-space: nowrap; }
+  .mxt th, .mxt td:first-child { color: var(--mute); }
+  .mxt th:first-child, .mxt td:first-child { text-align: left; }
+  .mxt tr.sum td { font-weight: 600; }
   /* 차트만 보기가 켜져 있으면 또렷하게 — 덧그림이 빠진 이유가 보이게 */
   #plainChart.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
   #zoomReset {
@@ -624,8 +653,12 @@
         <div>
           <!-- #dname 은 종목명만 담는다. 테스트 8개가 textContent 를 종목명과
                직접 비교하므로 여기에 다른 것을 넣으면 안 된다(tests/dom-contract.mjs) -->
-          <div class="dname" id="dnameRow">
-            <span id="dname">—</span><span class="dsector" id="dsector"></span>
+          <!-- 지표 보기 버튼은 이름 줄 밖에 둔다 — 안에 두면 긴 업종을 말줄임할 때 같이 잘린다 -->
+          <div class="dnamebar">
+            <div class="dname" id="dnameRow">
+              <span id="dname">—</span><span class="dsector" id="dsector"></span>
+            </div>
+            <button class="mxbtn" id="metricsBtn" type="button" hidden>지표</button>
           </div>
           <!-- 현재가 오른쪽에 오늘 캔들 (시가를 못 받으면 비어 있다) -->
           <div class="dpricerow">
@@ -674,7 +707,7 @@
       <!-- 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과. 자세한 숫자는 툴팁 -->
       <div class="trendchk" id="trendCheck" hidden></div>
 
-      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
+      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><div class="metrics" id="metricsView" hidden></div><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
       <div class="err" id="err"></div>
     </div>
 

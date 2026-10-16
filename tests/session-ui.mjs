@@ -47,6 +47,7 @@ function harness(extra = []) {
     // loadChart 는 다른 종목 · 기간으로 넘어갈 때 옛 차트를 지운다 — 차트가 없는 하네스에서는 할 일이 없다.
     // 진짜가 필요한 테스트는 extra 에 'clearChart' 를 넣는다(아래 선언이 이것을 덮는다).
     clearChart: () => {},
+    renderMetrics: () => {},
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
     'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', ...extra];
@@ -872,6 +873,204 @@ await test('indicators: loadChart fetches the matching index with the chart — 
   asked.length = 0;
   await c.loadChart();
   assert.deepEqual([...asked], ['^KS11'], '지수 자체를 볼 때는 비교하지 않는다');
+});
+
+// 지표 보기(차트 대신): 오늘 거래량 배수 · 기간 수익률 · 투자자별 매매동향 · 실적 · 가치 지표 · 컨센서스 · 동종 업종.
+// 데이터는 main 의 naver:detail(tests/detail.mjs), 배수 · 수익률은 이미 받은 일봉으로 렌더러가 센다.
+// renderer.js 의 const 한 문장(끝 표시까지). 소스는 CRLF 라 줄 끝을 가리지 않는다.
+const block = (name, end = /\r?\n\};\r?\n/) => {
+  const i = source.indexOf(`const ${name} = `);
+  assert.notEqual(i, -1, name);
+  const m = end.exec(source.slice(i));
+  assert.ok(m, `${name} 의 끝`);
+  return source.slice(i, i + m.index + m[0].length);
+};
+const helpers = () => formatting + block('fmtVol') + block('esc', /\}\[c\]\)\);/);
+const text = (h) => h.replace(/<[^>]+>/g, ''); // 태그를 뺀 글자 — 항목마다 줄바꿈을 막는 span 을 건너뛰고 읽는다
+const kst = (d) => Date.parse(`${d}T09:00:00+09:00`); // 국내 일봉 시각(00:00 UTC)
+const days = (from, n) => Array.from({ length: n }, (_, i) => kst(from) + i * 86400000);
+
+await test('metrics: today volume against the 20 trading days before its own date (KRX), US by its own date', () => {
+  const { run } = harness(['metricsVolume']);
+  // 25일: 앞 4일 500, 그다음 20일 1,000, 마지막(오늘 10/16) 9,999 — 오늘 봉은 평균에서 뺀다
+  const T = days('2026-09-22', 25);
+  const V = [500, 500, 500, 500, ...new Array(20).fill(1000), 9999];
+  run(`quotes['005930.KS'] = { dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(V)} } };`);
+  const r = run("metricsVolume('005930.KS', { volume: 550, at: '2026-10-16T13:30:41+09:00' })");
+  assert.equal(r.avg, 1000, '그날 앞의 20일');
+  assert.equal(r.ratio, 0.55);
+  // 거래량 0 인 날(휴장 · 빈 봉)은 평균에서 뺀다
+  V[23] = 0;
+  run(`quotes['005930.KS'].dailyVolume.volumes = ${JSON.stringify(V)};`);
+  assert.equal(run("metricsVolume('005930.KS', { volume: 550, at: '2026-10-16T13:30:41+09:00' })").avg, (19 * 1000 + 500) / 20);
+  assert.equal(run("metricsVolume('005930.KS', { volume: null, at: null })"), null, '거래량이 없으면 없다');
+  assert.equal(run("metricsVolume('NONE', { volume: 5, at: '2026-10-16T13:30:41+09:00' })"), null, '일봉이 없으면 없다');
+
+  // 미국: 장 전에는 어제(뉴욕) 거래량이 온다 — 그날 앞의 20일로 센다. 날짜는 UTC(뉴욕과 같다)
+  const U = Array.from({ length: 22 }, (_, i) => Date.parse('2026-09-15T13:30:00Z') + i * 86400000);
+  const UV = [...new Array(21).fill(2000), 7777];
+  run(`quotes.SOXL = { dailyVolume: { times: ${JSON.stringify(U)}, volumes: ${JSON.stringify(UV)} } };`);
+  const at = new Date(U[21]).toISOString().slice(0, 10) + 'T16:00:00-04:00';
+  const u = run(`metricsVolume('SOXL', { volume: 4000, at: '${at}' })`);
+  assert.equal(u.avg, 2000, '거래량의 날(뉴욕 마감) 봉은 빼고 그 앞 20일');
+  assert.equal(u.ratio, 2);
+});
+
+await test('metrics: period returns from the daily closes — 1W · 1M · 3M · YTD · 1Y, empty when the history is shorter', () => {
+  const { run } = harness(['periodReturns']);
+  // 2025-10-01 ~ 2026-10-16 매일 한 봉, 종가 = 1000 + 날짜 번호
+  const T = days('2025-10-01', 381);
+  const C = T.map((_, i) => 1000 + i);
+  run(`quotes.X = { price: 2000, daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} } };`);
+  const at = (d) => 1000 + T.indexOf(kst(d));
+  const pct = (base) => ((2000 - base) / base) * 100;
+  const r = run("periodReturns('X')");
+  assert.deepEqual([...r.map((x) => x.label)], ['1주', '1개월', '3개월', '올해', '1년']);
+  assert.equal(r[0].pct, pct(at('2026-10-09')), '1주 — 7일 전 봉부터, 마지막은 현재가');
+  assert.equal(r[1].pct, pct(at('2026-09-16')));
+  assert.equal(r[2].pct, pct(at('2026-07-16')));
+  assert.equal(r[3].pct, pct(at('2025-12-31')), '올해 — 작년 마지막 봉부터');
+  assert.equal(r[4].pct, pct(at('2025-10-16')));
+  // 한 달치뿐이면 3개월 · 올해 · 1년은 없다(첫 봉부터 센 값이 그 기간 수익률로 읽히면 안 된다)
+  run(`quotes.X.daily = { times: ${JSON.stringify(T.slice(-31))}, closes: ${JSON.stringify(C.slice(-31))} };`);
+  const short = run("periodReturns('X')");
+  assert.deepEqual([...short.map((x) => x.pct == null)], [false, false, true, true, true]);
+  assert.equal(run("periodReturns('NONE')").length, 0);
+  // 3/31 의 한 달 전은 2/28 이다(2/31 이 3/3 으로 넘어가지 않게)
+  const M = days('2026-01-01', 90); // ~ 2026-03-31
+  run(`quotes.X.daily = { times: ${JSON.stringify(M)}, closes: ${JSON.stringify(M.map((_, i) => 1000 + i))} };`);
+  assert.equal(run("periodReturns('X')")[1].pct, pct(1000 + M.indexOf(kst('2026-02-28'))), '그달에 그날이 없으면 그달 마지막 날');
+});
+
+const KR_DETAIL = {
+  ok: true, market: 'kr', kind: 'stock',
+  today: { volume: 11822115, at: '2026-10-16T13:30:41+09:00', totalVolume: 21217698, value: '4조 5,732억', marketValue: '1,280조 3,350억', foreignRate: '45.98%' },
+  valuation: [{ label: 'PER', value: '9.82배' }, { label: 'PBR', value: '2.54배' }],
+  consensus: { target: 495227, high: null, low: null, opinion: 4, date: '2026-10-15', currency: 'KRW' },
+  trend: Array.from({ length: 20 }, (_, i) => ({ date: `202610${String(15 - (i % 10)).padStart(2, "0")}`, foreign: i < 5 ? -100000 : 10000, organ: 20000, individual: 0, foreignRatio: 45 })),
+  ir: { title: '2026년 3분기 경영실적 발표', date: '2026-10-29', dday: 13 },
+  quarters: { unit: '억원', cols: [{ title: '25.12', estimate: false }, { title: '26.03', estimate: false }, { title: '26.06', estimate: false }, { title: '26.09', estimate: true }, { title: '26.12', estimate: true }],
+    rows: [{ title: '매출액', values: [938374, 1338734, 1714995, 2007657, null] }, { title: '영업이익', values: [-5000, 572328, 894924, 1069435, null] }] },
+  peers: [{ name: 'SK하이닉스', pct: 3.25 }, { name: '<b>가짜</b>', pct: -1.5 }],
+  etf: null,
+};
+
+await test('metrics: panel for a Korean stock — volume multiple, returns, investor table with 5/20-day sums, earnings, valuation, consensus, peers', () => {
+  const { c, run } = harness(['metricsHtml', 'metricsVolume', 'periodReturns']);
+  run(helpers());
+  const T = days('2026-09-15', 32);
+  run(`quotes['005930.KS'] = { price: 219000, currency: 'KRW',
+    daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(T.map(() => 200000))} },
+    dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(T.map(() => 21495000))} } };`);
+  c.D = KR_DETAIL;
+  const html = run("metricsHtml({ symbol: '005930.KS', name: '삼성전자' }, D, quotes['005930.KS'])");
+  assert.match(html, /거래량 <b>1,182만 주<\/b> · 20일 평균의 <b>0\.55배<\/b>/, '오늘 거래량(KRX)과 배수');
+  assert.match(html, /10\/16 13:30/, '그 거래량의 시각');
+  assert.match(text(html), /NXT 포함 2,122만 · 대금 4조 5,732억 · 시총 1,280조 3,350억 · 외국인 소진율 45\.98%/);
+  assert.match(html, /<span class="mxi">외국인 소진율 45\.98%<\/span>/, '항목 하나는 줄바꿈하지 않는다(외국인 / 소진율로 쪼개지지 않게)');
+  assert.match(html, /<span class="mxi">1주 <b/, '기간 수익률도 항목마다(1 / 년으로 쪼개지지 않게)');
+  assert.match(html, /1주 <b style="color:#e24b4a">\+9\.50%<\/b>/, '기간 수익률(빨강 = 상승)');
+  // 매매동향: 앞 5일 외국인 -10만 × 5 = -50만, 20일 = -50만 + 1만 × 15 = -35만. 기관 2만 × 5 = +10만, × 20 = +40만
+  assert.match(html, /<td>5일<\/td><td style="color:#185fa5">-50만<\/td><td style="color:#e24b4a">\+10만<\/td><td>0<\/td>/, '5일 합');
+  assert.match(html, /<td>20일<\/td><td style="color:#185fa5">-35만<\/td><td style="color:#e24b4a">\+40만<\/td>/, '20일 합');
+  assert.equal((html.match(/<tr class="day">/g) || []).length, 10, '날짜별은 최근 10일');
+  assert.match(html, /<tr class="day"><td>10\/15<\/td><td style="color:#185fa5">-10만<\/td>/, '최근이 먼저, MM/DD');
+  assert.match(html, /2026년 3분기 경영실적 발표 <b>10\/29<\/b> · D-13/, '실적 발표 일정');
+  assert.match(html, /<th>26\.03<\/th><th>26\.06<\/th><th>26\.09E<\/th><th>26\.12E<\/th>/, '분기는 최근 4개, 추정치는 E');
+  assert.match(html, /<td>매출액<\/td><td>133\.9조<\/td><td>171\.5조<\/td><td>200\.8조<\/td><td>—<\/td>/, '억원 → 조, 빈 값은 —');
+  assert.match(html, /<td>영업이익<\/td><td>57\.2조<\/td>/);
+  assert.match(text(html), /PER 9\.82배 · PBR 2\.54배/);
+  assert.match(html, /목표가 평균 <b>495,227원<\/b> \(현재가 대비 \+126\.13%\) · 의견 4\.00 \/ 5/, '컨센서스와 현재가 대비');
+  assert.match(html, /10\/15 기준 · 증권사 추정치, 참고용/);
+  assert.match(html, /SK하이닉스 <b style="color:#e24b4a">\+3\.25%<\/b>/, '동종 업종');
+  assert.ok(html.includes('&lt;b&gt;가짜&lt;/b&gt;') && !html.includes('<b>가짜</b>'), '이름은 이스케이프한다');
+});
+
+await test('metrics: US stock shows no investor table, consensus range in dollars; ETF shows NAV instead of valuation; loading and failure states', () => {
+  const { c, run } = harness(['metricsHtml', 'metricsVolume', 'periodReturns']);
+  run(helpers());
+  run("quotes.AAPL = { price: 330, currency: 'USD' }; quotes['069500.KS'] = { price: 87025, currency: 'KRW' };");
+  c.US = { ...KR_DETAIL, market: 'us', trend: null, ir: null,
+    today: { volume: 39767256, at: '2026-10-15T16:00:00-04:00', totalVolume: null, value: '137억 USD', marketValue: '4조 9,912억 USD', foreignRate: null },
+    consensus: { target: 324.89, high: 405, low: 215, opinion: 3.7, date: '2026-10-08', currency: 'USD' },
+    quarters: { unit: 'USD 백만', cols: [{ title: '26.06', estimate: false }], rows: [{ title: '영업이익(EBIT)', values: [35695] }] } };
+  const us = run("metricsHtml({ symbol: 'AAPL', name: '애플' }, US, quotes.AAPL)");
+  assert.match(us, /투자자별 매매동향은 국내 종목만 있습니다/);
+  assert.doesNotMatch(us, /NXT/, '미국은 NXT 줄이 없다');
+  assert.match(text(us), /대금 137억 USD · 시총 4조 9,912억 USD/);
+  assert.match(us, /목표가 평균 <b>\$324\.89<\/b> \(현재가 대비 -1\.55%\) · 의견 3\.70 \/ 5 · 최저 \$215\.00 ~ 최고 \$405\.00/);
+  assert.match(us, /<td>영업이익\(EBIT\)<\/td><td>35\.7B<\/td>/, 'USD 백만 → B');
+  assert.doesNotMatch(us, /실적 발표/, '일정이 없으면 그 줄이 없다');
+
+  c.ETF = { ...KR_DETAIL, kind: 'etf', valuation: [], consensus: null, ir: null, quarters: null, peers: [],
+    etf: { nav: 87038.98, deviation: -0.02, issuer: '삼성자산운용(ETF)', baseIndex: '코스피 200', dividendYield: 0.98 } };
+  const etf = run("metricsHtml({ symbol: '069500.KS', name: 'KODEX 200' }, ETF, quotes['069500.KS'])");
+  assert.match(text(etf), /NAV 87,038\.98 · 괴리율 -0\.02% · 분배율 0\.98% · 코스피 200 · 삼성자산운용\(ETF\)/);
+  assert.doesNotMatch(etf, /가치 지표|동종 업종|실적/, '없는 칸은 제목까지 뺀다');
+  assert.doesNotMatch(etf, /NXT/, 'ETF 는 NXT 에 없어 NXT 포함 거래량을 적지 않는다');
+
+  assert.match(run("metricsHtml({ symbol: 'AAPL', name: '애플' }, undefined, quotes.AAPL)"), /불러오는 중/);
+  const bad = run("metricsHtml({ symbol: 'AAPL', name: '애플' }, { ok: false, error: '<x>' }, quotes.AAPL)");
+  assert.match(bad, /지표를 불러오지 못했습니다 \(&lt;x&gt;\)/, '실패 — 이유는 이스케이프');
+});
+
+await test('metrics: the button swaps the chart for the panel, hides for indices, fetches on open, reuses for a minute and drops a late reply for another symbol', async () => {
+  const { c, run, elements } = harness(['renderMetrics', 'loadMetrics']);
+  const asked = [];
+  const replies = [];
+  c.api.detail = (symbol) => { asked.push(symbol); return new Promise((r) => replies.push(r)); };
+  c.metricsHtml = (item, d) => (d ? `${item.symbol}:${d.ok ? d.n : "fail"}` : 'LOADING');
+  const settle = () => new Promise((r) => setImmediate(r));
+  const btn = () => elements.get('metricsBtn');
+  const panel = () => elements.get('metricsView');
+
+  run('renderMetrics();');
+  assert.equal(btn().hidden, false, '종목이면 버튼이 있다');
+  assert.equal(btn().textContent, '지표', '제목줄의 작은 글자 버튼');
+  assert.equal(panel().hidden, true, '처음에는 차트');
+  assert.equal(asked.length, 0, '닫혀 있으면 받지 않는다');
+
+  run('metricsOn = true; renderMetrics();');
+  assert.equal(panel().hidden, false);
+  assert.equal(btn().className, 'mxbtn on');
+  assert.equal(btn().textContent, '차트', '열려 있으면 차트로 돌아가는 버튼');
+  assert.equal(panel().innerHTML, 'LOADING');
+  assert.deepEqual([...asked], ['005930.KS'], '열면 받는다');
+  run('renderMetrics();');
+  assert.equal(asked.length, 1, '받는 중이면 또 묻지 않는다');
+  replies.shift()({ ok: true, n: 1 });
+  await settle();
+  assert.equal(panel().innerHTML, '005930.KS:1', '받으면 다시 그린다');
+
+  run('renderMetrics();');
+  assert.equal(asked.length, 1, '1분 안에는 받은 것을 쓴다');
+  c.Date.now = () => Date.parse('2026-09-10T09:31:01Z'); // 하네스 시각 + 61초
+  run('renderMetrics();');
+  assert.equal(asked.length, 2, '1분이 지나면 다시 받는다');
+  assert.equal(panel().innerHTML, '005930.KS:1', '받는 동안은 있던 것을 보인다');
+  replies.shift()({ ok: false, error: 'x' });
+  await settle();
+  assert.equal(panel().innerHTML, '005930.KS:1', '다시 받다 실패하면 있던 것을 둔다');
+
+  // 다른 종목으로 넘어간 뒤 늦게 온 응답은 그 종목 캐시에만 넣고 화면은 고치지 않는다
+  run("state.selected = '000660.KS'; renderMetrics();");
+  assert.equal(asked.at(-1), '000660.KS');
+  run("state.selected = '005930.KS'; renderMetrics();");
+  replies.shift()({ ok: true, n: 7 });
+  await settle();
+  assert.equal(panel().innerHTML, '005930.KS:1', '고른 종목이 아니면 화면을 고치지 않는다');
+  run("state.selected = '000660.KS'; renderMetrics();");
+  assert.equal(panel().innerHTML, '000660.KS:7', '그 종목으로 돌아오면 받아 둔 것을 쓴다');
+
+  run("state.selected = '^KS11'; renderMetrics();");
+  assert.equal(btn().hidden, true, '지수는 버튼이 없다');
+  assert.equal(panel().hidden, true, '지수로 가면 차트로 돌아간다');
+  run("state.selected = '005930.KS'; metricsOn = false; renderMetrics();");
+  assert.equal(panel().hidden, true);
+  assert.equal(btn().className, 'mxbtn');
+  assert.equal(btn().textContent, '지표');
+  // 상세를 그릴 때(종목 바꾸기 · 30초 갱신 · 삭제)마다 지표 화면도 고른 종목에 맞춘다
+  assert.match(realFunction('renderDetail'), /\n  renderMetrics\(\);/, 'renderDetail 이 renderMetrics 를 부른다');
 });
 
 // 차트만 보기: 버튼 하나로 덧그림(이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지)을 다 끈다.
