@@ -47,6 +47,7 @@ const ORDER = [
   'extended-chart.mjs',
   'sector.mjs',
   'detail.mjs',
+  'rank.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',

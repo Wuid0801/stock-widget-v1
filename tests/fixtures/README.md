@@ -60,3 +60,14 @@ from these records by changing only status and time fields.
 
 The integration volume (21,217,698) is KRX + NXT while the realtime one (11,822,115) is KRX only; the two were
 captured a few minutes apart.
+
+## Market ranking (naver:rank)
+
+`naver-rank-20261016.json`: captured 2026-10-16 14:2x KST (KRX open, New York closed after 10-15) for the ranking panel.
+Each list keeps its first 50 rows (the app asks for 100) and only the fields `main.js` reads, one stock per line.
+
+- `kr.search`: `https://m.stock.naver.com/api/stocks/searchTop?page=1&pageSize=20` (popular searches, unfiltered).
+- `kr.up` · `kr.down` · `kr.value`: `https://m.stock.naver.com/api/stocks/{up|down|priceTop}/{KOSPI|KOSDAQ}`. Most of the
+  top gainers were preferred shares, leveraged ETNs and ETFs; `kr.value` includes 삼성전자우 (005935) with a large value.
+- `us.up` · `us.down` · `us.value` · `us.cap`: `https://api.stock.naver.com/stock/exchange/{NASDAQ|NYSE}/{up|down|priceTop|marketValue}`.
+  These lists had no ETFs and no dotted tickers; `tests/rank.mjs` injects one of each to check the filter.

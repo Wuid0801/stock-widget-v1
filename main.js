@@ -715,6 +715,69 @@ ipcMain.handle('naver:detail', async (_e, symbol) => {
   }
 });
 
+// ---- 시장 순위(헤더의 순위 버튼이 여는 패널) ------------------------------------------
+// 국내: 인기 검색 · 급등 · 급락 · 거래대금(코스피 + 코스닥), 미국: 급등 · 급락 · 거래대금 · 시총 상위(나스닥 + 뉴욕).
+// 네이버 순위는 거르는 매개변수가 없고, 그대로 쓰면 잡음이 위를 차지한다(2026-10-16 국내 급등 20위 중 일반 주식은
+// 4개 — 나머지는 우선주 · 레버리지 ETN · ETF, 미국 급등 1위는 1달러 미만 종목, 국내 거래량 1위는 인버스 ETF). 그래서
+// 급등 · 급락 · 거래대금은 시장마다 100개를 받아 거른 뒤 합쳐 정렬하고 20개만 준다:
+//   국내 — 일반 주식만(stockEndType 'stock' 에 보통주 코드 끝 0: 우선주는 5 · 7 · K 로 끝난다) · 거래대금 10억 원 이상
+//   미국 — 일반 주식만 · 시총 3억 달러 이상(시총 상위는 시총으로 거를 것이 없다) · 야후 기호 꼴(BRK.B 처럼 . 이 있으면 뺀다)
+// 인기 검색은 사람들이 실제로 본 목록이라 거르지 않고 네이버 순서 그대로다. 미국 인기 검색은 네이버에 없다.
+const RANK_LIMIT = 20;
+const RANK_KR_MIN_VALUE = 1e9;   // 거래대금 10억 원
+const RANK_US_MIN_CAP = 3e8;     // 시총 3억 달러
+const RANK_KINDS = {
+  kr: { search: null, up: 'up', down: 'down', value: 'priceTop' },
+  us: { up: 'up', down: 'down', value: 'priceTop', cap: 'marketValue' },
+};
+const RANK_SORT = {
+  up: (a, b) => b.pct - a.pct, down: (a, b) => a.pct - b.pct,
+  value: (a, b) => b.value - a.value, cap: (a, b) => b.cap - a.cap,
+};
+// 네이버 순위 한 줄 → { symbol(야후 꼴), name, price, pct, value(거래대금), cap(시총), currency }. 금액은 원 · 달러.
+function rankItemKr(s) {
+  const market = { 0: 'KS', 1: 'KQ' }[s.sosok]; // 코스피 0 · 코스닥 1(그 밖은 받지 않는다)
+  if (!market || !/^[0-9A-Z]{6}$/.test(String(s.itemCode))) return null;
+  return { symbol: `${s.itemCode}.${market}`, name: String(s.stockName ?? ''), price: detailNum(s.closePriceRaw ?? s.closePrice),
+    pct: detailNum(s.fluctuationsRatio), value: detailNum(s.accumulatedTradingValueRaw), cap: detailNum(s.marketValueRaw),
+    currency: 'KRW', common: s.stockEndType === 'stock' && /0$/.test(s.itemCode), at: s.localTradedAt || null };
+}
+function rankItemUs(s) {
+  const symbol = String(s.symbolCode ?? '');
+  if (!US_RE.test(symbol)) return null;
+  return { symbol, name: String(s.stockName ?? ''), price: detailNum(s.closePriceRaw ?? s.closePrice),
+    pct: detailNum(s.fluctuationsRatioRaw ?? s.fluctuationsRatio), value: detailNum(s.accumulatedTradingValueRaw),
+    cap: detailNum(s.marketValueRaw), currency: 'USD', common: s.stockEndType === 'stock', at: s.localTradedAt || null };
+}
+
+ipcMain.handle('naver:rank', async (_e, req) => {
+  const { market, kind } = req || {};
+  if (!Object.hasOwn(RANK_KINDS, market) || !Object.hasOwn(RANK_KINDS[market], kind)) return { ok: false, error: '잘못된 요청' };
+  try {
+    let lists;
+    if (kind === 'search') {
+      lists = [await naverJson('https://m.stock.naver.com/api/stocks/searchTop?page=1&pageSize=20')];
+    } else if (market === 'kr') {
+      lists = await settleAll(['KOSPI', 'KOSDAQ'].map((m) => `https://m.stock.naver.com/api/stocks/${RANK_KINDS.kr[kind]}/${m}?page=1&pageSize=100`));
+    } else {
+      lists = await settleAll(['NASDAQ', 'NYSE'].map((ex) => `https://api.stock.naver.com/stock/exchange/${ex}/${RANK_KINDS.us[kind]}?page=1&pageSize=100`));
+    }
+    let items = lists.flatMap((l) => (Array.isArray(l?.stocks) ? l.stocks : []))
+      .map(market === 'kr' ? rankItemKr : rankItemUs)
+      .filter((i) => i && i.name && i.price != null && i.pct != null);
+    const filtered = kind !== 'search';
+    if (filtered) {
+      items = items.filter((i) => i.common && (market === 'kr' ? i.value >= RANK_KR_MIN_VALUE : kind === 'cap' || i.cap >= RANK_US_MIN_CAP));
+      items.sort(RANK_SORT[kind]); // 같은 값(상한가 30%)은 받은 순서(코스피 · 나스닥 먼저)
+    }
+    const at = items.map((i) => i.at).filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || null;
+    return { ok: true, market, kind, filtered, at,
+      items: items.slice(0, RANK_LIMIT).map(({ common, at: _at, ...i }) => i) };
+  } catch (err) {
+    return { ok: false, error: err.message || '순위 조회 실패' };
+  }
+});
+
 // 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버 자동완성을 쓴다.
 // (주식·ETF 모두 한글명으로 잡히고 코스피/코스닥까지 알려준다)
 ipcMain.handle('yf:search', async (_e, query) => {

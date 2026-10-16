@@ -184,6 +184,16 @@ const metricsCache = new Map(); // symbol -> { at, d(naver:detail 응답) }
 const metricsLoading = new Set();
 let metricsShown = { symbol: null, html: null }; // 지금 화면에 쓴 것
 const METRICS_TTL = 60000;
+// 시장 순위 패널. 지금 보는 시장 · 탭은 저장하지 않는다(다시 켜면 국내 인기 검색).
+const RANK_TABS = {
+  kr: [['search', '인기 검색'], ['up', '급등'], ['down', '급락'], ['value', '거래대금']],
+  us: [['up', '급등'], ['down', '급락'], ['value', '거래대금'], ['cap', '시총 상위']], // 미국 인기 검색은 네이버에 없다
+};
+let rankView = { market: 'kr', kind: 'search' };
+const rankCache = new Map(); // 'kr|up' -> { at, d(naver:rank 응답) }
+const rankLoading = new Set();
+let rankShown = { key: null, html: null }; // 지금 목록에 쓴 것
+const RANK_TTL = 60000;
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
 let marketOpen = true;
@@ -885,6 +895,123 @@ async function loadMetrics(symbol) {
   const keep = prev && prev.d && prev.d.ok && !(d && d.ok);
   metricsCache.set(symbol, { at: Date.now(), d: keep ? prev.d : d || { ok: false, error: '응답 없음' } });
   renderMetrics();
+}
+
+// --- 시장 순위 -------------------------------------------------------------------
+// 헤더의 순위 버튼이 여는 패널(검색 · 설정과 같은 덮개). 데이터는 main 의 naver:rank — 열려 있는 동안 지금 보는
+// 탭만 받고 1분 쓴다(30초 갱신 때 1분이 지났으면 다시 받는다). 누르면 관심종목에 넣고 연다.
+
+// 목록 HTML. 금액은 원(조 · 억) · 달러(T · B · M)로 줄인다. 시총 상위 탭은 시총, 나머지는 거래대금.
+// 맨 위에 기준 시각과 거른 기준을 적는다 — 장이 닫혀 있으면 지난 장 순위라 열자마자 보여야 한다
+// (처음에는 맨 아래에 두었는데 스크롤해야 보였다).
+function rankHtml(d, market, kind) {
+  if (!d) return '<div class="qhint">순위를 불러오는 중…</div>';
+  if (!d.ok) return `<div class="qhint">순위를 불러오지 못했습니다 (${esc(d.error || '알 수 없는 오류')})</div>`;
+  if (!d.items.length) return '<div class="qhint">조건에 맞는 종목이 없습니다</div>';
+  const amt = (v, cur) => {
+    if (v == null) return '';
+    if (cur === 'KRW') return v >= 1e12 ? `${(v / 1e12).toFixed(1)}조` : `${Math.round(v / 1e8).toLocaleString()}억`;
+    if (v >= 1e12) return `$${(v / 1e12).toFixed(1)}T`;
+    return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : `$${Math.round(v / 1e6).toLocaleString()}M`;
+  };
+  const rows = d.items.map((it, i) => {
+    const mine = state.watchlist.some((w) => w.symbol === it.symbol);
+    const tone = it.pct > 0 ? UP : it.pct < 0 ? DOWN : null;
+    return `<div class="hit rrow" data-i="${i}"><span class="rk">${i + 1}</span>`
+      + `<span class="hname">${mine ? '<span class="rin" title="관심종목에 있음">✓</span>' : ''}${esc(it.name)}</span>`
+      + `<span class="rpx">${money(it.price, it.currency)}</span>`
+      + `<span class="rpct"${tone ? ` style="color:${tone}"` : ''}>${fmtPct(it.pct)}</span>`
+      + `<span class="rval">${amt(kind === 'cap' ? it.cap : it.value, it.currency)}</span></div>`;
+  }).join('');
+  const basis = kind === 'search' ? '네이버 인기 검색 순'
+    : market === 'kr' ? '일반 주식만(ETF · ETN · 우선주 제외) · 거래대금 10억 원 이상 · 코스피 + 코스닥'
+      : kind === 'cap' ? '일반 주식만 · 나스닥 + 뉴욕' : '일반 주식만 · 시총 3억 달러 이상 · 나스닥 + 뉴욕';
+  const p2 = (n) => String(n).padStart(2, '0');
+  const t = new Date(d.at ? Date.parse(d.at) : NaN);
+  const when = Number.isFinite(t.getTime())
+    ? `${p2(t.getMonth() + 1)}/${p2(t.getDate())} ${p2(t.getHours())}:${p2(t.getMinutes())} 기준 · ` : '';
+  return `<div class="qhint rnote">${when}${basis}</div>${rows}`;
+}
+
+// 시장 · 탭 버튼과 목록을 지금 보는 것으로 그린다. 같은 목록이면 다시 쓰지 않는다(30초마다 다시 쓰면
+// 내려 둔 스크롤이 맨 위로 튄다). 탭이 바뀌면 맨 위부터.
+function renderRank() {
+  if (document.getElementById('rank').hidden) return;
+  const { market, kind } = rankView;
+  document.getElementById('rankMarket').innerHTML = [['kr', '국내'], ['us', '미국']]
+    .map(([m, label]) => `<button data-market="${m}"${m === market ? ' class="on"' : ''}>${label}</button>`).join('');
+  document.getElementById('rankTabs').innerHTML = RANK_TABS[market]
+    .map(([k, label]) => `<button data-kind="${k}"${k === kind ? ' class="on"' : ''}>${label}</button>`).join('');
+  const key = `${market}|${kind}`;
+  const hit = rankCache.get(key);
+  const html = rankHtml(hit && hit.d, market, kind);
+  const list = document.getElementById('rankList');
+  if (html !== rankShown.html || key !== rankShown.key) {
+    const keep = key === rankShown.key ? list.scrollTop : 0;
+    list.innerHTML = html;
+    list.scrollTop = keep;
+    rankShown = { key, html };
+  }
+  if (!hit || Date.now() - hit.at >= RANK_TTL) loadRank(market, kind);
+}
+
+// 받는 중이면 또 묻지 않는다. 다시 받다 실패하면 있던 것을 둔다. 받으면 지금 보는 것을 다시 그린다 —
+// 그사이 다른 탭으로 옮겼으면 늦게 온 응답은 캐시에만 남는다.
+async function loadRank(market, kind) {
+  const key = `${market}|${kind}`;
+  if (rankLoading.has(key)) return;
+  rankLoading.add(key);
+  let d;
+  try {
+    d = await api.rank({ market, kind });
+  } catch (e) {
+    d = { ok: false, error: e.message };
+  } finally {
+    rankLoading.delete(key);
+  }
+  const prev = rankCache.get(key);
+  const keep = prev && prev.d && prev.d.ok && !(d && d.ok);
+  rankCache.set(key, { at: Date.now(), d: keep ? prev.d : d || { ok: false, error: '응답 없음' } });
+  renderRank();
+}
+
+// 시장을 바꿔도 지금 탭이 그 시장에도 있으면 그대로(급등 → 급등), 없으면(국내 인기 검색 · 미국 시총 상위) 첫 탭.
+function setRankView(market, kind) {
+  const tabs = RANK_TABS[market];
+  if (!tabs) return;
+  const want = kind || rankView.kind;
+  rankView = { market, kind: tabs.some(([k]) => k === want) ? want : tabs[0][0] };
+  document.getElementById('rankMsg').hidden = true;
+  renderRank();
+}
+
+function openRank() {
+  openPanel(rankEl);
+  document.getElementById('rankMsg').hidden = true;
+  renderRank();
+}
+
+const closeRank = () => closePanel(rankEl);
+
+// 누르면: 관심종목에 있으면 그 종목으로 가고, 없으면 넣고 연다(검색에서 고를 때와 같다 — addSymbol 이 넣으면서
+// 연다). 야후 시세에 없어 못 넣으면 패널을 두고 그렇다고 적는다.
+async function pickRank(it) {
+  const msg = document.getElementById('rankMsg');
+  if (state.watchlist.some((w) => w.symbol === it.symbol)) {
+    closeRank();
+    await select(it.symbol);
+    return;
+  }
+  msg.textContent = `${it.name} 추가하는 중…`;
+  msg.hidden = false;
+  await addSymbol({ symbol: it.symbol, name: it.name });
+  if (state.watchlist.some((w) => w.symbol === it.symbol)) {
+    msg.hidden = true;
+    closeRank();
+  } else {
+    msg.textContent = `${it.name}: 추가하지 못했습니다 (야후 시세에 없는 종목)`;
+    msg.hidden = false;
+  }
 }
 
 // 상세의 보유 자리. 보유 중이면 수량 · 평단 · 평가 · 손익과 고치기(✎), 아니면 "＋ 보유 입력".
@@ -2479,6 +2606,7 @@ async function refreshAll() {
     checkAlerts();
     err(quoteErrText());
     renderDetail();
+    renderRank(); // 순위 패널이 열려 있으면 1분이 지난 탭을 다시 받는다
     await renderFolio();
     await loadChart();
 
@@ -2664,6 +2792,11 @@ function moveSelection(step) {
 document.addEventListener('keydown', (e) => {
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  // 순위 패널에는 입력 칸이 없어 Esc 를 여기서 받는다(검색 · 설정은 패널이 받는다)
+  if (!rankEl.hidden) {
+    if (e.key === 'Escape') closeRank();
+    return;
+  }
   if (!searchEl.hidden || !alertsEl.hidden) return;
 
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -2760,21 +2893,23 @@ const qEl = document.getElementById('q');
 const resultsEl = document.getElementById('results');
 const hintEl = document.getElementById('qhint');
 const alertsEl = document.getElementById('alerts');
+const rankEl = document.getElementById('rank');
 let searchSeq = 0;
 let searchTimer = null;
 let expandedForPanel = false; // 접힌 상태에서 패널을 보려고 펼친 것인지 (닫을 때 되접기)
 
-// 검색·알림 패널은 접힌 상태에서 열면 잠깐 펼쳤다가, 모두 닫히면 다시 접는다
+// 검색 · 설정 · 순위 패널은 접힌 상태에서 열면 잠깐 펼쳤다가, 모두 닫히면 다시 접는다. 한 번에 하나만 연다.
 function openPanel(el) {
   if (compact) { setCompact(false); expandedForPanel = true; }
   searchEl.hidden = true;
   alertsEl.hidden = true;
+  rankEl.hidden = true;
   el.hidden = false;
 }
 
 function closePanel(el) {
   el.hidden = true;
-  if (expandedForPanel && searchEl.hidden && alertsEl.hidden) {
+  if (expandedForPanel && searchEl.hidden && alertsEl.hidden && rankEl.hidden) {
     expandedForPanel = false;
     setCompact(true);
   }
@@ -3297,10 +3432,11 @@ async function refreshNow() {
 (async function init() {
   document.getElementById('dock').onclick = () => {
     // 패널이 열린 채로 직접 접기를 누르면 패널만 닫고, 복귀 예약은 취소한다
-    if (!searchEl.hidden || !alertsEl.hidden) {
+    if (!searchEl.hidden || !alertsEl.hidden || !rankEl.hidden) {
       expandedForPanel = false;
       closeSearch();
       closeAlerts();
+      closeRank();
     }
     setCompact(!compact);
   };
@@ -3323,6 +3459,23 @@ async function refreshNow() {
   document.getElementById('qclose').onclick = closeSearch;
 
   document.getElementById('bell').onclick = () => (alertsEl.hidden ? openAlerts() : closeAlerts());
+  document.getElementById('rankBtn').onclick = () => (rankEl.hidden ? openRank() : closeRank());
+  document.getElementById('rankClose').onclick = closeRank;
+  // 목록 · 탭은 다시 그려지므로 항목이 아니라 상자에 한 번만 붙인다
+  document.getElementById('rankMarket').onclick = (e) => {
+    const b = e.target.closest('[data-market]');
+    if (b) setRankView(b.dataset.market);
+  };
+  document.getElementById('rankTabs').onclick = (e) => {
+    const b = e.target.closest('[data-kind]');
+    if (b) setRankView(rankView.market, b.dataset.kind);
+  };
+  document.getElementById('rankList').onclick = (e) => {
+    const row = e.target.closest('.rrow');
+    const hit = rankCache.get(`${rankView.market}|${rankView.kind}`);
+    const it = row && hit && hit.d && hit.d.ok && hit.d.items[Number(row.dataset.i)];
+    if (it) pickRank(it).catch(console.error);
+  };
   document.getElementById('alertClose').onclick = closeAlerts;
 
   // 상세의 보유 자리 — 칸과 버튼은 renderHolding 이 그리고, 누름 · 키는 여기서 한 번만 받는다.

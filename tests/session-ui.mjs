@@ -48,6 +48,7 @@ function harness(extra = []) {
     // 진짜가 필요한 테스트는 extra 에 'clearChart' 를 넣는다(아래 선언이 이것을 덮는다).
     clearChart: () => {},
     renderMetrics: () => {},
+    renderRank: () => {},
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
     'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', ...extra];
@@ -1044,7 +1045,8 @@ await test('metrics: the button swaps the chart for the panel, hides for indices
 
   run('renderMetrics();');
   assert.equal(asked.length, 1, '1분 안에는 받은 것을 쓴다');
-  c.Date.now = () => Date.parse('2026-09-10T09:31:01Z'); // 하네스 시각 + 61초
+  const realNow = c.Date.now; // FixedDate 는 하네스끼리 같이 쓴다 — 끝에서 되돌린다
+  c.Date.now = () => NOW + 61000; // 하네스 시각 + 61초
   run('renderMetrics();');
   assert.equal(asked.length, 2, '1분이 지나면 다시 받는다');
   assert.equal(panel().innerHTML, '005930.KS:1', '받는 동안은 있던 것을 보인다');
@@ -1071,6 +1073,152 @@ await test('metrics: the button swaps the chart for the panel, hides for indices
   assert.equal(btn().textContent, '지표');
   // 상세를 그릴 때(종목 바꾸기 · 30초 갱신 · 삭제)마다 지표 화면도 고른 종목에 맞춘다
   assert.match(realFunction('renderDetail'), /\n  renderMetrics\(\);/, 'renderDetail 이 renderMetrics 를 부른다');
+  c.Date.now = realNow;
+});
+
+// 시장 순위(헤더의 순위 버튼이 여는 패널). 데이터는 main 의 naver:rank(tests/rank.mjs) — 렌더러는 목록을 그리고,
+// 국내 / 미국과 탭을 바꾸고, 누르면 관심종목에 넣거나 그 종목으로 간다.
+const KR_RANK = { ok: true, market: 'kr', kind: 'up', filtered: true, at: '2026-10-16T14:22:23+09:00', items: [
+  { symbol: '005930.KS', name: '삼성전자', price: 219000, pct: 4.29, value: 3043864000000, cap: 1280335015152000, currency: 'KRW' },
+  { symbol: '196170.KQ', name: '<i>알테오젠</i>', price: 239500, pct: -1.5, value: 101876000000, cap: 16682400000000, currency: 'KRW' },
+  { symbol: '000001.KS', name: '보합', price: 1000, pct: 0, value: 1e9, cap: 1e11, currency: 'KRW' }] };
+
+await test('rank: list shows rank, name with a check for watchlist stocks, price, colored change and trading value; the note says the basis and filter', () => {
+  const { c, run } = harness(['rankHtml']);
+  run(helpers());
+  c.D = KR_RANK;
+  const html = run("rankHtml(D, 'kr', 'up')");
+  assert.equal((html.match(/class="hit rrow"/g) || []).length, 3);
+  assert.match(html, /<div class="hit rrow" data-i="0"><span class="rk">1<\/span><span class="hname"><span class="rin" title="관심종목에 있음">✓<\/span>삼성전자<\/span><span class="rpx">219,000<\/span><span class="rpct" style="color:#e24b4a">\+4\.29%<\/span><span class="rval">3\.0조<\/span><\/div>/,
+    '관심종목에 있으면 ✓, 거래대금 원 → 조');
+  assert.match(html, /<span class="hname">&lt;i&gt;알테오젠&lt;\/i&gt;<\/span>/, '이름은 이스케이프한다, 관심종목이 아니면 ✓ 없음');
+  assert.match(html, /<span class="rpct" style="color:#185fa5">-1\.50%<\/span><span class="rval">1,019억<\/span>/, '1조 미만은 억');
+  assert.match(html, /<span class="rpct">0\.00%<\/span>/, '보합은 색 없음');
+  assert.match(text(html), /^10\/16 14:22 기준 · 일반 주식만\(ETF · ETN · 우선주 제외\) · 거래대금 10억 원 이상 · 코스피 \+ 코스닥1/,
+    '기준 문구는 목록 맨 위 — 열자마자 보인다(스크롤해야 보이면 지난 장 순위인지 모른다)');
+  assert.ok(html.indexOf('rnote') < html.indexOf('rrow'), '기준 문구가 첫 줄보다 위');
+  c.D = { ...KR_RANK, kind: 'search', filtered: false };
+  assert.match(text(run("rankHtml(D, 'kr', 'search')")), /^[^가-힣]*기준 · 네이버 인기 검색 순1/);
+
+  c.D = { ok: true, market: 'us', kind: 'cap', filtered: true, at: '2026-10-15T16:00:00-04:00', items: [
+    { symbol: 'NVDA', name: '엔비디아', price: 210.5, pct: -1.84, value: 9348515000, cap: 5235200000000, currency: 'USD' },
+    { symbol: 'INDP', name: '인댑터스', price: 3.1, pct: 28.96, value: 12000000, cap: 400000000, currency: 'USD' }] };
+  const us = run("rankHtml(D, 'us', 'cap')");
+  assert.match(us, /<span class="rpx">210\.50<\/span>.*?<span class="rval">\$5\.2T<\/span>/, '시총 상위 탭은 시총, 달러는 T · B · M');
+  assert.match(us, /<span class="rval">\$400M<\/span>/);
+  assert.match(text(us), /^10\/16 05:00 기준 · 일반 주식만 · 나스닥 \+ 뉴욕1/, '미국 시각도 한국 시각으로, 시총 상위는 시총으로 거르지 않는다');
+  assert.match(text(run("rankHtml(D, 'us', 'value')")), /\$9\.3B/, '다른 탭은 거래대금');
+  assert.match(text(run("rankHtml(D, 'us', 'up')")), /^[^가-힣]*기준 · 일반 주식만 · 시총 3억 달러 이상 · 나스닥 \+ 뉴욕1/);
+
+  assert.match(run("rankHtml(undefined, 'kr', 'up')"), /순위를 불러오는 중/);
+  assert.match(run("rankHtml({ ok: false, error: '<x>' }, 'kr', 'up')"), /순위를 불러오지 못했습니다 \(&lt;x&gt;\)/);
+  c.D = { ...KR_RANK, items: [] };
+  assert.match(run("rankHtml(D, 'kr', 'down')"), /조건에 맞는 종목이 없습니다/);
+});
+
+await test('rank: market and tab switch fetch only what is shown, reuse it for a minute, and a late reply does not replace another tab', async () => {
+  const { c, run, elements } = harness(['renderRank', 'loadRank', 'setRankView']);
+  const asked = [];
+  const replies = [];
+  c.api.rank = (q) => { asked.push(`${q.market}/${q.kind}`); return new Promise((r) => replies.push(r)); };
+  c.rankHtml = (d, m, k) => (d ? `${m}/${k}:${d.n}` : `LOADING ${m}/${k}`);
+  const settle = () => new Promise((r) => setImmediate(r));
+  const list = () => elements.get('rankList').innerHTML;
+  const tabs = () => elements.get('rankTabs').innerHTML;
+
+  c.document.getElementById('rank').hidden = true;
+  run('renderRank();');
+  assert.equal(asked.length, 0, '닫혀 있으면 받지 않는다');
+
+  c.document.getElementById('rank').hidden = false;
+  run('renderRank();');
+  assert.deepEqual([...asked], ['kr/search'], '처음은 국내 인기 검색');
+  assert.equal(list(), 'LOADING kr/search');
+  assert.match(tabs(), /<button data-kind="search" class="on">인기 검색<\/button><button data-kind="up">급등<\/button><button data-kind="down">급락<\/button><button data-kind="value">거래대금<\/button>/);
+  assert.match(elements.get('rankMarket').innerHTML, /<button data-market="kr" class="on">국내<\/button><button data-market="us">미국<\/button>/);
+  run('renderRank();');
+  assert.equal(asked.length, 1, '받는 중이면 또 묻지 않는다');
+  replies.shift()({ ok: true, n: 1 });
+  await settle();
+  assert.equal(list(), 'kr/search:1');
+
+  run("setRankView('us');");
+  assert.equal(asked.at(-1), 'us/up', '미국에는 인기 검색이 없어 첫 탭(급등)으로');
+  assert.doesNotMatch(tabs(), /인기 검색/);
+  assert.match(tabs(), /<button data-kind="cap">시총 상위<\/button>/);
+  run("setRankView('us', 'cap');");
+  assert.equal(asked.at(-1), 'us/cap');
+  replies.shift()({ ok: true, n: 2 }); // 늦게 온 급등 — 지금 보는 것은 시총 상위
+  await settle();
+  assert.equal(list(), 'LOADING us/cap', '다른 탭의 늦은 응답은 화면을 바꾸지 않는다');
+  replies.shift()({ ok: true, n: 3 });
+  await settle();
+  assert.equal(list(), 'us/cap:3');
+  run("setRankView('us', 'up');");
+  assert.equal(list(), 'us/up:2', '받아 둔 탭은 다시 묻지 않는다');
+  assert.equal(asked.length, 3);
+
+  run("setRankView('kr');");
+  assert.equal(asked.at(-1), 'kr/up', '시장을 바꿔도 지금 탭(급등)이 그 시장에도 있으면 그대로');
+  replies.shift()({ ok: true, n: 4 });
+  await settle();
+  assert.equal(list(), 'kr/up:4');
+  run("setRankView('us', 'cap'); setRankView('kr');");
+  assert.match(tabs(), /data-kind="search" class="on"/, '그 시장에 없는 탭(시총 상위)이면 첫 탭으로');
+  assert.equal(list(), 'kr/search:1', '받아 둔 국내 인기 검색');
+  assert.equal(asked.length, 4);
+  const realNow = c.Date.now; // FixedDate 는 하네스끼리 같이 쓴다 — 끝에서 되돌린다
+  c.Date.now = () => NOW + 61000; // 하네스 시각 + 61초
+  run('renderRank();');
+  assert.equal(asked.at(-1), 'kr/search', '1분이 지나면 다시 받는다');
+  assert.equal(list(), 'kr/search:1', '받는 동안은 있던 것을 보인다');
+  replies.shift()({ ok: false, error: 'x' });
+  await settle();
+  assert.equal(list(), 'kr/search:1', '다시 받다 실패하면 있던 것을 둔다');
+  c.Date.now = realNow;
+});
+
+await test('rank: clicking a stock already in the watchlist goes to it; a new one is added and opened; a failed add says so and keeps the panel', async () => {
+  const { c, run, elements } = harness(['pickRank']);
+  const log = [];
+  Object.assign(c, {
+    select: async (s) => { log.push(`select ${s}`); },
+    closeRank: () => { log.push('close'); },
+    addSymbol: async (it) => { log.push(`add ${it.symbol} ${it.name}`); if (it.symbol !== 'BAD') run(`state.watchlist.push({ symbol: '${it.symbol}', name: '${it.name}' });`); },
+  });
+  await c.pickRank({ symbol: '005930.KS', name: '삼성전자' });
+  assert.deepEqual(log.splice(0), ['close', 'select 005930.KS'], '이미 있으면 넣지 않고 그 종목으로');
+  await c.pickRank({ symbol: 'NVDA', name: '엔비디아' });
+  assert.deepEqual(log.splice(0), ['add NVDA 엔비디아', 'close'], '없으면 넣고(넣으면서 연다) 패널을 닫는다');
+  await c.pickRank({ symbol: 'BAD', name: '없는' });
+  assert.deepEqual(log.splice(0), ['add BAD 없는'], '못 넣었으면 패널을 둔다');
+  assert.match(elements.get('rankMsg').textContent, /없는: 추가하지 못했습니다/);
+  assert.equal(elements.get('rankMsg').hidden, false);
+});
+
+await test('rank: the three panels (search, settings, rank) close each other, and a widget opened from compact folds back only when all are closed', () => {
+  const { c, run } = harness(['openPanel', 'closePanel']);
+  const folds = [];
+  Object.assign(c, { searchEl: { hidden: true }, alertsEl: { hidden: true }, rankEl: { hidden: true },
+    setCompact: (on) => { folds.push(on); run(`compact = ${on};`); } });
+  run('var compact = true; var expandedForPanel = false;');
+  run('openPanel(rankEl);');
+  assert.deepEqual(folds.splice(0), [false], '접혀 있으면 펼쳐서 연다');
+  assert.equal(c.rankEl.hidden, false);
+  run('openPanel(searchEl);');
+  assert.equal(c.rankEl.hidden, true, '다른 패널을 열면 순위 패널은 닫힌다');
+  assert.equal(c.searchEl.hidden, false);
+  run('openPanel(rankEl);');
+  assert.equal(c.searchEl.hidden, true, '순위 패널을 열면 검색은 닫힌다');
+  c.searchEl.hidden = false; // 둘이 같이 열린 경우(검색에서 종목을 넣는 동안)
+  run('closePanel(searchEl);');
+  assert.deepEqual(folds.splice(0), [], '순위 패널이 아직 열려 있으면 다시 접지 않는다');
+  run('closePanel(rankEl);');
+  assert.deepEqual(folds.splice(0), [true], '모두 닫히면 다시 접는다');
+  // Esc · 접기 버튼도 순위 패널을 안다
+  assert.match(source, /if \(!rankEl\.hidden\) \{\s*if \(e\.key === 'Escape'\) closeRank\(\);\s*return;\s*\}/, 'Esc 로 닫는다');
+  assert.match(realFunction('refreshAll'), /\n    renderRank\(\);/, '30초 갱신 때 열린 순위 패널도 고친다(1분 지난 탭을 다시 받는다)');
+  assert.match(source, /if \(!searchEl\.hidden \|\| !alertsEl\.hidden \|\| !rankEl\.hidden\) \{\s*expandedForPanel = false;\s*closeSearch\(\);\s*closeAlerts\(\);\s*closeRank\(\);/, '접기를 누르면 모두 닫는다');
 });
 
 // 차트만 보기: 버튼 하나로 덧그림(이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지)을 다 끈다.
@@ -2264,6 +2412,7 @@ await test('Esc closes the settings panel only — it does not also fold the wid
   c.document.addEventListener = (type, fn) => { if (type === 'keydown') docKey = fn; };
   Object.assign(c, {
     searchEl: { hidden: true },
+    rankEl: { hidden: true }, // 순위 패널(닫힘) — 문서 쪽 키 처리가 먼저 본다
     alertsEl: { hidden: false },
     closeAlerts: () => { c.alertsEl.hidden = true; },
     setCompact: (on) => folds.push(on),

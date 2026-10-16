@@ -353,6 +353,29 @@
   .hit.dup:hover { background: transparent; }
   .qhint { padding: 8px 11px; font-size: 10px; color: var(--mute); }
 
+  /* --- 시장 순위 --- */
+  .rtabs { display: flex; gap: 3px; padding: 6px 10px; border-bottom: 1px solid var(--line-2); }
+  .rtabs button {
+    background: var(--chip-2); border: 0; border-radius: 5px; color: var(--dim); font-size: 10px;
+    padding: 3px 9px; cursor: pointer; font-family: inherit;
+  }
+  .rtabs button:hover { color: var(--text-3); }
+  .rtabs button.on { background: var(--tf-on-bg); color: var(--tf-on-fg); font-weight: 700; }
+  #rankList { flex: 1 1 auto; overflow-y: auto; }
+  #rankList::-webkit-scrollbar { width: 5px; }
+  #rankList::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 3px; }
+  .rrow { gap: 6px; padding: 5px 11px; font-variant-numeric: tabular-nums; }
+  .rrow .rk { flex: 0 0 15px; text-align: right; font-size: 10px; color: var(--mute); }
+  .rrow .hname { font-size: 11px; }
+  .rrow .rin { margin-right: 3px; font-size: 9px; color: var(--accent); }
+  .rrow .rpx { flex: 0 0 auto; font-size: 11px; }
+  .rrow .rpct { flex: 0 0 50px; text-align: right; font-size: 11px; }
+  .rrow .rval { flex: 0 0 42px; text-align: right; font-size: 10px; color: var(--mute); }
+  .rnote { font-size: 9px; padding-bottom: 2px; }
+  /* 국내 / 미국 — 제목 옆 좁은 자리에서 "국 / 내" 로 꺾이지 않게 */
+  #rankMarket { flex: 0 0 auto; }
+  #rankMarket button { white-space: nowrap; }
+
   /* --- 설정 패널 (목표가 알림 · 보유) --- */
   .ptitle { flex: 1 1 auto; font-size: 12px; font-weight: 700; align-self: center; }
   .sect {
@@ -635,6 +658,7 @@
       </span>
       <span class="btns">
         <button id="add" title="종목 추가">＋</button>
+        <button id="rankBtn" title="시장 순위 (인기 검색 · 급등 · 급락 · 거래대금)"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M1 11.2h10M2.6 11V7.5M6 11V2.5M9.4 11V5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
         <button id="bell" title="설정 (화면 · 알림 · 보유)">⚙</button>
         <button id="dock" title="우하단으로 접기">◲</button>
         <button id="min" title="최소화">─</button>
@@ -721,6 +745,18 @@
       </div>
       <div id="results"></div>
       <div class="qhint" id="qhint">종목명을 입력하세요</div>
+    </div>
+
+    <!-- 시장 순위 오버레이 (헤더의 순위 버튼). 시장 · 탭 · 목록은 renderRank 가 그린다 -->
+    <div class="search" id="rank" hidden>
+      <div class="qbar">
+        <span class="ptitle">시장 순위</span>
+        <span class="seg" id="rankMarket"></span>
+        <button id="rankClose" title="닫기(Esc)">✕</button>
+      </div>
+      <div class="rtabs" id="rankTabs"></div>
+      <div class="qhint" id="rankMsg" hidden></div>
+      <div id="rankList"></div>
     </div>
 
     <!-- 목표가 알림 · 보유 설정 오버레이 -->

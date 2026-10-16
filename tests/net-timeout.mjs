@@ -49,6 +49,7 @@ const CALLS = {
   'fx:usdkrw': [],
   'yf:sector': ['005930.KS'],
   'naver:detail': ['005930.KS'],
+  'naver:rank': [{ market: 'kr', kind: 'up' }],
   'yf:search': ['삼성'],
   'yf:chart': [{ symbol: '005930.KS', range: '1d', interval: '5m' }],
 };
