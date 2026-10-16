@@ -64,7 +64,7 @@ const INDICATORS = [
   { key: 'volAvg', label: '거래량 평균', varName: '--vol-avg', title: '거래량 20봉 평균선 · 평균의 2배 넘는 막대 강조 (모든 기간)' },
   { key: 'prevHL', label: '전일 고저', varName: '--prev-line', title: '어제 고가 · 저가 점선 (1D)' },
   { key: 'vp', label: '매물대', varName: '--vp-poc', title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
-  { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%p) — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
+  { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%p)과, 첫 봉을 종목 가격에 맞춘 지수 점선 — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
   { key: 'sar', label: 'SAR', varName: '--sar-up', title: '파라볼릭 SAR — 상승 추세면 봉 아래, 하락 추세면 봉 위에 점. 범례에 지금 방향과 전환 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
 ];
 const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸 약 7px
@@ -1285,6 +1285,20 @@ function benchReturn(bench, got, from) {
   return pct == null ? null : { name: bench.name, pct };
 }
 
+// 지수 비교선(보조 지표 '지수 대비'). 같은 기간 지수를 차트 첫 봉의 종목 가격에서 시작하게 맞춘 선 — 두 선이 벌어진
+// 만큼이 초과 수익이다(배지의 숫자로는 언제 벌어졌는지 보이지 않았다). 날짜로 짝짓고 지수에 없는 날(휴장 차이)은
+// 비운다. 기준은 둘 다 있는 첫 날, 마지막 봉은 배지(benchReturn)처럼 실시간 지수 값이다.
+function benchLine(bench, got, times, closes) {
+  if (!bench || !got || !got.ok || !times.length) return null;
+  const idx = alignByDay(got.times, got.closes, times);
+  if (!idx) return null;
+  const live = quotes[bench.symbol] && quotes[bench.symbol].price;
+  if (live > 0 && idx[idx.length - 1] != null) idx[idx.length - 1] = live;
+  const i0 = idx.findIndex((v, i) => v != null && closes[i] != null);
+  if (i0 < 0) return null;
+  return { name: bench.name, data: idx.map((v) => (v == null ? null : (closes[i0] * v) / idx[i0])) };
+}
+
 const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
@@ -1304,7 +1318,8 @@ function renderMaLegend() {
   const vw = (lastChart && lastChart.vwapLine) || null;
   const vp = lastChart ? lastProfile : null;
   const sr = (lastChart && lastChart.sar) || null;
-  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr;
+  const bl = (lastChart && lastChart.benchLine) || null;
+  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr && !bl;
   box.innerHTML = '';
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
@@ -1339,6 +1354,13 @@ function renderMaLegend() {
     let i = hoverIdx;
     if (i == null) for (i = vw.length - 1; i > 0 && vw[i] == null; i--);
     add('VWAP', vw[i], cssVar('--vwap-line'), '거래량 가중 평균가 — 그날 정규장 봉');
+  }
+  // 지수 비교선은 VWAP 처럼 마우스를 안 올리면 마지막 값
+  if (bl) {
+    let i = hoverIdx;
+    if (i == null) for (i = bl.data.length - 1; i > 0 && bl.data[i] == null; i--);
+    add(bl.name, bl.data[i], cssVar('--bench-line'),
+      `${bl.name} — 차트 첫 봉의 종목 가격에서 시작하게 맞춘 지수. 두 선이 벌어진 만큼이 초과 수익`, true);
   }
   // SAR 은 마우스를 안 올리면 지금 방향과 그 방향이 이어진 기간 — 매수 · 매도 신호가 아니라 상태만 말한다.
   // 1D · 1W 는 전환 시각(축과 같은 형식), 일봉 기간은 전환 뒤 봉 수(거래일, 전환한 날 포함). 마우스를 올리면 그 봉의 SAR.
@@ -1746,7 +1768,7 @@ function drawChart(arg) {
   const {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
-    bands = null, vwapLine = null, volAvg = null, profile = false, sar = null,
+    bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, benchLine = null,
   } = arg;
   const color = up ? UP : DOWN;
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
@@ -1871,6 +1893,21 @@ function drawChart(arg) {
         pointHitRadius: 0,
         pointBorderWidth: 0,
         pointBackgroundColor: sar.up.map((u) => cssVar(u ? '--sar-up' : '--sar-down')),
+      }] : []),
+      // 지수 비교선(보조 지표 '지수 대비') — 옅은 점선. 볼린저(청회색 점선) · 지지선(초록)과 헷갈리지 않는 회색.
+      // 지수에 없는 날(휴장 차이)은 건너 잇는다.
+      ...(benchLine ? [{
+        data: benchLine.data,
+        yAxisID: 'y',
+        order: 3,
+        borderColor: cssVar('--bench-line'),
+        borderWidth: 1.2,
+        borderDash: [5, 3],
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.15,
+        fill: false,
+        spanGaps: true,
       }] : []),
       // VWAP(보조 지표, 1D 정규장 봉만). 시간외 칸은 null 이라 끊긴다.
       ...(vwapLine ? [{
@@ -2561,6 +2598,8 @@ async function loadChart() {
   const sar = !ind.sar ? null
     : daily ? sarFor(item.symbol, times, highs, lows)
       : state.timeframe === '1D' || state.timeframe === '1W' ? sarFor(item.symbol, times, highs, lows, ext) : null;
+  // 지수 비교선 — 배지 때문에 이미 받은 지수 차트로(새 요청 없음)
+  const bline = benchLine(bench, benchGot, times, closes);
 
   const held = state.holdings[item.symbol];
   const up = !q || q.change >= 0;
@@ -2606,6 +2645,8 @@ async function loadChart() {
     + `|${ext ? ext.filter(Boolean).length : ''}|${endAt >= 0 ? closes[endAt] : ''}|${lastReg >= 0 ? closes[lastReg] : ''}`
     // 보조 지표를 켜고 끄면 봉이 그대로여도 다시 그린다
     + `|${INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join('')}`
+    // 지수 비교선의 끝(실시간 지수) — 종목은 그대로여도 지수가 움직이면 다시 그린다
+    + `|${bline ? bline.data[bline.data.length - 1] : ''}`
     // 차트만 보기 — 이동평균 · 가로선이 없던 화면이면 위 값이 같아도 추세선이 남는다
     + `|${plain}`;
   if (sig === lastDrawSig) return;
@@ -2614,7 +2655,7 @@ async function loadChart() {
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar,
+    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, benchLine: bline,
     profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
   });
 }

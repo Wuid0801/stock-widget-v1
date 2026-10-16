@@ -51,7 +51,7 @@ function harness(extra = []) {
     renderRank: () => {},
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -1385,6 +1385,86 @@ await test('slow network: switching symbol or period clears the old chart and sh
   pending({ ok: false, error: '응답 시간 초과' });
   await load2;
   assert.equal(box(), 'chartbox', '실패해도 내린다(오류 문구가 대신 뜬다)');
+});
+
+// 지수 비교선(보조 지표 '지수 대비'): 같은 기간 지수를 차트 첫 봉의 종목 가격에서 시작하게 맞춘 선. 배지의 숫자로는
+// 언제 벌어졌는지 보이지 않는다. 지수 차트는 배지 때문에 이미 받는다(새 요청 없음).
+await test('indicators: index comparison line starts at the stock\'s first price, follows the index by date, ends at the live index', () => {
+  const { c, run } = harness(['benchLine', 'alignByDay']);
+  const day = (d) => Date.parse(`${d}T00:00:00Z`);
+  const times = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04'].map(day);
+  const closes = [100, 104, 103, 110];
+  // 지수에는 9/3 이 없다(휴장 차이) → 그 칸은 비운다. 9/4 는 실시간 지수 2,200 으로
+  c.G = { ok: true, times: ['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-04'].map(day), closes: [1900, 2000, 2100, 2150] };
+  run("quotes['^KS11'] = { price: 2200 };");
+  const r = run(`benchLine({ symbol: '^KS11', name: '코스피' }, G, ${JSON.stringify(times)}, ${JSON.stringify(closes)})`);
+  assert.equal(r.name, '코스피');
+  assert.equal(JSON.stringify(r.data), JSON.stringify([100, 105, null, 110]), '100 × 2100/2000 = 105, 마지막은 실시간 2200/2000');
+  // 첫 봉에 지수가 없으면 둘 다 있는 첫 날을 기준으로
+  c.G = { ok: true, times: ['2026-09-02', '2026-09-03', '2026-09-04'].map(day), closes: [2000, 2050, 2100] };
+  run("delete quotes['^KS11'];");
+  const late = run(`benchLine({ symbol: '^KS11', name: '코스피' }, G, ${JSON.stringify(times)}, ${JSON.stringify(closes)})`);
+  assert.equal(JSON.stringify(late.data), JSON.stringify([null, 104, 106.6, 109.2]), '9/2 의 104 에서 시작');
+  assert.equal(run(`benchLine(null, G, ${JSON.stringify(times)}, ${JSON.stringify(closes)})`), null, '지수 대비가 꺼져 있으면 없다');
+  assert.equal(run(`benchLine({ symbol: '^KS11', name: '코스피' }, { ok: false }, ${JSON.stringify(times)}, ${JSON.stringify(closes)})`), null, '지수를 못 받았으면 없다');
+});
+
+await test('indicators: loadChart passes the comparison line with the index chart it already fetched, and redraws when only the index moves', async () => {
+  const { c, run } = harness(['loadChart', 'benchLine', 'alignByDay', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange', 'benchReturn', 'benchmarkOf']);
+  const draws = [];
+  const day = (d) => Date.parse(`${d}T00:00:00Z`);
+  const series = (closes) => ({ ok: true, closes, times: closes.map((_, i) => day(`2026-09-0${i + 1}`)),
+    volumes: closes.map(() => 1), opens: closes, highs: closes, lows: closes });
+  Object.assign(c, {
+    fetchChartCached: async (s) => (s === '^KS11' ? series([2000, 2100]) : series([100, 110])),
+    err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+  });
+  run("let lastDrawSig = null; state.timeframe = '1M'; state.indicators = cleanIndicators({ rel: true }); quotes['005930.KS'] = { price: 110, prevClose: 100, change: 10 };");
+  await c.loadChart();
+  assert.equal(JSON.stringify(draws.at(-1).benchLine), JSON.stringify({ name: '코스피', data: [100, 105] }));
+  run("quotes['^KS11'] = { price: 2300 };");
+  await c.loadChart();
+  assert.equal(draws.length, 2, '종목은 그대로여도 지수가 움직이면 다시 그린다');
+  assert.equal(draws.at(-1).benchLine.data[1], 115);
+  run("state.indicators = cleanIndicators({}); lastDrawSig = null;");
+  await c.loadChart();
+  assert.equal(draws.at(-1).benchLine, null, '끄면 없다');
+  run("state.indicators = cleanIndicators({ rel: true }); state.plainChart = true; lastDrawSig = null;");
+  await c.loadChart();
+  assert.equal(draws.at(-1).benchLine, null, '차트만 보기면 없다');
+});
+
+await test('indicators: the comparison line is a dashed line on the price axis with its own legend entry', () => {
+  const { c, run, elements } = harness(['drawChart', 'labelFor', 'renderMaLegend']);
+  run(formatting);
+  const configs = [];
+  const items = [];
+  const node = () => ({ style: {}, kids: [], append(t) { this.text = t; }, appendChild(k) { this.kids.push(k); } });
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, bindChartLeave() {}, maColor: () => '#000', hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
+  });
+  c.document.createElement = () => node();
+  c.document.getElementById('maLegend').appendChild = (s) => items.push(s);
+  run(`lastProfile = null; state.timeframe = '1M';
+    var arg_ = { closes: [100, 110], times: [1, 2], up: true, cur: 'KRW', volumes: [1, 1], highs: [100, 110], lows: [100, 110],
+      benchLine: { name: '코스피', data: [100, 105] } };
+    drawChart(arg_);`);
+  const line = configs.at(-1).data.datasets.find((d) => d.borderColor === '--bench-line');
+  assert.ok(line, '지수 선');
+  assert.equal(line.yAxisID, 'y');
+  assert.ok(line.borderDash && line.borderDash.length === 2, '점선');
+  assert.equal(line.spanGaps, true, '지수에 없는 날은 건너 잇는다');
+  assert.equal(JSON.stringify(line.data), '[100,105]');
+  const read = () => items.map((s) => `${s.text}=${s.kids[0].textContent}`);
+  assert.equal(elements.get('maLegend').hidden, false);
+  assert.deepEqual([...read()], ['코스피=105'], '마우스를 안 올리면 마지막 값');
+  assert.match(items[0].title, /코스피 — 차트 첫 봉의 종목 가격에서 시작하게 맞춘 지수/);
+  items.length = 0;
+  run('hoverIdx = 0; renderMaLegend();');
+  assert.deepEqual([...read()], ['코스피=100']);
 });
 
 // 매물대(보조 지표): drawChart 가 보이는 구간으로 계산해 플러그인에 넘긴다. 플러그인은 오른쪽 끝에서 왼쪽으로 그린다.
