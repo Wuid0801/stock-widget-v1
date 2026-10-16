@@ -336,11 +336,12 @@
   }
   .qbar input:focus { border-color: var(--accent); }
   .qbar input::placeholder { color: var(--placeholder); }
-  .qbar button {
+  /* 닫기 버튼(직계 자식)만 — 자손 전체에 걸면 순위 패널의 국내 / 미국 버튼까지 24px 로 눌려 글자가 겹친다 */
+  .qbar > button {
     width: 24px; flex: 0 0 auto; background: transparent; border: 0; border-radius: 5px;
     color: var(--dim); font-size: 12px; cursor: pointer;
   }
-  .qbar button:hover { background: var(--field-border); color: var(--btn-fg-hover); }
+  .qbar > button:hover { background: var(--field-border); color: var(--btn-fg-hover); }
 
   #results { flex: 1 1 auto; overflow-y: auto; }
   #results::-webkit-scrollbar { width: 5px; }
@@ -621,7 +622,10 @@
   .metrics[hidden] { display: none; }
   .metrics:not([hidden]) ~ .chartctl { display: none; }
   .detail:has(#metricsView:not([hidden])) #maLegend { display: none; }
-  .metrics section { margin-bottom: 7px; }
+  /* 단락(오늘 · 기간 수익률 · 매매동향 · 실적 …) 사이에 점선 — 길게 이어져 경계가 보여야 한다 */
+  .metrics section { margin-bottom: 6px; }
+  .metrics section + section { border-top: 1px dashed var(--field-border); padding-top: 6px; }
+  .metrics .mxsrc { border-top: 1px dashed var(--field-border); padding-top: 5px; }
   .metrics h5 { margin: 0 0 2px; font-size: 10px; font-weight: 600; color: var(--text-3); }
   .metrics h5 span { font-weight: 400; color: var(--mute); }
   .metrics p { margin: 0 0 2px; line-height: 1.45; }

@@ -109,5 +109,13 @@ for (const sel of scrollers) {
       && new RegExp(`${esc}::-webkit-scrollbar-thumb\\s*\\{[^}]*var\\(--scroll\\)`).test(html));
 }
 
+// --- 패널 머리줄 · 지표 화면 단락 ------------------------------------------------------
+// 패널 머리줄(.qbar)의 24px 버튼 규칙은 닫기 버튼(직계 자식)에만 건다. 자손 전체에 걸었더니 순위 패널의
+// 국내 / 미국 버튼까지 24px 로 눌려 글자가 겹쳤다(2026-10-16).
+check('.qbar 의 버튼 규칙은 직계 자식(닫기)에만 건다', /\.qbar\s*>\s*button\s*\{[^}]*width:\s*24px/.test(html)
+  && !/\.qbar\s+button\s*[{:,]/.test(html));
+// 지표 화면은 단락(오늘 · 기간 수익률 · 매매동향 · 실적 · 가치 지표 …)이 길게 이어져 경계가 보여야 한다
+check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \+ section\s*\{[^}]*border-top:\s*1px dashed/.test(html));
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);
