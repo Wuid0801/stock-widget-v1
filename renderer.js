@@ -507,18 +507,30 @@ async function usdKrw() {
 
 // 합계 줄에 차례로 보일 줄들과 툴팁. 보유가 둘 이상이면 합계 → 종목마다 한 줄(목록 순서),
 // 하나뿐이면 그 종목 줄만 — "보유 1종목" 으로는 무엇을 들고 있는지 모른다. 종목 줄은 그 종목 통화로 쓴다.
+//
+// 오늘 손익 = 보유 수량 × (현재가 - 전일 종가), 비율은 어제 평가 대비. 340px 줄에 이름 · 평가 · 손익 · 오늘 넷은
+// 들어가지 않아(만 · 억 단위로 줄여도 넘쳤다, 2026-10-16 측정) 오늘이 있으면 평가는 툴팁으로 뺀다. 전일 종가를 못
+// 받았으면 오늘을 낼 수 없어 지금처럼 평가를 보인다. 합계의 오늘은 모든 보유의 전일 종가가 있을 때만 낸다.
 function folioLines(held, rate) {
   // 툴팁(title)은 글자 그대로 나오므로 종목명은 HTML 쪽에서만 이스케이프한다
-  const line = (name, value, pl, pct, cur) => ({
-    html: `<span class="fn">${esc(name)}</span><span class="fv">평가 ${money(value, cur)}</span>`
-      + `<span class="fp" style="color:${plColor(pl)}">손익 ${signedMoney(pl, cur)} (${fmtPct(pct)})</span>`,
-    text: `${name} · 평가 ${money(value, cur)} · 손익 ${signedMoney(pl, cur)} (${fmtPct(pct)})`,
-  });
+  const line = (name, value, pl, pct, cur, day) => {
+    const today = day ? `오늘 ${signedMoney(day.pl, cur)} (${fmtPct(day.pct)})` : '';
+    return {
+      html: `<span class="fn">${esc(name)}</span>${day ? '' : `<span class="fv">평가 ${money(value, cur)}</span>`}`
+        + `<span class="fp" style="color:${plColor(pl)}">손익 ${signedMoney(pl, cur)} (${fmtPct(pct)})</span>`
+        + (day ? `<span class="ft" style="color:${plColor(day.pl)}">${today}</span>` : ''),
+      text: `${name} · 평가 ${money(value, cur)} · 손익 ${signedMoney(pl, cur)} (${fmtPct(pct)})${day ? ` · ${today}` : ''}`,
+    };
+  };
+  const dayOf = (h, q) => (q.prevClose > 0
+    ? { pl: (q.price - q.prevClose) * h.qty, pct: ((q.price - q.prevClose) / q.prevClose) * 100 } : null);
+  const dayNote = held.some(({ q }) => q.prevClose > 0)
+    ? ['오늘 = 전일 종가 대비 (장 시작 전에는 지난 장, 미국 프리 · 애프터마켓이면 그 가격)'] : [];
   const stocks = held.map(({ i, h, q }) => {
     const r = holdingPl(h, q.price);
-    return line(`${i.name} ${fmt(h.qty)}주`, r.value, r.pl, r.pct, curOf(i.symbol));
+    return line(`${i.name} ${fmt(h.qty)}주`, r.value, r.pl, r.pct, curOf(i.symbol), dayOf(h, q));
   });
-  if (held.length === 1) return { lines: [stocks[0].html], tip: stocks[0].text };
+  if (held.length === 1) return { lines: [stocks[0].html], tip: [stocks[0].text, ...dayNote].join('\n') };
 
   const total = `보유 ${held.length}종목`;
   const foreign = held.some((x) => curOf(x.i.symbol) !== 'KRW');
@@ -527,18 +539,21 @@ function folioLines(held, rate) {
     return { lines: [`<span class="fn">${total}</span><span class="fv">환율을 받지 못해 합계를 낼 수 없습니다</span>`,
       ...stocks.map((s) => s.html)], tip: stocks.map((s) => s.text).join('\n') };
   }
-  let value = 0; let cost = 0;
+  let value = 0; let cost = 0; let prev = 0;
   for (const { i, h, q } of held) {
     const k = curOf(i.symbol) === 'KRW' ? 1 : rate;
     value += q.price * h.qty * k;
     cost += h.avg * h.qty * k;
+    prev += (q.prevClose || 0) * h.qty * k;
   }
   const gain = Math.round(value - cost);
-  const sum = line(total, Math.round(value), gain, cost > 0 ? ((value - cost) / cost) * 100 : 0, 'KRW');
+  const day = held.every(({ q }) => q.prevClose > 0) && prev > 0
+    ? { pl: Math.round(value - prev), pct: ((value - prev) / prev) * 100 } : null;
+  const sum = line(total, Math.round(value), gain, cost > 0 ? ((value - cost) / cost) * 100 : 0, 'KRW', day);
   return {
     lines: [sum.html, ...stocks.map((s) => s.html)],
     tip: [sum.text, ...stocks.map((s) => s.text),
-      ...(foreign ? [`환율 ${fmt(rate)}원/$ (미국 주식은 이 값으로 합계에 넣음)`] : [])].join('\n'),
+      ...(foreign ? [`환율 ${fmt(rate)}원/$ (미국 주식은 이 값으로 합계에 넣음)`] : []), ...dayNote].join('\n'),
   };
 }
 

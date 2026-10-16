@@ -2863,6 +2863,48 @@ await test('holdings: folio names its numbers and steps through total and each h
   assert.equal(box.hidden, true);
 });
 
+// 오늘 손익 — 보유 수량 × (현재가 - 전일 종가). 340px 줄에 이름 · 평가 · 손익 · 오늘 넷은 들어가지 않아(만 · 억으로
+// 줄여도 넘쳤다) 오늘이 있으면 평가는 툴팁으로 뺀다. 전일 종가를 못 받은 종목이 섞이면 지금처럼 평가를 보인다.
+await test('holdings: folio shows today\'s gain beside the total gain, moving the value into the tooltip', async () => {
+  const { c, run, elements } = holdHarness(['folioLines', 'renderFolio', 'showFolio', 'tickFolio']);
+  c.usdKrw = async () => 1380;
+  run(`state.watchlist.push({ symbol: 'AAPL', name: 'AAPL' });
+    state.holdings = { '005930.KS': { qty: 10, avg: 200000 }, '000660.KS': { qty: 2, avg: 1600000 }, AAPL: { qty: 5, avg: 180 } };
+    quotes['005930.KS'] = { price: 225000, prevClose: 220000 }; quotes['000660.KS'] = { price: 1520000, prevClose: 1500000 };
+    quotes.AAPL = { price: 200, prevClose: 198, currency: 'USD' };`);
+  await c.renderFolio();
+  const box = elements.get('folio');
+  const UP = '#e24b4a';
+  // 오늘: 50,000 + 40,000 + $10 × 1,380 = 103,800 / 어제 평가 2,200,000 + 3,000,000 + $990 × 1,380 = 6,566,200 → +1.58%
+  assert.equal(box.innerHTML, `<div class="fline"><span class="fn">보유 3종목</span><span class="fp" style="color:${UP}">손익 +228,000 (+3.54%)</span>`
+    + `<span class="ft" style="color:${UP}">오늘 +103,800 (+1.58%)</span></div>`, '평가 대신 오늘');
+  assert.equal(box.title, ['보유 3종목 · 평가 6,670,000 · 손익 +228,000 (+3.54%) · 오늘 +103,800 (+1.58%)',
+    '삼성전자 10주 · 평가 2,250,000 · 손익 +250,000 (+12.50%) · 오늘 +50,000 (+2.27%)',
+    'SK하이닉스 2주 · 평가 3,040,000 · 손익 -160,000 (-5.00%) · 오늘 +40,000 (+1.33%)',
+    'AAPL 5주 · 평가 1,000.00 · 손익 +100.00 (+11.11%) · 오늘 +10.00 (+1.01%)',
+    '환율 1,380원/$ (미국 주식은 이 값으로 합계에 넣음)',
+    '오늘 = 전일 종가 대비 (장 시작 전에는 지난 장, 미국 프리 · 애프터마켓이면 그 가격)'].join('\n'), '평가는 툴팁에 남는다');
+  c.tickFolio();
+  c.tickFolio();
+  assert.equal(box.innerHTML, '<div class="fline in"><span class="fn">SK하이닉스 2주</span><span class="fp" style="color:#185fa5">손익 -160,000 (-5.00%)</span>'
+    + `<span class="ft" style="color:${UP}">오늘 +40,000 (+1.33%)</span></div>`, '종목 줄도 — 누적은 손실이어도 오늘은 이익일 수 있다');
+  c.tickFolio();
+  assert.match(box.innerHTML, /<span class="ft" style="color:#e24b4a">오늘 \+10\.00 \(\+1\.01%\)<\/span>/, '해외 종목은 달러로');
+
+  // 전일 종가를 못 받은 종목이 있으면 합계의 오늘은 낼 수 없다 — 지금처럼 평가를 보인다. 받은 종목 줄은 오늘이 있다.
+  run('delete quotes.AAPL.prevClose; folioAt = 0;');
+  await c.renderFolio();
+  assert.match(box.innerHTML, /<span class="fn">보유 3종목<\/span><span class="fv">평가 6,670,000<\/span>/);
+  assert.doesNotMatch(box.innerHTML, /오늘/);
+  assert.match(box.title, /삼성전자 10주 · 평가 2,250,000 · 손익 \+250,000 \(\+12\.50%\) · 오늘 \+50,000 \(\+2\.27%\)/);
+  assert.match(box.title, /AAPL 5주 · 평가 1,000\.00 · 손익 \+100\.00 \(\+11\.11%\)$/m, '전일 종가가 없는 종목 줄은 오늘이 없다');
+
+  // 하나뿐이면 그 종목 줄, 변동이 없으면 회색
+  run("state.holdings = { '005930.KS': { qty: 10, avg: 200000 } }; quotes['005930.KS'] = { price: 220000, prevClose: 220000 };");
+  await c.renderFolio();
+  assert.match(box.innerHTML, /<span class="ft" style="color:#888888">오늘 0 \(0\.00%\)<\/span>/);
+});
+
 // 상세의 보유 · 52주 · 추세 점검 세 줄은 손잡이 한 줄로 접고 편다. 저장돼 다시 켜도 그대로다.
 await test('info fold: the toggle folds hold · 52-week · trend lines and saves the choice', () => {
   const { c, run, elements } = harness(['applyInfoOpen', 'toggleInfo']);

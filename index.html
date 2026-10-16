@@ -274,6 +274,8 @@
   .folio .fn { color: var(--mute); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .folio .fv { color: var(--text-2); flex: 0 0 auto; white-space: nowrap; }
   .folio .fp { margin-left: auto; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
+  /* 오늘 손익 — 손익 뒤. 이 줄이 있으면 평가는 툴팁으로 빠진다(340px 에 넷은 들어가지 않는다) */
+  .folio .ft { flex: 0 0 auto; white-space: nowrap; font-weight: 700; }
 
   /* --- 본문 (리스트 + 상세, 검색 오버레이의 기준) --- */
   .body { flex: 1 1 auto; display: flex; flex-direction: column; position: relative; min-height: 0; }
