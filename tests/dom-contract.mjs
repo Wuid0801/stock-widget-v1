@@ -44,6 +44,12 @@ if (nameTag && sectorTag) {
       afterSector.includes('</div>'), afterSector.replace(/\s+/g, ' ').slice(0, 80));
     check('#metricsBtn 은 차트 상자 앞(제목줄)에 있다', btnTag.index < html.indexOf('class="chartbox"'));
   }
+  // 이름이 짧으면 버튼이 바로 아래 오늘 캔들 위에 온다 — 캔들 꼬리가 줄 맨 위까지 뻗으면 버튼 테두리에
+  // 맞닿았다(셀트리온 · 제약, 2026-10-16). 이름 줄 아래를 조금 띄운다.
+  const bar = /\.dnamebar\s*\{([^}]*)\}/.exec(html);
+  const gap = bar && /margin-bottom:\s*(\d+)px/.exec(bar[1]);
+  check('이름 줄(.dnamebar) 아래에 2px 이상 여백이 있다 (오늘 캔들이 버튼에 붙지 않게)', !!gap && Number(gap[1]) >= 2,
+    bar ? bar[1].trim() : '규칙 없음');
 }
 
 // --- 스크립트 로드 순서 --------------------------------------------------------

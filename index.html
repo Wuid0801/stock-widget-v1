@@ -517,7 +517,8 @@
   .dsector { font-size: 9px; color: var(--faint); }
   .dsector:not(:empty)::before { content: ' · '; }
   /* 이름 줄 + 지표 버튼. 이름 줄만 줄어들며 말줄임하고 버튼은 늘 보인다 */
-  .dnamebar { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  /* 아래 3px — 이름이 짧으면 버튼이 오늘 캔들 바로 위에 와서, 꼬리가 줄 맨 위까지 뻗으면 맞닿았다 */
+  .dnamebar { display: flex; align-items: center; gap: 5px; min-width: 0; margin-bottom: 3px; }
   .dnamebar .dname { min-width: 0; }
   .mxbtn {
     flex: 0 0 auto; height: 14px; padding: 0 4px; border: 1px solid var(--field-border); border-radius: 3px;
