@@ -2,7 +2,7 @@
 // 역할: 프레임리스/반투명/항상위 위젯 창 생성, 창 상태 저장·복원,
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
@@ -227,6 +227,108 @@ ipcMain.handle('state:set', (_e, patch) => {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
     if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'plainChart', 'infoOpen', 'indicators'].includes(k)) store.set(k, v);
+  }
+});
+
+// ---- 설정 백업 · 복원 -----------------------------------------------------------
+// 보유 수량 · 평단가 · 목표가는 이 PC 의 설정 파일에만 있다 — 파일로 내보내고 불러와 PC 를 옮기거나 설정 파일이
+// 깨졌을 때 되살린다. 담는 것은 렌더러가 저장하는 설정 전부(state:set 허용목록과 같다, tests/state-contract.mjs 가
+// 본다)이고 창 위치는 뺀다. 불러올 파일은 믿지 않는다: 1MB 이하 JSON 이어야 하고, 아는 키만, 모양이 맞는 값만
+// 쓴다(세세한 값은 렌더러가 시작할 때 다시 거른다). 확인 창에서 바꾸기를 눌러야만 바꾸고, 그 직전 설정은 고른
+// 파일과 같은 폴더에 따로 저장해 잘못 불러와도 되돌릴 수 있게 한다. 파일에 없는 설정은 그대로 둔다.
+const BACKUP_KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles',
+  'chartMode', 'plainChart', 'infoOpen', 'indicators'];
+const BACKUP_MAX_BYTES = 1024 * 1024;
+const BACKUP_FILTERS = [{ name: '설정 백업(JSON)', extensions: ['json'] }];
+const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const positive = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const pad2 = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const backupState = () => Object.fromEntries(BACKUP_KEYS.map((k) => [k, store.get(k)]));
+const backupJson = () => JSON.stringify({ app: 'stock-widget', version: 1, savedAt: new Date().toISOString(), state: backupState() }, null, 2);
+const backupCounts = (s) => ({ watchlist: (s.watchlist || []).length, holdings: Object.keys(s.holdings || {}).length,
+  targets: Object.keys((s.alerts && s.alerts.targets) || {}).length });
+// 창이 있으면 그 창에 붙여 띄운다(창 뒤로 숨지 않게)
+const dialogArgs = (opts) => (win ? [win, opts] : [opts]);
+
+// 불러온 내용 → 쓸 설정. 내보낸 꼴({ state }) · 설정 파일(config.json) 꼴 둘 다 받는다. 아는 값이 하나도 없으면 null.
+function cleanBackup(raw) {
+  const s = isPlain(raw) && isPlain(raw.state) ? raw.state : raw;
+  if (!isPlain(s)) return null;
+  const out = {};
+  if (Array.isArray(s.watchlist)) {
+    const seen = new Set();
+    out.watchlist = s.watchlist.filter((i) => isPlain(i) && SYMBOL_RE.test(String(i.symbol ?? '')) && typeof i.name === 'string'
+      && !seen.has(i.symbol) && seen.add(i.symbol)).slice(0, 200).map((i) => ({ symbol: i.symbol, name: i.name.slice(0, 100) }));
+  }
+  if (s.selected === null || (typeof s.selected === 'string' && SYMBOL_RE.test(s.selected))) out.selected = s.selected;
+  if (typeof s.timeframe === 'string' && s.timeframe.length <= 10) out.timeframe = s.timeframe;
+  if (isPlain(s.alerts)) {
+    const targets = {};
+    for (const [k, t] of Object.entries(isPlain(s.alerts.targets) ? s.alerts.targets : {})) {
+      if (!SYMBOL_RE.test(k) || !isPlain(t)) continue;
+      const v = {};
+      if (positive(t.up)) v.up = t.up;
+      if (positive(t.down)) v.down = t.down;
+      if (Object.keys(v).length) targets[k] = v;
+    }
+    out.alerts = { enabled: s.alerts.enabled === true, targets };
+  }
+  if (isPlain(s.holdings)) {
+    out.holdings = {};
+    for (const [k, h] of Object.entries(s.holdings)) {
+      if (SYMBOL_RE.test(k) && isPlain(h) && positive(h.qty) && positive(h.avg)) out.holdings[k] = { qty: h.qty, avg: h.avg };
+    }
+  }
+  if (s.theme === 'dark' || s.theme === 'light') out.theme = s.theme;
+  if (typeof s.opacity === 'number' && s.opacity >= 30 && s.opacity <= 100) out.opacity = s.opacity;
+  if (Array.isArray(s.maPeriods)) out.maPeriods = s.maPeriods.filter((p) => Number.isInteger(p) && p > 0 && p <= 1000).slice(0, 20);
+  if (isPlain(s.maStyles)) out.maStyles = JSON.parse(JSON.stringify(s.maStyles)); // 렌더러가 시작할 때 다시 거른다(cleanMaStyles)
+  if (s.chartMode === 'candle' || s.chartMode === 'line') out.chartMode = s.chartMode;
+  for (const k of ['plainChart', 'infoOpen']) if (typeof s[k] === 'boolean') out[k] = s[k];
+  if (isPlain(s.indicators)) out.indicators = Object.fromEntries(Object.entries(s.indicators).filter(([, v]) => typeof v === 'boolean'));
+  return Object.keys(out).length ? out : null;
+}
+
+ipcMain.handle('backup:export', async () => {
+  try {
+    const pick = await dialog.showSaveDialog(...dialogArgs({ title: '설정 내보내기', filters: BACKUP_FILTERS,
+      defaultPath: path.join(app.getPath('documents'), `stock-widget-backup-${ymd(new Date())}.json`) }));
+    if (pick.canceled || !pick.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(pick.filePath, backupJson());
+    return { ok: true, path: pick.filePath, counts: backupCounts(backupState()) };
+  } catch (err) {
+    return { ok: false, error: err.message || '내보내기 실패' };
+  }
+});
+
+ipcMain.handle('backup:import', async () => {
+  try {
+    const pick = await dialog.showOpenDialog(...dialogArgs({ title: '설정 불러오기', filters: BACKUP_FILTERS, properties: ['openFile'] }));
+    const file = pick.canceled ? null : pick.filePaths && pick.filePaths[0];
+    if (!file) return { ok: false, canceled: true };
+    if (fs.statSync(file).size > BACKUP_MAX_BYTES) return { ok: false, error: '파일이 너무 큽니다(1MB 넘음)' };
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+    } catch {
+      return { ok: false, error: '백업 파일을 읽을 수 없습니다(JSON 이 아님)' };
+    }
+    const next = cleanBackup(raw);
+    if (!next) return { ok: false, error: '백업 파일이 아닙니다(아는 설정이 없음)' };
+    const counts = backupCounts({ ...backupState(), ...next });
+    const now = new Date();
+    const before = path.join(path.dirname(file),
+      `stock-widget-before-import-${ymd(now)}-${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}.json`);
+    const ans = await dialog.showMessageBox(...dialogArgs({ type: 'question', buttons: ['바꾸기', '취소'], defaultId: 1, cancelId: 1,
+      title: '설정 불러오기', message: '지금 설정을 이 파일로 바꿉니다',
+      detail: `관심종목 ${counts.watchlist}개 · 보유 ${counts.holdings}개 · 목표가 ${counts.targets}개\n바꾸기 전 설정은 ${before} 에 저장해 둡니다.` }));
+    if (ans.response !== 0) return { ok: false, canceled: true };
+    fs.writeFileSync(before, backupJson());
+    for (const [k, v] of Object.entries(next)) store.set(k, v);
+    return { ok: true, counts, before };
+  } catch (err) {
+    return { ok: false, error: err.message || '불러오기 실패' };
   }
 });
 

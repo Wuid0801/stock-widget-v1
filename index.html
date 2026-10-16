@@ -415,6 +415,16 @@
   .seg button:hover { color: var(--text-3); }
   .seg button.on { background: var(--tf-on-bg); color: var(--tf-on-fg); font-weight: 700; }
 
+  /* 설정 백업 — 내보내기 · 불러오기 버튼, 결과는 그 아래 줄(파일 이름 · 개수가 340px 한 줄에 다 들어가지 않는다) */
+  .brow { display: flex; flex-wrap: wrap; align-items: center; column-gap: 5px; padding: 2px 11px 2px; }
+  .brow button {
+    flex: 0 0 auto; background: var(--chip-2); border: 0; border-radius: 5px; color: var(--dim);
+    font-size: 10px; padding: 3px 9px; cursor: pointer; font-family: inherit;
+  }
+  .brow button:hover { color: var(--text-3); }
+  .brow .bmsg { flex: 1 1 100%; font-size: 9.5px; color: var(--mute); line-height: 1.4; overflow-wrap: anywhere; }
+  .brow .bmsg:not(:empty) { margin-top: 4px; }
+
   /* 투명도 슬라이더 */
   .orow { display: flex; align-items: center; gap: 8px; padding: 2px 11px 0; }
   .orow .olabel { font-size: 10px; color: var(--dim); flex: 0 0 auto; }
@@ -820,6 +830,14 @@
         <div id="alertRows"></div>
         <div class="sect">보유 종목 <span class="sechint">수량 · 평단가</span></div>
         <div id="holdRows"></div>
+        <!-- 설정 백업 · 복원 — 파일 창 · 확인 창은 main 이 띄운다 -->
+        <div class="sect">백업 <span class="sechint">관심종목 · 보유 · 목표가 · 화면 설정</span></div>
+        <div class="brow">
+          <button type="button" id="backupExport">내보내기</button>
+          <button type="button" id="backupImport">불러오기</button>
+          <span class="bmsg" id="backupMsg"></span>
+        </div>
+        <div class="ohint">불러오면 지금 설정이 바뀝니다. 바꾸기 전 설정은 고른 파일과 같은 폴더에 따로 저장해 둡니다.</div>
       </div>
       <div class="qhint" id="alertHint"></div>
     </div>

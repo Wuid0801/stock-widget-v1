@@ -3276,6 +3276,25 @@ function openAlerts() {
 
 const closeAlerts = () => closePanel(alertsEl);
 
+// --- 설정 백업 ---------------------------------------------------------------------
+// 설정 패널 맨 아래의 내보내기 · 불러오기. 파일 창 · 확인 창 · 파일 검증은 main 이 맡는다(backup:export · backup:import).
+// 불러오면 처음부터 다시 그린다 — 시작할 때 설정을 거르는 규칙(cleanIndicators · cleanMaStyles · validTimeframe …)을
+// 그대로 타게. 바꾸기 직전 설정은 main 이 고른 파일과 같은 폴더에 따로 저장해 둔다.
+async function exportBackup() {
+  await save(); // 마지막 변경까지 저장소에 넣고 내보낸다
+  const r = await api.backupExport();
+  const c = r.counts;
+  document.getElementById('backupMsg').textContent = r.ok
+    ? `저장했습니다 — ${String(r.path).split(/[\\/]/).pop()} (관심종목 ${c.watchlist}개 · 보유 ${c.holdings}개 · 목표가 ${c.targets}개)`
+    : r.canceled ? '' : `저장하지 못했습니다 (${r.error})`;
+}
+
+async function importBackup() {
+  const r = await api.backupImport();
+  if (r.ok) { location.reload(); return; }
+  document.getElementById('backupMsg').textContent = r.canceled ? '' : `불러오지 못했습니다 (${r.error})`;
+}
+
 function renderAlerts() {
   const on = state.alerts.enabled;
   document.getElementById('alertOn').checked = on;
@@ -3643,6 +3662,8 @@ async function refreshNow() {
   const opEl = document.getElementById('opacity');
   opEl.oninput = () => applyOpacity(opEl.value, true); // 끄는 동안 미리보기
   opEl.onchange = () => save();                       // 손을 뗄 때만 저장
+  document.getElementById('backupExport').onclick = () => exportBackup().catch(console.error);
+  document.getElementById('backupImport').onclick = () => importBackup().catch(console.error);
   document.getElementById('alertOn').onchange = (e) => {
     state.alerts.enabled = e.target.checked;
     save();

@@ -54,7 +54,8 @@ const CALLS = {
   'yf:search': ['삼성'],
   'yf:chart': [{ symbol: '005930.KS', range: '1d', interval: '5m' }],
 };
-const network = Object.keys(handlers).filter((k) => !k.startsWith('state:'));
+// 설정(state:) · 백업(backup:, 파일 창 · 로컬 파일)은 네트워크를 쓰지 않는다
+const network = Object.keys(handlers).filter((k) => !k.startsWith('state:') && !k.startsWith('backup:'));
 const unlisted = network.filter((k) => !(k in CALLS));
 check('네트워크 핸들러가 전부 이 스위트에 있다', unlisted.length === 0,
   unlisted.length ? `목록에 없음: ${unlisted.join(' ')}` : `${network.length}개`);

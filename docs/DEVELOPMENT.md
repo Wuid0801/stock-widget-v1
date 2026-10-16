@@ -97,13 +97,23 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 | `indicators` | 보조 지표 켜짐 `{ bb, vwap, volAvg, prevHL, vp, rel, sar }` (기본 모두 꺼짐). 아는 키의 `true` 만 믿는다(`cleanIndicators`) |
 | `infoOpen` | 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지 (기본 펼침). 세 줄의 `hidden` 은 각자 그리는 함수가 정하므로, 접기는 손잡이 `#infoToggle` 의 `.off` 와 CSS 형제 선택자로만 숨긴다. 접혀 있으면 손잡이 툴팁이 보이던 줄의 내용을 글자로 미리 보인다(`infoTip`, 갱신마다 다시 씀) |
 
-저장 값을 추가할 때는 renderer.js 의 save() 와 main.js 의 state:set · state:get 세 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다.
+저장 값을 추가할 때는 renderer.js 의 save() 와 main.js 의 state:set · state:get · 설정 백업의 `BACKUP_KEYS` 네 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다. 백업에서 불러올 때 그 값의 모양을 보는 검사도 `cleanBackup` 에 넣습니다 — 없으면 불러오기에서 그 값만 조용히 빠집니다.
 
 읽어 온 값은 믿지 않습니다. 시작할 때 모르는 이동평균 기간 · 색 · 굵기는 버리고, 모르는 `chartMode` 는 캔들, 없는 선택 종목은 첫 종목, 이 빌드에 없는 `timeframe` 은 `1D` 로 바꿉니다(`validTimeframe`) — 그대로 쓰면 차트가 매 갱신 예외로 끝나 조용히 빕니다. 기간을 빼거나 이름을 바꾸는 빌드가 나와도 같은 설정 폴더를 쓰는 다른 빌드가 멈추지 않게 하려는 것입니다.
 
 기본값으로 되돌리려면 앱을 종료한 뒤 이 파일을 지웁니다. 예전에는 내용을 `{}` 로 바꾸라고 안내했는데, Windows PowerShell 5.1 의 `'{}' >` 는 UTF-16 으로 저장해 읽지 못하는 파일이 됩니다.
 
 **파일이 깨져 있으면**(끝 쉼표, UTF-16 등) 저장소(conf)가 만들어질 때 `SyntaxError` 를 던져 창 코드가 하나도 돌지 않았습니다 — 위젯이 아예 뜨지 않습니다. 지금은 그 파일을 지우지 않고 `config.broken-<시각>.json` 으로 옮겨 두고(평단가는 이 파일에만 있습니다) 기본값으로 시작한 뒤, 옮겨 둔 이름을 알림으로 알립니다(`openStore`). 메모장 · PowerShell 이 붙이는 UTF-8 BOM 은 깨진 게 아니라 떼고 읽습니다.
+
+### 설정 백업 · 복원
+
+설정 패널 맨 아래 `백업` 의 `내보내기`(`#backupExport`) · `불러오기`(`#backupImport`)입니다. 파일 창 · 확인 창 · 파일 검증은 main 이 맡고(`backup:export` · `backup:import`), 렌더러는 결과 한 줄(`#backupMsg`)만 씁니다(`exportBackup` · `importBackup`).
+
+- **담는 것** — 렌더러가 저장하는 설정 전부(`BACKUP_KEYS`, `state:set` 허용목록과 같다 — `tests/state-contract.mjs`). 창 위치 `bounds` 는 뺍니다. 파일은 `{ app: 'stock-widget', version: 1, savedAt, state }` 를 2칸 들여 쓴 JSON 입니다. 내보내기 전에 `save()` 를 먼저 기다려 마지막 변경까지 담습니다.
+- **불러올 파일은 믿지 않습니다** — 1MB 이하 · JSON(BOM 은 뗌)이어야 하고, 아는 키 중 모양이 맞는 값만 씁니다(`cleanBackup`). 관심종목은 기호가 맞고 겹치지 않는 줄만, 보유는 수량 · 평단가가 0보다 큰 것만, 목표가는 0보다 큰 값만, 테마 · 차트 모드 · 투명도(30~100) · 이동평균 기간(1~1000 정수)은 아는 값만 받습니다. 모양이 틀린 설정은 그 설정만 건너뛰고, 파일에 없는 설정은 그대로 둡니다. 이동평균 색 · 보조 지표 같은 세부 값은 렌더러가 시작할 때 다시 거릅니다(`cleanMaStyles` · `cleanIndicators` · `validTimeframe`). 내보낸 꼴(`{ state }`)과 설정 파일(`config.json` · `config.broken-….json`) 꼴을 둘 다 받습니다.
+- **바꾸기 전에** 관심종목 · 보유 · 목표가가 불러온 뒤 몇 개가 되는지 확인 창으로 묻습니다(`취소` 가 기본). `바꾸기` 를 누르면 그 직전 설정을 고른 파일과 같은 폴더에 `stock-widget-before-import-YYYY-MM-DD-HHMMSS.json` 으로 쓴 다음 `store.set` 합니다 — 잘못 불러왔으면 그 파일을 다시 불러오면 됩니다.
+- **불러온 뒤** 렌더러는 `location.reload()` 로 처음부터 다시 뜹니다. 시작할 때 설정을 거르는 규칙을 그대로 타게 하려는 것입니다. 렌더러에는 창을 닫을 때 저장하는 코드가 없고 `save()` 는 모두 손으로 고칠 때만 불리므로(확인 창은 창에 붙은 모달), 다시 뜨면서 예전 값을 덮어쓰지 않습니다.
+- 검사: `tests/backup.mjs` — 가짜 electron · 저장소 · 파일 창으로 main.js 의 두 핸들러를 부르고, 파일은 임시 폴더에 실제로 쓰고 읽습니다. 렌더러 쪽 결과 문구 · 다시 그리기는 `tests/session-ui.mjs`.
 
 ## 테스트
 
@@ -118,9 +128,9 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 열아홉 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank`.
+푸시와 PR 마다 **앱을 띄우지 않는 스무 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup`.
 
-이 열아홉 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
+이 스무 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 

@@ -61,5 +61,18 @@ if (saveStart >= 0 && saveEnd > saveStart && allowList) {
   }
 }
 
+// 3) 설정 백업(main.js 의 BACKUP_KEYS)은 저장되는 키와 같아야 한다. 하나가 빠지면 그 설정은 내보내기 · 불러오기에서
+//    조용히 사라지고, 허용목록에 없는 키를 담으면 불러온 값이 저장된 적 없는 키가 된다.
+const backupKeys = /const BACKUP_KEYS = \[([^\]]*)\]/.exec(main);
+check('main.js 에서 BACKUP_KEYS 를 찾았다', !!backupKeys);
+if (backupKeys && allowList) {
+  const backed = [...backupKeys[1].matchAll(/'(\w+)'/g)].map((m) => m[1]);
+  const allowed = [...allowList[1].matchAll(/'(\w+)'/g)].map((m) => m[1]);
+  const missing = allowed.filter((k) => !backed.includes(k));
+  const extra = backed.filter((k) => !allowed.includes(k));
+  check('백업이 저장되는 설정을 모두 담는다', missing.length === 0 && extra.length === 0,
+    missing.length || extra.length ? `빠짐: ${missing.join(' ')} · 더 있음: ${extra.join(' ')}` : `${backed.length}개`);
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

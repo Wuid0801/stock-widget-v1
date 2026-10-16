@@ -2832,6 +2832,44 @@ await test('holdings: list row shows quantity and my return only for held stocks
   assert.equal(c.holdSub('005930.KS'), '<span class="hsub">10주</span>', '현재가가 없으면 수량만');
 });
 
+// 설정 백업 · 복원 — 설정 패널 맨 아래의 내보내기 · 불러오기. 파일 창 · 확인 창은 main 이 띄운다(tests/backup.mjs).
+await test('backup: export saves the latest settings first and says what it saved; import reloads on success and explains a failure', async () => {
+  const { c, elements } = harness(['exportBackup', 'importBackup']);
+  const log = [];
+  let reply;
+  Object.assign(c, {
+    save: async () => { log.push('save'); },
+    location: { reload: () => log.push('reload') },
+  });
+  c.api.backupExport = async () => { log.push('export'); return reply; };
+  c.api.backupImport = async () => { log.push('import'); return reply; };
+  const msg = () => elements.get('backupMsg').textContent;
+
+  reply = { ok: true, path: 'C:\\x\\stock-widget-backup-2026-10-16.json', counts: { watchlist: 5, holdings: 2, targets: 1 } };
+  await c.exportBackup();
+  assert.deepEqual(log.splice(0), ['save', 'export'], '마지막 변경까지 저장한 뒤 내보낸다');
+  assert.equal(msg(), '저장했습니다 — stock-widget-backup-2026-10-16.json (관심종목 5개 · 보유 2개 · 목표가 1개)');
+  reply = { ok: false, canceled: true };
+  await c.exportBackup();
+  assert.equal(msg(), '', '창을 닫았으면 아무 말도 하지 않는다');
+  reply = { ok: false, error: '권한 없음' };
+  await c.exportBackup();
+  assert.equal(msg(), '저장하지 못했습니다 (권한 없음)');
+  log.length = 0;
+
+  reply = { ok: true, counts: { watchlist: 3, holdings: 1, targets: 0 }, before: 'C:\\x\\before.json' };
+  await c.importBackup();
+  assert.deepEqual(log.splice(0), ['import', 'reload'], '바꿨으면 처음부터 다시 그린다(시작할 때 설정을 거르는 규칙을 그대로 탄다)');
+  reply = { ok: false, canceled: true };
+  await c.importBackup();
+  assert.deepEqual(log.splice(0), ['import']);
+  assert.equal(msg(), '', '취소했으면 아무 말도 하지 않는다');
+  reply = { ok: false, error: '백업 파일이 아닙니다(아는 설정이 없음)' };
+  await c.importBackup();
+  assert.equal(msg(), '불러오지 못했습니다 (백업 파일이 아닙니다(아는 설정이 없음))');
+  assert.deepEqual(log.splice(0), ['import'], '실패하면 다시 그리지 않는다');
+});
+
 // 관심종목 일정 — 실적 발표(국내) · 배당락(미국)이 14일 안이면 이름 옆에 작게 D-day. 지표 화면을 열어야만 보이던 것.
 await test('events: list chip counts days by the Korean date, shows the nearest event within 14 days, and skips past ones', () => {
   const { c, run } = harness(['eventBadge', 'eventChip']);
