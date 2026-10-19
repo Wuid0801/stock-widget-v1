@@ -52,7 +52,7 @@ function harness(extra = []) {
     loadEvents: async () => {}, // 갱신이 부르는 관심종목 일정 — 진짜는 extra 로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -1466,6 +1466,77 @@ await test('indicators: the comparison line is a dashed line on the price axis w
   items.length = 0;
   run('hoverIdx = 0; renderMaLegend();');
   assert.deepEqual([...read()], ['코스피=100']);
+});
+
+// 툴팁 가격 옆 등락률의 기준. 1D 는 전일 종가(차트의 '전일' 선), 1W(30분봉)는 그 봉 날짜의 앞 거래일 종가(일봉) —
+// 바로 앞 30분봉과 견주면 잡음이다. 일봉은 앞 봉 종가(그날 등락률), 첫 봉은 일봉에서 그 앞 거래일 종가. 월봉(전체)의
+// 첫 봉은 기준이 없다. 빈 종가(null)는 건너뛴다.
+await test('tooltip: change is measured from the previous close — 1D prev close, 1W that day\'s previous daily close, daily bars the bar before', () => {
+  const { run } = harness([]);
+  const day = (d, h = 0) => Date.parse(`2026-10-${d}T${String(h).padStart(2, '0')}:00:00Z`);
+  run(`quotes['005930.KS'] = { prevClose: 100,
+    daily: { times: [${day(12)}, ${day(13)}, ${day(14)}, ${day(15)}], closes: [90, null, 95, 99] } };`);
+  const bases = (tf, times, closes) => JSON.parse(run(`state.timeframe = '${tf}';
+    JSON.stringify(tipBases('005930.KS', ${JSON.stringify(times)}, ${JSON.stringify(closes)}))`));
+  assert.deepEqual(bases('1D', [day(16, 1), day(16, 2)], [101, 102]), [100, 100], '1D 는 전일 종가');
+  assert.deepEqual(bases('1W', [day(13, 1), day(13, 5), day(14, 1), day(15, 1), day(16, 1)], [1, 2, 3, 4, 5]), [90, 90, 90, 95, 99],
+    '1W 는 그날 앞 거래일의 일봉 종가(빈 날은 건너뜀)');
+  assert.deepEqual(bases('1M', [day(14), day(15), day(16)], [95, null, 101]), [90, 95, 95], '일봉은 앞 봉, 첫 봉은 일봉에서');
+  assert.deepEqual(bases('전체', [day(14), day(15)], [95, 101]), [null, 95], '월봉의 첫 봉은 기준 없음');
+  run("quotes['005930.KS'] = { price: 101 };");
+  assert.deepEqual(bases('1D', [day(16, 1)], [101]), [null], '전일 종가가 없으면 없음');
+  assert.deepEqual(bases('1M', [day(14), day(15)], [95, 101]), [null, 95], '일봉이 없으면 첫 봉은 없음');
+});
+
+await test('tooltip: the price line carries its change in the up/down colour, with open · range · volume below it', () => {
+  const { c, run } = harness(['drawChart', 'labelFor', 'plColor']);
+  run(helpers());
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {}, hexA: () => 'x', cssVar: (n) => n,
+  });
+  run(`lastProfile = null; state.timeframe = '1M';
+    var arg_ = { closes: [100, 110, 99, 99], times: [1, 2, 3, 4], up: true, cur: 'KRW', volumes: [5, 6, 7, 8],
+      opens: [100, 105, 108, 99], highs: [101, 112, 109, 99], lows: [99, 104, 98, 99], tipBases: [null, 100, 110, 99] };
+    drawChart(arg_);`);
+  const cb = configs.at(-1).options.plugins.tooltip.callbacks;
+  const item = (datasetIndex, dataIndex, y, dataset = {}) => ({ datasetIndex, dataIndex, parsed: { y }, dataset });
+  assert.equal(cb.label(item(0, 1, 110)), '110 +10.00%');
+  assert.equal(cb.labelTextColor(item(0, 1, 110)), run('UP'), '오르면 빨강');
+  assert.equal(cb.label(item(0, 2, 99)), '99 -10.00%');
+  assert.equal(cb.labelTextColor(item(0, 2, 99)), run('DOWN'), '내리면 파랑');
+  assert.equal(cb.label(item(0, 3, 99)), '99 0.00%');
+  assert.equal(cb.labelTextColor(item(0, 3, 99)), '--flat', '보합');
+  assert.equal(cb.label(item(0, 0, 100)), '100', '기준이 없으면 가격만');
+  assert.equal(cb.labelTextColor(item(0, 0, 100)), '--text');
+  assert.deepEqual([...cb.label(item(2, 1, 6, { isVolume: true }))], [], '가격 말고는 본문 줄을 만들지 않는다');
+  assert.equal(cb.beforeBody, undefined, '가격 줄이 맨 위 — 나머지는 그 아래(footer)');
+  const tip = configs.at(-1).options.plugins.tooltip;
+  assert.equal(tip.footerColor, '--text', 'footer 는 제 색 — 가격 줄의 등락 색을 물려받지 않는다');
+  assert.equal(tip.footerFont.weight, 'normal', '본문처럼 굵지 않게');
+  const lines = [...cb.footer([item(0, 1, 110), item(2, 1, 6, { isVolume: true })])];
+  assert.deepEqual(lines.filter((l) => !l.startsWith('시 ')), ['고저 104 ~ 112', '거래량 6']);
+  assert.ok(lines.every((l) => l === '시 105' || !l.startsWith('시 ')), lines.join(' / '));
+  run('arg_.tipBases = undefined; drawChart(arg_);');
+  assert.equal(configs.at(-1).options.plugins.tooltip.callbacks.label(item(0, 1, 110)), '110', '기준을 넘기지 않으면 가격만');
+});
+
+await test('tooltip: loadChart hands drawChart the base for every bar', async () => {
+  const { c, run } = harness(['loadChart', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange']);
+  const draws = [];
+  const day = (d) => Date.parse(`${d}T00:00:00Z`);
+  Object.assign(c, {
+    fetchChartCached: async () => ({ ok: true, closes: [100, 110], times: [day('2026-09-01'), day('2026-09-02')],
+      volumes: [1, 1], opens: [100, 110], highs: [100, 110], lows: [100, 110] }),
+    err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+  });
+  run(`let lastDrawSig = null; state.timeframe = '1M'; state.indicators = cleanIndicators({});
+    quotes['005930.KS'] = { price: 110, prevClose: 100, change: 10, daily: { times: [${day('2026-08-31')}], closes: [98] } };`);
+  await c.loadChart();
+  assert.equal(JSON.stringify(draws.at(-1).tipBases), '[98,100]');
 });
 
 // 매물대(보조 지표): drawChart 가 보이는 구간으로 계산해 플러그인에 넘긴다. 플러그인은 오른쪽 끝에서 왼쪽으로 그린다.

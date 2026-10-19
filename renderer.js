@@ -1820,9 +1820,11 @@ function drawChart(arg) {
   const {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
-    bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, benchLine = null,
+    bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, benchLine = null, tipBases = null,
   } = arg;
   const color = up ? UP : DOWN;
+  // 툴팁 가격 옆 등락률(%). 기준(tipBases, loadChart 가 만든다)이 없으면 null
+  const tipPct = (i, y) => { const b = tipBases && tipBases[i]; return b > 0 && y != null ? ((y - b) / b) * 100 : null; };
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
   // 넘기는 호출만 라인으로 그린다.
   const daily = TF[state.timeframe].interval === '1d';
@@ -2075,6 +2077,10 @@ function drawChart(arg) {
           borderWidth: 1,
           titleFont: { size: 10 },
           bodyFont: { size: 11 },
+          // footer(시가 · 고저 · 거래량)는 본문과 같은 글꼴 · 색 · 줄 간격으로 — 기본은 굵게, 위로 6px 띄운다
+          footerColor: cssVar('--text'),
+          footerFont: { size: 11, weight: 'normal' },
+          footerMarginTop: 2,
           callbacks: {
             // 1Y · 3Y 는 축 라벨이 연/월(YY/MM)이라 제목에 일이 없으면 어느 날을 가리키는지
             // 모른다 — 끌어서 구간을 고를 때 특히. 1Y · 3Y 만 일까지 보인다.
@@ -2089,12 +2095,23 @@ function drawChart(arg) {
               const p = (n) => String(n).padStart(2, '0');
               return `${String(d.getFullYear()).slice(2)}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
             },
-            // 내용은 전부 beforeBody 로 올린다(본문은 비운다).
-            beforeBody: (items) => {
+            // 본문은 가격 줄 하나다 — 그 봉의 가격과 기준(tipBases) 대비 등락률을 목록의 가격처럼 등락 색으로.
+            // Chart.js 툴팁은 한 줄 안에서 색을 나누지 못해 줄 전체를 칠한다. 나머지는 그 아래 footer 다 —
+            // afterBody 는 마지막 본문 항목의 글자색을 물려받아, 가격(order 2)이 마지막 항목이면(이동평균이 없을 때)
+            // 시가 · 고저 · 거래량까지 빨강 · 파랑이 된다(Chart.js 4.5.1 drawBody). footer 는 제 색을 쓴다.
+            // 빈 배열을 주면 Chart.js 가 그 줄을 통째로 건너뛴다 → 다른 데이터셋은 줄을 만들지 않는다.
+            label: (it) => {
+              if (it.datasetIndex !== 0) return [];
+              const pct = tipPct(it.dataIndex, it.parsed.y);
+              return `${money(it.parsed.y, cur)}${pct == null ? '' : ` ${fmtPct(pct)}`}`;
+            },
+            labelTextColor: (it) => {
+              const pct = it.datasetIndex === 0 ? tipPct(it.dataIndex, it.parsed.y) : null;
+              return pct == null ? cssVar('--text') : plColor(pct);
+            },
+            footer: (items) => {
               const lines = [];
               const p = items.find((i) => i.datasetIndex === 0);
-              if (p) lines.push(money(p.parsed.y, cur));
-
               const i = p ? p.dataIndex : -1;
               // 캔들은 시가 대비로 색이 갈리므로 시가가 없으면 몸통의 근거가 안 보인다.
               if (candles && opens[i] != null) lines.push(`시 ${money(opens[i], cur)}`);
@@ -2111,8 +2128,6 @@ function drawChart(arg) {
               }
               return lines;
             },
-            // 빈 배열을 주면 Chart.js 가 그 줄을 통째로 건너뛴다 → 본문이 비고 높이가 고정된다
-            label: () => [],
           },
         },
       },
@@ -2357,6 +2372,24 @@ function prevDayRange(symbol, times) {
     if (day(r.times[i]) < shown && r.highs[i] > 0 && r.lows[i] > 0) return { high: r.highs[i], low: r.lows[i] };
   }
   return null;
+}
+
+// 툴팁 가격 옆 등락률의 기준(봉마다). 1D 는 전일 종가 — 차트의 '전일' 선 · 위 등락률과 같은 값. 1W(30분봉)는 그 봉
+// 날짜의 앞 거래일 종가(일봉, maFor 와 같은 UTC 날짜 짝짓기) — 바로 앞 30분봉과 견주면 0.1% 남짓의 잡음이다. 일봉 ·
+// 월봉은 앞 봉 종가(그날 · 그달 등락률)이고, 일봉의 첫 봉은 일봉에서 그 앞 거래일 종가. 빈 종가는 건너뛰고, 없으면 null.
+function tipBases(symbol, times, closes) {
+  const q = quotes[symbol];
+  if (state.timeframe === '1D') return times.map(() => (q && q.prevClose > 0 ? q.prevClose : null));
+  const d = q && q.daily;
+  const dayOf = (t) => Math.floor(t / 86400000);
+  let j = 0; let last = null;
+  const before = (t) => { // t 의 날짜 앞의 마지막 일봉 종가 — times 는 오름차순이라 앞으로만 간다
+    while (d && j < d.times.length && dayOf(d.times[j]) < dayOf(t)) { if (d.closes[j] > 0) last = d.closes[j]; j++; }
+    return last;
+  };
+  if (state.timeframe === '1W') return times.map(before);
+  let prev = times.length && state.timeframe !== '전체' ? before(times[0]) : null;
+  return closes.map((c) => { const b = prev; if (c > 0) prev = c; return b; });
 }
 
 // 차트 시각(times)에 맞춰 일봉 이동평균을 끌어온다. 일봉이 아닌 타임프레임은 대상 아님.
@@ -2652,6 +2685,7 @@ async function loadChart() {
       : state.timeframe === '1D' || state.timeframe === '1W' ? sarFor(item.symbol, times, highs, lows, ext) : null;
   // 지수 비교선 — 배지 때문에 이미 받은 지수 차트로(새 요청 없음)
   const bline = benchLine(bench, benchGot, times, closes);
+  const tips = tipBases(item.symbol, times, closes); // 툴팁 가격 옆 등락률의 기준
 
   const held = state.holdings[item.symbol];
   const up = !q || q.change >= 0;
@@ -2707,7 +2741,7 @@ async function loadChart() {
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, benchLine: bline,
+    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, benchLine: bline, tipBases: tips,
     profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
   });
 }
