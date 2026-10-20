@@ -905,13 +905,16 @@ ipcMain.handle('naver:rank', async (_e, req) => {
   }
 });
 
-// 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버 자동완성을 쓴다.
+// 종목 검색. Yahoo 검색은 한글 쿼리에 400을 주므로 네이버를 쓴다.
 // (주식·ETF 모두 한글명으로 잡히고 코스피/코스닥까지 알려준다)
+// 자동완성(autoComplete)이 아니라 통합 검색이다 — 자동완성은 앞글자로만 찾아 `금융` 으로 KB금융, `바이오로직스` 로
+// 삼성바이오로직스가 나오지 않았다(2026-10-20). 통합 검색은 이름 중간 글자로도 찾고, 앞글자가 맞는 · 많이 찾는
+// 종목이 위다(`삼성` → 삼성전자). 다른 나라 종목이 섞여 오므로(`금융` 30개 중 국내 20) 넉넉히 받아 거른다.
 ipcMain.handle('yf:search', async (_e, query) => {
   const q = String(query ?? '').slice(0, 50); // 길이 상한
   if (!q) return { ok: true, items: [] };
-  const url = 'https://m.stock.naver.com/front-api/search/autoComplete'
-    + `?query=${encodeURIComponent(q)}&target=stock`;
+  const url = 'https://m.stock.naver.com/front-api/search'
+    + `?q=${encodeURIComponent(q)}&target=stock&page=1&size=30`;
   try {
     const res = await netFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },

@@ -1,0 +1,483 @@
+{
+  "_note": "네이버 통합 검색 front-api/search?q=…&target=stock&page=1&size=30 응답(2026-10-20 실측). 쓰는 필드만.",
+  "금융": {
+    "result": {
+      "query": "금융",
+      "totalCount": 83,
+      "items": [
+        {
+          "code": "105560",
+          "name": "KB금융",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "086790",
+          "name": "하나금융지주",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "316140",
+          "name": "우리금융지주",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "138040",
+          "name": "메리츠금융지주",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "TCH",
+          "name": "호앙 허이 투자금융",
+          "typeCode": "HOCHIMINH",
+          "typeName": "호치민 거래소",
+          "nationCode": "VNM"
+        },
+        {
+          "code": "071050",
+          "name": "한국금융지주",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "175330",
+          "name": "JB금융지주",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "138930",
+          "name": "BNK금융지주",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "139130",
+          "name": "iM금융지주",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "0139F0",
+          "name": "TIGER 12월자동연장금융채(AA-이상)액티브",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "498410",
+          "name": "KODEX 금융고배당TOP10타겟위클리커버드콜",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "0117L0",
+          "name": "KODEX 26-12 금융채(AA-이상)액티브",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "071055",
+          "name": "한국금융지주우",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "00945",
+          "name": "매뉴라이프 파이낸셜 (홍리생명금융)",
+          "typeCode": "HONG_KONG",
+          "typeName": "홍콩 거래소",
+          "nationCode": "HKG"
+        },
+        {
+          "code": "211050",
+          "name": "인카금융서비스",
+          "typeCode": "KOSDAQ",
+          "typeName": "코스닥",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "0162M0",
+          "name": "KODEX 금융채1~2년(AA-이상)PLUS액티브",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "484880",
+          "name": "SOL 금융지주플러스고배당",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "0089D0",
+          "name": "KODEX 금융고배당TOP10",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "0254C0",
+          "name": "KODEX 27-12 금융채(AA-이상)액티브",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "7322",
+          "name": "산주산금융그룹",
+          "typeCode": "TOKYO",
+          "typeName": "도쿄 거래소",
+          "nationCode": "JPN"
+        },
+        {
+          "code": "VIG",
+          "name": "베트남금융투자증권",
+          "typeCode": "HANOI",
+          "typeName": "하노이 거래소",
+          "nationCode": "VNM"
+        },
+        {
+          "code": "8511",
+          "name": "일본 증권 금융",
+          "typeCode": "TOKYO",
+          "typeName": "도쿄 거래소",
+          "nationCode": "JPN"
+        },
+        {
+          "code": "7177",
+          "name": "GMO 금융지주",
+          "typeCode": "TOKYO",
+          "typeName": "도쿄 거래소",
+          "nationCode": "JPN"
+        },
+        {
+          "code": "463290",
+          "name": "1Q 단기금융채액티브",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "336160",
+          "name": "RISE 금융채액티브",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "02799",
+          "name": "중국중신금융자산관리",
+          "typeCode": "HONG_KONG",
+          "typeName": "홍콩 거래소",
+          "nationCode": "HKG"
+        },
+        {
+          "code": "453650",
+          "name": "KODEX 미국S&P500금융",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "KB",
+          "name": "KB금융지주 ADR",
+          "typeCode": "NYSE",
+          "typeName": "뉴욕 거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "600901",
+          "name": "강소금융임차",
+          "typeCode": "SHANGHAI",
+          "typeName": "상해(후강퉁) 증권거래소",
+          "nationCode": "CHN"
+        },
+        {
+          "code": "03908",
+          "name": "중국국제금융공사",
+          "typeCode": "HONG_KONG",
+          "typeName": "홍콩 거래소",
+          "nationCode": "HKG"
+        }
+      ]
+    }
+  },
+  "바이오로직스": {
+    "result": {
+      "query": "바이오로직스",
+      "totalCount": 13,
+      "items": [
+        {
+          "code": "207940",
+          "name": "삼성바이오로직스",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "206650",
+          "name": "유바이오로직스",
+          "typeCode": "KOSDAQ",
+          "typeName": "코스닥",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "493280",
+          "name": "아이엠바이오로직스",
+          "typeCode": "KOSDAQ",
+          "typeName": "코스닥",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "01801",
+          "name": "이노벤트 바이오로직스",
+          "typeCode": "HONG_KONG",
+          "typeName": "홍콩 거래소",
+          "nationCode": "HKG"
+        },
+        {
+          "code": "338840",
+          "name": "와이바이오로직스",
+          "typeCode": "KOSDAQ",
+          "typeName": "코스닥",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "334970",
+          "name": "프레스티지바이오로직스",
+          "typeCode": "KOSDAQ",
+          "typeName": "코스닥",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "003060",
+          "name": "에이프로젠바이오로직스",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        },
+        {
+          "code": "688185",
+          "name": "칸시노 바이오로직스",
+          "typeCode": "SHANGHAI",
+          "typeName": "상해(후강퉁) 증권거래소",
+          "nationCode": "CHN"
+        },
+        {
+          "code": "06185",
+          "name": "칸시노 바이오로직스",
+          "typeCode": "HONG_KONG",
+          "typeName": "홍콩 거래소",
+          "nationCode": "HKG"
+        },
+        {
+          "code": "ABCL",
+          "name": "앱셀레라 바이오로직스",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "ADMA",
+          "name": "ADMA 바이오로직스",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "TOVX",
+          "name": "테리바 바이오로직스",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "HCWB",
+          "name": "HCW 바이오로직스",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        }
+      ]
+    }
+  },
+  "nvda": {
+    "result": {
+      "query": "nvda",
+      "totalCount": 20,
+      "items": [
+        {
+          "code": "NVDA",
+          "name": "엔비디아",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVC",
+          "name": "Corgi NVDA 2x Daily ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "LAYS",
+          "name": "STKd 100% NVDA & 100% AMD ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDB",
+          "name": "ProShares Ultra NVDA ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVII",
+          "name": "REX NVDA Growth & Income ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NYYY",
+          "name": "Xetfs NVDA Daily Income ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDS",
+          "name": "Tradr 1.5X Short NVDA Daily ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDW",
+          "name": "Roundhill NVDA WeeklyPay ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "XVNV",
+          "name": "FT Vest NVDA & Target Income ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDD",
+          "name": "Direxion Daily NVDA Bear 1X ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDU",
+          "name": "Direxion Daily NVDA Bull 2X ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVYY",
+          "name": "GraniteShares Yieldboost NVDA ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDL",
+          "name": "GraniteShares 2x Long NVDA Daily ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "ANV",
+          "name": "GraniteShares Autocallable NVDA ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVD",
+          "name": "GraniteShares 2x Short NVDA Daily ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDG",
+          "name": "Leverage Shares 2X Long NVDA Daily ETF",
+          "typeCode": "NASDAQ",
+          "typeName": "나스닥 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVIB",
+          "name": "Direxion NVDA Defined Income Boost ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVDY",
+          "name": "YieldMax NVDA Option Income Strategy ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "DIPS",
+          "name": "YieldMax Short NVDA Option Income Strategy ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        },
+        {
+          "code": "NVIT",
+          "name": "YieldMax NVDA Performance Distribution Target 25 ETF",
+          "typeCode": "AMEX",
+          "typeName": "아멕스 증권거래소",
+          "nationCode": "USA"
+        }
+      ]
+    }
+  },
+  "005930": {
+    "result": {
+      "query": "005930",
+      "totalCount": 1,
+      "items": [
+        {
+          "code": "005930",
+          "name": "삼성전자",
+          "typeCode": "KOSPI",
+          "typeName": "코스피",
+          "nationCode": "KOR"
+        }
+      ]
+    }
+  }
+}

@@ -128,9 +128,9 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 스무 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup`.
+푸시와 PR 마다 **앱을 띄우지 않는 스물한 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup` · `search`.
 
-이 스무 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
+이 스물한 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 
@@ -156,7 +156,7 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 | 거래량 · 고가 · 저가 | Yahoo Finance | 차트 응답에 포함되어 추가 요청 없음 |
 | 원/달러 환율 | Yahoo Finance | `KRW=X`, 30분 캐시. 보유가 둘 이상이고 그중 달러 종목이 있을 때만(합계를 낼 때) |
 | 지수 대비 수익률의 지수 차트 | Yahoo Finance | `^KS11` · `^KQ11` · `^GSPC`, 보조 지표 `지수 대비` 를 켜고 1M 이상을 볼 때만. 종목 차트와 같은 캐시(5분) |
-| 종목 검색 | Naver 자동완성 | 주식·ETF 한글 검색 |
+| 종목 검색 | Naver 통합 검색 | 주식·ETF 한글 검색 — 이름 중간 글자로도 찾는다(`금융` → KB금융). 자동완성은 앞글자로만 찾아 바꿨다. 다른 나라 종목이 섞여 와 30개를 받아 국내 · 미국만 12개(`tests/search.mjs`) |
 | 업종 | Naver (국내 업종 · 해외 업종), 없으면 Yahoo 검색 | 심볼당 1회(미국은 2회), 세션 캐시. ETF 는 값 없음 |
 | 지표 보기 | Naver — 국내: 종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 / 미국: 해외 종목 정보 · 상세 · 분기 실적 | 지표 화면을 열었을 때만. 국내 4건 · 미국 3건(+ 코드 찾기), 1분 캐시 |
 | 관심종목 일정 | Naver — 국내: 종목 상세의 실적 발표 일정 / 미국: 해외 종목 정보의 배당락일 | 종목마다 6시간에 한 번, 목록 순서대로 하나씩(1건, 미국은 + 코드 찾기). 실패한 종목은 다음 갱신에 다시 |
@@ -184,7 +184,7 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 ```
 
 - **국내** — `m.stock.naver.com/api/stock/<코드>/integration` 의 `industryCode` 를 네이버 업종 목록(`/api/stocks/industry`, 79개)에서 이름으로 바꿉니다. 목록은 한 번 받아 앱이 켜져 있는 동안 씁니다.
-- **미국** — 앱에는 야후 티커(`AAPL`)만 있어, 종목 검색과 같은 네이버 자동완성으로 네이버 코드(`AAPL.O`)를 찾고 `api.stock.naver.com/stock/<코드>/basic` 의 `industryCodeType.industryGroupKor` 를 씁니다. 티커가 정확히 같을 때만 씁니다 — `BRK-B`(네이버 `BRK.B`)처럼 표기가 다르면 못 찾고 Yahoo 로 갑니다.
+- **미국** — 앱에는 야후 티커(`AAPL`)만 있어, 네이버 자동완성으로 네이버 코드(`AAPL.O`)를 찾고 `api.stock.naver.com/stock/<코드>/basic` 의 `industryCodeType.industryGroupKor` 를 씁니다. 티커가 정확히 같을 때만 씁니다 — `BRK-B`(네이버 `BRK.B`)처럼 표기가 다르면 못 찾고 Yahoo 로 갑니다.
 - **ETF** 는 네이버가 "기타" 만 줘서 쓰지 않습니다(Yahoo 도 값이 없어 비웁니다).
 - **네이버 요청이 실패하면 실패로 끝냅니다.** Yahoo 영어로 넘어가면 렌더러가 그 값을 세션 내내 캐시해 영어로 굳습니다. 실패는 캐시하지 않으므로 다음에 다시 묻습니다.
 

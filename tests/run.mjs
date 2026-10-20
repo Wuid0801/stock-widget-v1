@@ -49,6 +49,7 @@ const ORDER = [
   'detail.mjs',
   'rank.mjs',
   'backup.mjs',
+  'search.mjs',
   'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',
