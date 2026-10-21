@@ -852,11 +852,16 @@ ipcMain.handle('naver:events', async (_e, symbol) => {
 //   국내 — 일반 주식만(stockEndType 'stock' 에 보통주 코드 끝 0: 우선주는 5 · 7 · K 로 끝난다) · 거래대금 10억 원 이상
 //   미국 — 일반 주식만 · 시총 3억 달러 이상(시총 상위는 시총으로 거를 것이 없다) · 야후 기호 꼴(BRK.B 처럼 . 이 있으면 뺀다)
 // 인기 검색은 사람들이 실제로 본 목록이라 거르지 않고 네이버 순서 그대로다. 미국 인기 검색은 네이버에 없다.
+// 국내 업종 · 테마(industry · theme)는 번호(no)가 없으면 묶음 순위, 있으면 그 묶음 안의 종목이다. 묶음 순위는 네이버의
+// 묶음 등락률 순이고 오른 · 내린 종목 수를 같이 준다 — 등락률은 평균이라 큰 종목 한두 개에 끌린다(2026-10-21
+// 생명과학도구및서비스 +3.80% 인데 오른 16 · 내린 21). 그래서 5종목 미만 묶음은 뺀다(2~3종목 테마가 상위를 차지했다).
+// 묶음 안의 종목은 급등처럼 거르고 등락률 순으로 줄 세운다 — 네이버는 테마 안을 등락률 순으로 주지 않는다.
 const RANK_LIMIT = 20;
+const RANK_GROUP_MIN = 5;        // 이보다 적은 종목의 업종 · 테마는 뺀다
 const RANK_KR_MIN_VALUE = 1e9;   // 거래대금 10억 원
 const RANK_US_MIN_CAP = 3e8;     // 시총 3억 달러
 const RANK_KINDS = {
-  kr: { search: null, up: 'up', down: 'down', value: 'priceTop' },
+  kr: { search: null, up: 'up', down: 'down', value: 'priceTop', industry: 'industry', theme: 'theme' },
   us: { up: 'up', down: 'down', value: 'priceTop', cap: 'marketValue' },
 };
 const RANK_SORT = {
@@ -871,6 +876,13 @@ function rankItemKr(s) {
     pct: detailNum(s.fluctuationsRatio), value: detailNum(s.accumulatedTradingValueRaw), cap: detailNum(s.marketValueRaw),
     currency: 'KRW', common: s.stockEndType === 'stock' && /0$/.test(s.itemCode), at: s.localTradedAt || null };
 }
+// 네이버 업종 · 테마 한 줄 → { no(묶음 번호), name, pct(묶음 등락률), count(종목 수), up · down(오른 · 내린 종목 수) }
+function rankGroup(g) {
+  const no = Number(g?.no);
+  const pct = detailNum(g?.changeRate);
+  if (!Number.isInteger(no) || no <= 0 || pct == null || !g.name) return null;
+  return { no, name: String(g.name), pct, count: Number(g.totalCount) || 0, up: Number(g.riseCount) || 0, down: Number(g.fallCount) || 0 };
+}
 function rankItemUs(s) {
   const symbol = String(s.symbolCode ?? '');
   if (!US_RE.test(symbol)) return null;
@@ -880,12 +892,23 @@ function rankItemUs(s) {
 }
 
 ipcMain.handle('naver:rank', async (_e, req) => {
-  const { market, kind } = req || {};
+  const { market, kind, no } = req || {};
   if (!Object.hasOwn(RANK_KINDS, market) || !Object.hasOwn(RANK_KINDS[market], kind)) return { ok: false, error: '잘못된 요청' };
+  const group = kind === 'industry' || kind === 'theme';
+  if (no !== undefined && !(group && Number.isInteger(no) && no > 0 && no < 1e6)) return { ok: false, error: '잘못된 요청' };
   try {
+    if (group && no === undefined) {
+      const d = await naverJson(`https://m.stock.naver.com/api/stocks/${kind}?page=1&pageSize=100`);
+      const groups = (Array.isArray(d?.groups) ? d.groups : []).map(rankGroup)
+        .filter((g) => g && g.count >= RANK_GROUP_MIN)
+        .sort((a, b) => b.pct - a.pct);
+      return { ok: true, market, kind, groups: groups.slice(0, RANK_LIMIT) };
+    }
     let lists;
     if (kind === 'search') {
       lists = [await naverJson('https://m.stock.naver.com/api/stocks/searchTop?page=1&pageSize=20')];
+    } else if (group) {
+      lists = [await naverJson(`https://m.stock.naver.com/api/stocks/${kind}/${no}?page=1&pageSize=100`)];
     } else if (market === 'kr') {
       lists = await settleAll(['KOSPI', 'KOSDAQ'].map((m) => `https://m.stock.naver.com/api/stocks/${RANK_KINDS.kr[kind]}/${m}?page=1&pageSize=100`));
     } else {
@@ -897,7 +920,7 @@ ipcMain.handle('naver:rank', async (_e, req) => {
     const filtered = kind !== 'search';
     if (filtered) {
       items = items.filter((i) => i.common && (market === 'kr' ? i.value >= RANK_KR_MIN_VALUE : kind === 'cap' || i.cap >= RANK_US_MIN_CAP));
-      items.sort(RANK_SORT[kind]); // 같은 값(상한가 30%)은 받은 순서(코스피 · 나스닥 먼저)
+      items.sort(RANK_SORT[group ? 'up' : kind]); // 같은 값(상한가 30%)은 받은 순서(코스피 · 나스닥 먼저)
     }
     const at = items.map((i) => i.at).filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || null;
     return { ok: true, market, kind, filtered, at,

@@ -1,15 +1,16 @@
 // 시장 순위(naver:rank) — 앱을 띄우지 않고 가짜 electron 으로 main.js 의 핸들러를 부른다.
 //
-// 국내: 인기 검색 · 급등 · 급락 · 거래대금(코스피 + 코스닥), 미국: 급등 · 급락 · 거래대금 · 시총 상위(나스닥 + 뉴욕).
+// 국내: 인기 검색 · 급등 · 급락 · 거래대금(코스피 + 코스닥) · 업종 · 테마, 미국: 급등 · 급락 · 거래대금 · 시총 상위(나스닥 + 뉴욕).
 // 급등 · 급락 · 거래대금은 잡음을 거른다 — 국내는 일반 주식만(ETF · ETN · 우선주 제외) · 거래대금 10억 원 이상,
 // 미국은 일반 주식만 · 시총 3억 달러 이상. 응답은 2026-10-16 실측(tests/fixtures/naver-rank-20261016.json,
-// 목록마다 상위 50줄 · 쓰는 필드만)이다.
+// 목록마다 상위 50줄 · 쓰는 필드만)이다. 업종 · 테마는 2026-10-21 실측(tests/fixtures/naver-groups-20261021.json).
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const FX = JSON.parse(fs.readFileSync(new URL('fixtures/naver-rank-20261016.json', import.meta.url), 'utf8'));
+const GX = JSON.parse(fs.readFileSync(new URL('fixtures/naver-groups-20261021.json', import.meta.url), 'utf8'));
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -40,6 +41,8 @@ const route = (url) => {
   if (m) return FX.kr[KR_PATH[m[1]]][m[2]];
   m = /api\.stock\.naver\.com\/stock\/exchange\/(NASDAQ|NYSE)\/(up|down|priceTop|marketValue)\?/.exec(url);
   if (m) return FX.us[US_PATH[m[2]]][m[1]];
+  m = /m\.stock\.naver\.com\/api\/stocks\/(industry|theme)(?:\/(\d+))?\?/.exec(url);
+  if (m) return m[2] ? GX[`${m[1]}/${m[2]}`] : GX[m[1]];
   return undefined;
 };
 const fakeFetch = async (url, opt = {}) => {
@@ -51,7 +54,7 @@ const fakeFetch = async (url, opt = {}) => {
   return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) };
 };
 new Function('require', 'process', 'fetch', src)(require, { env: {}, platform: 'test' }, fakeFetch);
-const rank = (market, kind) => handlers['naver:rank']({}, { market, kind });
+const rank = (market, kind, no) => handlers['naver:rank']({}, no === undefined ? { market, kind } : { market, kind, no });
 const desc = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] >= x);
 const asc = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] <= x);
 
@@ -133,6 +136,53 @@ const asc = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] <= x);
   check('미국 기준 시각(뉴욕 마감)', up.at === '2026-10-15T16:00:00-04:00', up.at);
 }
 
+// --- 3b. 국내 업종 · 테마 — 묶음 순위와 그 안의 종목 ------------------------------------------
+// 묶음 등락률은 평균이라 한두 종목이 정한다 — 5종목 미만 묶음은 뺀다(2~3종목 테마가 상위를 차지했다).
+{
+  calls.length = 0;
+  const ind = await rank('kr', 'industry');
+  check('업종 목록을 한 번(100개) 묻고, 시간 제한을 건다',
+    calls.length === 1 && /api\/stocks\/industry\?page=1&pageSize=100$/.test(calls[0].url) && calls[0].signal, calls.map((c) => c.url).join(' '));
+  const want = GX.industry.groups.filter((g) => g.totalCount >= 5).slice(0, 20);
+  check('5종목 이상만, 등락률 높은 순 20개', ind.ok && ind.groups.length === 20 && desc(ind.groups.map((g) => g.pct))
+    && ind.groups.every((g) => g.count >= 5), ind.groups.map((g) => `${g.name} ${g.pct}`).slice(0, 3).join(', '));
+  check('한 줄: 번호 · 이름 · 등락률 · 종목 수 · 오른 · 내린 종목 수', same(ind.groups[0], { no: Number(want[0].no), name: want[0].name,
+    pct: Number(want[0].changeRate), count: want[0].totalCount, up: want[0].riseCount, down: want[0].fallCount }), JSON.stringify(ind.groups[0]));
+  check('네이버 순서(등락률 순)와 같다', same(ind.groups.map((g) => g.name), want.map((g) => g.name)));
+  check('묶음 목록에는 종목 줄이 없다', !('items' in ind));
+  const saved = GX.industry.groups;
+  GX.industry.groups = [...saved].reverse(); // 네이버가 순서를 지키지 않아도(테마 안 종목은 등락률 순이 아니었다)
+  const shuffled = await rank('kr', 'industry');
+  GX.industry.groups = saved;
+  check('받은 순서와 상관없이 등락률 높은 순', same(shuffled.groups.map((g) => g.name), want.map((g) => g.name)));
+  // 번호가 숫자가 아니거나 이름이 빈 줄은 뺀다 — 번호로 그 안의 종목을 묻는다(등락률이 가장 높게 끼워 넣는다)
+  GX.industry.groups = [{ no: 'x', name: '번호 없음', totalCount: 10, changeRate: '99', riseCount: 9, fallCount: 1 },
+    { no: 7, name: '', totalCount: 10, changeRate: '98', riseCount: 9, fallCount: 1 }, ...saved];
+  const bad = await rank('kr', 'industry');
+  GX.industry.groups = saved;
+  check('번호 · 이름이 맞지 않는 줄은 뺀다', same(bad.groups.map((g) => g.name), want.map((g) => g.name)), bad.groups[0].name);
+  const th = await rank('kr', 'theme');
+  const tiny = GX.theme.groups.slice(0, 30).filter((g) => g.totalCount < 5).map((g) => g.name);
+  check('테마도 — 상위의 5종목 미만 테마는 뺀다', th.ok && th.groups.length === 20 && tiny.length > 0
+    && !th.groups.some((g) => tiny.includes(g.name)) && desc(th.groups.map((g) => g.pct)), tiny.join(', '));
+}
+{
+  calls.length = 0;
+  const d = await rank('kr', 'industry', 278);
+  check('업종 안의 종목을 100개 묻는다', calls.length === 1 && /api\/stocks\/industry\/278\?page=1&pageSize=100$/.test(calls[0].url),
+    calls.map((c) => c.url).join(' '));
+  check('종목 줄은 순위 탭과 같은 모양', d.ok && d.items.length > 0 && same(Object.keys(d.items[0]), ['symbol', 'name', 'price', 'pct', 'value', 'cap', 'currency']),
+    JSON.stringify(d.items[0]));
+  check('일반 주식만 · 거래대금 10억 원 이상 — 코넥스 · 우선주 · 거래가 적은 종목은 뺀다',
+    d.items.every((i) => /0\.K[SQ]$/.test(i.symbol) && i.value >= 1e9), d.items.map((i) => i.name).slice(0, 5).join(', '));
+  check('등락률 높은 순 20개까지', d.items.length === 20 && desc(d.items.map((i) => i.pct)));
+  check('거른 목록 · 기준 시각', d.filtered === true && typeof d.at === 'string');
+  const raw = GX['theme/536'].stocks.map((x) => Number(x.fluctuationsRatio));
+  const t = await rank('kr', 'theme', 536);
+  check('테마 안 — 네이버가 등락률 순으로 주지 않아도(HBM) 등락률 높은 순', !desc(raw) && t.ok && t.items.length > 0
+    && desc(t.items.map((i) => i.pct)), t.items.map((i) => i.pct).slice(0, 5).join(' '));
+}
+
 // --- 4. 일부 · 전부 실패, 받지 않는 요청 -------------------------------------------------
 {
   blocked = ['KOSDAQ'];
@@ -143,9 +193,13 @@ const asc = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] <= x);
   check('전부 실패하면 ok:false', d.ok === false && typeof d.error === 'string', JSON.stringify(d));
   blocked = [];
   calls.length = 0;
-  for (const [m, k] of [['us', 'search'], ['jp', 'up'], ['kr', 'cap'], ['kr', 'x'], [undefined, undefined]]) {
+  for (const [m, k] of [['us', 'search'], ['jp', 'up'], ['kr', 'cap'], ['kr', 'x'], [undefined, undefined], ['us', 'industry']]) {
     d = await rank(m, k);
     check(`${m}/${k} 는 ok:false`, d.ok === false);
+  }
+  for (const [k, no] of [['up', 278], ['industry', '278'], ['industry', 1.5], ['industry', -1], ['theme', null]]) {
+    d = await rank('kr', k, no);
+    check(`kr/${k} 번호 ${JSON.stringify(no)} 는 ok:false (번호는 업종 · 테마의 양의 정수만)`, d.ok === false);
   }
   check('잘못된 요청은 네트워크로 나가지 않는다', calls.length === 0, calls.map((c) => c.url).join(' '));
   d = await handlers['naver:rank']({}, null);

@@ -52,7 +52,7 @@ function harness(extra = []) {
     loadEvents: async () => {}, // 갱신이 부르는 관심종목 일정 — 진짜는 extra 로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'chartTf', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'chartTf', 'rankPct', 'rankCount', 'rankKey', 'rankBackHtml', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -1135,7 +1135,7 @@ await test('rank: market and tab switch fetch only what is shown, reuse it for a
   run('renderRank();');
   assert.deepEqual([...asked], ['kr/search'], '처음은 국내 인기 검색');
   assert.equal(list(), 'LOADING kr/search');
-  assert.match(tabs(), /<button data-kind="search" class="on">인기 검색<\/button><button data-kind="up">급등<\/button><button data-kind="down">급락<\/button><button data-kind="value">거래대금<\/button>/);
+  assert.match(tabs(), /<button data-kind="search" class="on">인기 검색<\/button><button data-kind="up">급등<\/button><button data-kind="down">급락<\/button><button data-kind="value">거래대금<\/button><button data-kind="industry">업종<\/button><button data-kind="theme">테마<\/button>/);
   assert.match(elements.get('rankMarket').innerHTML, /<button data-market="kr" class="on">국내<\/button><button data-market="us">미국<\/button>/);
   run('renderRank();');
   assert.equal(asked.length, 1, '받는 중이면 또 묻지 않는다');
@@ -1177,6 +1177,69 @@ await test('rank: market and tab switch fetch only what is shown, reuse it for a
   await settle();
   assert.equal(list(), 'kr/search:1', '다시 받다 실패하면 있던 것을 둔다');
   c.Date.now = realNow;
+});
+
+// 국내 업종 · 테마(tests/rank.mjs): 묶음 순위와, 누르면 그 묶음 안의 종목. 묶음 등락률은 평균이라 오른 · 내린 종목 수를 같이 보인다.
+await test('rank groups: the industry/theme list shows rank, name, colored change and up/down counts; inside a group the note says how stocks are picked', () => {
+  const { c, run } = harness(['rankHtml']);
+  run(helpers());
+  c.D = { ok: true, market: 'kr', kind: 'industry', groups: [
+    { no: 278, name: '반도체와반도체장비', pct: 4.41, count: 173, up: 126, down: 40 },
+    { no: 1, name: '<b>x</b>', pct: -1.2, count: 8, up: 2, down: 5 }] };
+  const html = run("rankHtml(D, 'kr', 'industry')");
+  assert.match(html, /<div class="hit rrow" data-g="0" title="173종목 중 오른 126 · 내린 40 — 누르면 종목"><span class="rk">1<\/span><span class="hname">반도체와반도체장비<\/span><span class="rpct" style="color:#e24b4a">\+4\.41%<\/span><span class="rcnt"><span style="color:#e24b4a">↑126<\/span> <span style="color:#185fa5">↓40<\/span><\/span><\/div>/);
+  assert.match(html, /<span class="hname">&lt;b&gt;x&lt;\/b&gt;<\/span><span class="rpct" style="color:#185fa5">-1\.20%<\/span>/, '이름은 이스케이프한다');
+  assert.match(text(html), /^네이버 업종 등락률 순 · 5종목 이상 · ↑오른 ↓내린 종목 수1/, '기준 문구가 맨 위');
+  assert.match(text(run("rankHtml({ ...D, kind: 'theme' }, 'kr', 'theme')")), /^네이버 테마 등락률 순/);
+  c.D = { ok: true, market: 'kr', kind: 'theme', groups: [] };
+  assert.match(run("rankHtml(D, 'kr', 'theme')"), /조건에 맞는 테마가 없습니다/);
+  c.D = { ...KR_RANK, kind: 'industry' };
+  assert.match(text(run("rankHtml(D, 'kr', 'industry')")),
+    /^10\/16 14:22 기준 · 등락률 순 · 일반 주식만\(ETF · ETN · 우선주 제외\) · 거래대금 10억 원 이상1/, '묶음 안의 종목 — 급등처럼 거른다');
+});
+
+await test('rank groups: clicking a group opens its stocks under a back row, back returns to the cached list, a stock click still picks it, and switching tabs leaves the group', async () => {
+  const { c, run, elements } = harness(['renderRank', 'loadRank', 'setRankView', 'rankKey', 'rankClick', 'rankBackHtml']);
+  run(helpers());
+  const asked = [];
+  c.api.rank = async (q) => {
+    asked.push(JSON.stringify(q));
+    return q.no ? { ok: true, items: [{ symbol: '000660.KS', name: 'SK하이닉스' }] }
+      : { ok: true, groups: [{ no: 278, name: '반도체', pct: 4.4, count: 173, up: 126, down: 40 }] };
+  };
+  c.rankHtml = (d, m, k) => (d ? `${m}/${k}:${d.groups ? 'groups' : 'items'}` : `LOADING ${m}/${k}`);
+  const picked = [];
+  c.pickRank = async (it) => { picked.push(it.symbol); };
+  const settle = () => new Promise((r) => setImmediate(r));
+  const list = () => elements.get('rankList').innerHTML;
+  // 누른 곳 — closest('[data-x]') 가 그 속성이 있으면 그 요소
+  const at = (data) => ({ closest: (sel) => (/\[data-(\w+)\]/.exec(sel)[1] in data ? { dataset: data } : null) });
+
+  c.document.getElementById('rank').hidden = false;
+  run("setRankView('kr', 'industry');");
+  await settle();
+  assert.equal(asked.at(-1), JSON.stringify({ market: 'kr', kind: 'industry' }));
+  assert.equal(list(), 'kr/industry:groups');
+
+  c.rankClick(at({ g: '0' }));
+  await settle();
+  assert.equal(asked.at(-1), JSON.stringify({ market: 'kr', kind: 'industry', no: 278 }), '누른 묶음의 종목을 묻는다');
+  assert.match(list(), /^<div class="hit rback" data-back="1" title="업종 목록으로">← <span class="hname">반도체<\/span><span class="rpct" style="color:#e24b4a">\+4\.40%<\/span><span class="rcnt"><span style="color:#e24b4a">↑126<\/span> <span style="color:#185fa5">↓40<\/span><\/span><\/div>kr\/industry:items$/,
+    '맨 위에 돌아가는 줄(묶음 이름 · 등락률 · 오른 · 내린)');
+  assert.match(elements.get('rankTabs').innerHTML, /data-kind="industry" class="on"/, '탭은 업종 그대로');
+
+  c.rankClick(at({ i: '0' }));
+  assert.deepEqual(picked, ['000660.KS'], '묶음 안의 종목도 누르면 관심종목으로');
+
+  c.rankClick(at({ back: '1' }));
+  assert.equal(list(), 'kr/industry:groups', '← 는 받아 둔 묶음 목록으로');
+  assert.equal(asked.length, 2, '다시 묻지 않는다');
+
+  c.rankClick(at({ g: '0' }));
+  run("setRankView('kr', 'theme');");
+  await settle();
+  assert.equal(asked.at(-1), JSON.stringify({ market: 'kr', kind: 'theme' }), '탭을 바꾸면 묶음 밖 — 테마 목록');
+  assert.equal(list(), 'kr/theme:groups');
 });
 
 await test('rank: clicking a stock already in the watchlist goes to it; a new one is added and opened; a failed add says so and keeps the panel', async () => {

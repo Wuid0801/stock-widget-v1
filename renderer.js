@@ -187,11 +187,12 @@ let metricsShown = { symbol: null, html: null }; // 지금 화면에 쓴 것
 const METRICS_TTL = 60000;
 // 시장 순위 패널. 지금 보는 시장 · 탭은 저장하지 않는다(다시 켜면 국내 인기 검색).
 const RANK_TABS = {
-  kr: [['search', '인기 검색'], ['up', '급등'], ['down', '급락'], ['value', '거래대금']],
+  kr: [['search', '인기 검색'], ['up', '급등'], ['down', '급락'], ['value', '거래대금'], ['industry', '업종'], ['theme', '테마']],
   us: [['up', '급등'], ['down', '급락'], ['value', '거래대금'], ['cap', '시총 상위']], // 미국 인기 검색은 네이버에 없다
 };
-let rankView = { market: 'kr', kind: 'search' };
-const rankCache = new Map(); // 'kr|up' -> { at, d(naver:rank 응답) }
+// group: 업종 · 테마 안으로 들어가 있으면 그 묶음({ no, name, pct, count, up, down }), 아니면 null
+let rankView = { market: 'kr', kind: 'search', group: null };
+const rankCache = new Map(); // 'kr|up' · 'kr|industry|278' -> { at, d(naver:rank 응답) }
 const rankLoading = new Set();
 let rankShown = { key: null, html: null }; // 지금 목록에 쓴 것
 const RANK_TTL = 60000;
@@ -989,9 +990,25 @@ async function loadMetrics(symbol) {
 // 목록 HTML. 금액은 원(조 · 억) · 달러(T · B · M)로 줄인다. 시총 상위 탭은 시총, 나머지는 거래대금.
 // 맨 위에 기준 시각과 거른 기준을 적는다 — 장이 닫혀 있으면 지난 장 순위라 열자마자 보여야 한다
 // (처음에는 맨 아래에 두었는데 스크롤해야 보였다).
+// 업종 · 테마 탭의 묶음 목록(d.groups)은 묶음 등락률과 오른 · 내린 종목 수다 — 등락률은 평균이라 큰 종목 한두 개에
+// 끌려서 수를 같이 봐야 한다. 누르면 그 묶음 안의 종목(d.items, 급등처럼 거른 것)이다.
+function rankPct(v) {
+  const tone = v > 0 ? UP : v < 0 ? DOWN : null;
+  return `<span class="rpct"${tone ? ` style="color:${tone}"` : ''}>${fmtPct(v)}</span>`;
+}
+function rankCount(g) {
+  return `<span class="rcnt"><span style="color:${UP}">↑${g.up}</span> <span style="color:${DOWN}">↓${g.down}</span></span>`;
+}
 function rankHtml(d, market, kind) {
   if (!d) return '<div class="qhint">순위를 불러오는 중…</div>';
   if (!d.ok) return `<div class="qhint">순위를 불러오지 못했습니다 (${esc(d.error || '알 수 없는 오류')})</div>`;
+  const label = { industry: '업종', theme: '테마' }[kind];
+  if (d.groups) {
+    if (!d.groups.length) return `<div class="qhint">조건에 맞는 ${kind === 'theme' ? '테마가' : '업종이'} 없습니다</div>`;
+    const groups = d.groups.map((g, i) => `<div class="hit rrow" data-g="${i}" title="${g.count}종목 중 오른 ${g.up} · 내린 ${g.down} — 누르면 종목">`
+      + `<span class="rk">${i + 1}</span><span class="hname">${esc(g.name)}</span>${rankPct(g.pct)}${rankCount(g)}</div>`).join('');
+    return `<div class="qhint rnote">네이버 ${label} 등락률 순 · 5종목 이상 · ↑오른 ↓내린 종목 수</div>${groups}`;
+  }
   if (!d.items.length) return '<div class="qhint">조건에 맞는 종목이 없습니다</div>';
   const amt = (v, cur) => {
     if (v == null) return '';
@@ -1001,14 +1018,14 @@ function rankHtml(d, market, kind) {
   };
   const rows = d.items.map((it, i) => {
     const mine = state.watchlist.some((w) => w.symbol === it.symbol);
-    const tone = it.pct > 0 ? UP : it.pct < 0 ? DOWN : null;
     return `<div class="hit rrow" data-i="${i}"><span class="rk">${i + 1}</span>`
       + `<span class="hname">${mine ? '<span class="rin" title="관심종목에 있음">✓</span>' : ''}${esc(it.name)}</span>`
       + `<span class="rpx">${money(it.price, it.currency)}</span>`
-      + `<span class="rpct"${tone ? ` style="color:${tone}"` : ''}>${fmtPct(it.pct)}</span>`
+      + rankPct(it.pct)
       + `<span class="rval">${amt(kind === 'cap' ? it.cap : it.value, it.currency)}</span></div>`;
   }).join('');
   const basis = kind === 'search' ? '네이버 인기 검색 순'
+    : label ? '등락률 순 · 일반 주식만(ETF · ETN · 우선주 제외) · 거래대금 10억 원 이상'
     : market === 'kr' ? '일반 주식만(ETF · ETN · 우선주 제외) · 거래대금 10억 원 이상 · 코스피 + 코스닥'
       : kind === 'cap' ? '일반 주식만 · 나스닥 + 뉴욕' : '일반 주식만 · 시총 3억 달러 이상 · 나스닥 + 뉴욕';
   const p2 = (n) => String(n).padStart(2, '0');
@@ -1018,18 +1035,29 @@ function rankHtml(d, market, kind) {
   return `<div class="qhint rnote">${when}${basis}</div>${rows}`;
 }
 
+// 업종 · 테마 안에서 맨 위 줄 — 누르면 묶음 목록으로(rankClick)
+function rankBackHtml(kind, g) {
+  return `<div class="hit rback" data-back="1" title="${kind === 'theme' ? '테마' : '업종'} 목록으로">← <span class="hname">${esc(g.name)}</span>`
+    + `${rankPct(g.pct)}${rankCount(g)}</div>`;
+}
+
+// 캐시 · 화면의 열쇠 — 업종 · 테마 안이면 묶음 번호까지('kr|industry|278')
+function rankKey(v) {
+  return `${v.market}|${v.kind}${v.group ? `|${v.group.no}` : ''}`;
+}
+
 // 시장 · 탭 버튼과 목록을 지금 보는 것으로 그린다. 같은 목록이면 다시 쓰지 않는다(30초마다 다시 쓰면
 // 내려 둔 스크롤이 맨 위로 튄다). 탭이 바뀌면 맨 위부터.
 function renderRank() {
   if (document.getElementById('rank').hidden) return;
-  const { market, kind } = rankView;
+  const { market, kind, group } = rankView;
   document.getElementById('rankMarket').innerHTML = [['kr', '국내'], ['us', '미국']]
     .map(([m, label]) => `<button data-market="${m}"${m === market ? ' class="on"' : ''}>${label}</button>`).join('');
   document.getElementById('rankTabs').innerHTML = RANK_TABS[market]
     .map(([k, label]) => `<button data-kind="${k}"${k === kind ? ' class="on"' : ''}>${label}</button>`).join('');
-  const key = `${market}|${kind}`;
+  const key = rankKey(rankView);
   const hit = rankCache.get(key);
-  const html = rankHtml(hit && hit.d, market, kind);
+  const html = (group ? rankBackHtml(kind, group) : '') + rankHtml(hit && hit.d, market, kind);
   const list = document.getElementById('rankList');
   if (html !== rankShown.html || key !== rankShown.key) {
     const keep = key === rankShown.key ? list.scrollTop : 0;
@@ -1037,18 +1065,18 @@ function renderRank() {
     list.scrollTop = keep;
     rankShown = { key, html };
   }
-  if (!hit || Date.now() - hit.at >= RANK_TTL) loadRank(market, kind);
+  if (!hit || Date.now() - hit.at >= RANK_TTL) loadRank(market, kind, group ? group.no : undefined);
 }
 
 // 받는 중이면 또 묻지 않는다. 다시 받다 실패하면 있던 것을 둔다. 받으면 지금 보는 것을 다시 그린다 —
-// 그사이 다른 탭으로 옮겼으면 늦게 온 응답은 캐시에만 남는다.
-async function loadRank(market, kind) {
-  const key = `${market}|${kind}`;
+// 그사이 다른 탭으로 옮겼으면 늦게 온 응답은 캐시에만 남는다. no 는 업종 · 테마 안의 묶음 번호.
+async function loadRank(market, kind, no) {
+  const key = rankKey({ market, kind, group: no === undefined ? null : { no } });
   if (rankLoading.has(key)) return;
   rankLoading.add(key);
   let d;
   try {
-    d = await api.rank({ market, kind });
+    d = await api.rank(no === undefined ? { market, kind } : { market, kind, no });
   } catch (e) {
     d = { ok: false, error: e.message };
   } finally {
@@ -1065,7 +1093,7 @@ function setRankView(market, kind) {
   const tabs = RANK_TABS[market];
   if (!tabs) return;
   const want = kind || rankView.kind;
-  rankView = { market, kind: tabs.some(([k]) => k === want) ? want : tabs[0][0] };
+  rankView = { market, kind: tabs.some(([k]) => k === want) ? want : tabs[0][0], group: null };
   document.getElementById('rankMsg').hidden = true;
   renderRank();
 }
@@ -1077,6 +1105,28 @@ function openRank() {
 }
 
 const closeRank = () => closePanel(rankEl);
+
+// 순위 목록을 누름(목록은 다시 그려지므로 상자에 한 번 붙인다) — ← 는 묶음 목록으로, 업종 · 테마 줄은 그 안으로,
+// 종목 줄은 관심종목에 넣거나 그 종목으로(pickRank).
+function rankClick(target) {
+  if (target.closest('[data-back]')) {
+    rankView = { ...rankView, group: null };
+    renderRank();
+    return;
+  }
+  const hit = rankCache.get(rankKey(rankView));
+  const d = hit && hit.d && hit.d.ok ? hit.d : null;
+  const g = target.closest('[data-g]');
+  const group = g && d && d.groups && d.groups[Number(g.dataset.g)];
+  if (group) {
+    rankView = { ...rankView, group };
+    renderRank();
+    return;
+  }
+  const row = target.closest('[data-i]');
+  const it = row && d && d.items && d.items[Number(row.dataset.i)];
+  if (it) pickRank(it).catch(console.error);
+}
 
 // 누르면: 관심종목에 있으면 그 종목으로 가고, 없으면 넣고 연다(검색에서 고를 때와 같다 — addSymbol 이 넣으면서
 // 연다). 야후 시세에 없어 못 넣으면 패널을 두고 그렇다고 적는다.
@@ -3677,12 +3727,7 @@ async function refreshNow() {
     const b = e.target.closest('[data-kind]');
     if (b) setRankView(rankView.market, b.dataset.kind);
   };
-  document.getElementById('rankList').onclick = (e) => {
-    const row = e.target.closest('.rrow');
-    const hit = rankCache.get(`${rankView.market}|${rankView.kind}`);
-    const it = row && hit && hit.d && hit.d.ok && hit.d.items[Number(row.dataset.i)];
-    if (it) pickRank(it).catch(console.error);
-  };
+  document.getElementById('rankList').onclick = (e) => rankClick(e.target);
   document.getElementById('alertClose').onclick = closeAlerts;
 
   // 상세의 보유 자리 — 칸과 버튼은 renderHolding 이 그리고, 누름 · 키는 여기서 한 번만 받는다.
