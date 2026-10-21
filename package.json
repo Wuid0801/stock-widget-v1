@@ -9,7 +9,7 @@
     "dist": "electron build/make-icon.cjs && electron-builder --win"
   },
   "dependencies": {
-    "chart.js": "^4.4.1",
+    "chart.js": "4.5.1",
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
@@ -35,7 +35,8 @@
       "!docs/**",
       "!*.md",
       "!**/*.map",
-      "!.superpowers/**"
+      "!.superpowers/**",
+      "!.*/**"
     ],
     "win": {
       "target": "nsis",

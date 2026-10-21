@@ -6,9 +6,17 @@ import * as indicators from '../indicators.js';
 import * as backtest from '../backtest.js';
 
 const source = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
-const prelude = source.slice(0, source.indexOf('// 과열도 5단계'));
+// renderer.js 를 자르는 표식(주석 · 선언). 없거나 둘 이상이면 원인을 알 수 없는 전체 실패가 났다 — 주석 문구만 다듬어도
+// prelude 가 파일 거의 전체가 되어 "document.addEventListener is not a function" 하나로 103개가 다 깨졌다. 바로 알린다.
+const mark = (text) => {
+  const i = source.indexOf(text);
+  assert.ok(i >= 0, `renderer.js 표식 없음: ${text}`);
+  assert.equal(source.indexOf(text, i + 1), -1, `renderer.js 표식이 둘 이상: ${text}`);
+  return i;
+};
+const prelude = source.slice(0, mark('// 과열도 5단계'));
 // 가격 포맷(fmt · money · curOf …). 화살표 함수라 realFunction 으로 못 꺼내 구획째 넣는다.
-const formatting = source.slice(source.indexOf('// --- 포맷'), source.indexOf('// 색은 CSS 변수'));
+const formatting = source.slice(mark('// --- 포맷'), mark('// 색은 CSS 변수 한 곳에서만'));
 function realFunction(name) {
   const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
   assert.notEqual(start, -1, `renderer function ${name} exists`);
@@ -1802,7 +1810,7 @@ await test('indicators: volume profile is computed over the visible range and dr
 
 await test('indicators: profile plugin bars grow leftward from the right edge, the busiest price darker', () => {
   const { c, run } = harness();
-  run(source.slice(source.indexOf('const VP_MAX_WIDTH'), source.indexOf('// 교차 지점 표식')));
+  run(source.slice(mark('const VP_MAX_WIDTH'), mark('// 교차 지점 표식')));
   const plugin = run('profilePlugin');
   const rects = [];
   const ctx = { save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, set fillStyle(v) { this.fs = v; },
@@ -1826,8 +1834,8 @@ await test('indicators: profile plugin bars grow leftward from the right edge, t
 await test('horizontal lines: close labels merge instead of vanishing; out-of-range lines go to the edge with their value', () => {
   const { c, run } = harness(['hLineGroups']);
   run(formatting);
-  run(source.slice(source.indexOf('const HLINE_GAP'), source.indexOf('function hLineGroups')));
-  run(source.slice(source.indexOf('const hLinePlugin = {'), source.indexOf('// 마우스를 올린 시점을 세로선으로')));
+  run(source.slice(mark('const HLINE_GAP'), mark('function hLineGroups')));
+  run(source.slice(mark('const hLinePlugin = {'), mark('// 마우스를 올린 시점을 세로선으로')));
   const plugin = run('hLinePlugin');
   const strokes = [];
   const texts = [];
@@ -2889,7 +2897,7 @@ await test('Esc closes the settings panel only — it does not also fold the wid
     setCompact: (on) => folds.push(on),
     compact: false,
   });
-  const listener = source.slice(source.indexOf("document.addEventListener('keydown', (e) => {"));
+  const listener = source.slice(mark("document.addEventListener('keydown', (e) => {"));
   run(listener.slice(0, listener.indexOf('\n});') + 4));
   run(source.match(/^\s*alertsEl\.onkeydown = .*$/m)[0]);
   // 패널 → 문서 순서로 올라간다. 패널이 전파를 멈추면 문서까지 가지 않는다

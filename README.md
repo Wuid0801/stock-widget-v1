@@ -192,7 +192,7 @@
 
 ## 직접 빌드하기
 
-[Node.js](https://nodejs.org/) 18 이상이 필요합니다.
+[Node.js](https://nodejs.org/) 22.12 이상이 필요합니다(Electron 43 이 요구합니다).
 
 ```bash
 npm install

@@ -1,5 +1,7 @@
 # 차트 끌어서 확대 Implementation Plan
 
+> **완료된 계획입니다.** 구현은 끝났고 아래 체크박스는 갱신하지 않았습니다 — 남은 작업이 아닙니다(2026-10-21 확인).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 3M · 1Y 차트를 끌어서 고른 구간을 차트 전체로 펼치고(y축 맞춤), 봉이 충분히 넓어지면 1Y 도 캔들로 그린다.

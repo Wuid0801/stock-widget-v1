@@ -8,6 +8,9 @@
 //    다음 실행에 읽히지 않는다 — state.xxx 가 undefined 라 초기화 기본값이 조용히
 //    이긴다. 이것도 앱을 껐다 켜야만 드러난다.
 // 새 설정을 추가할 때 세 곳 중 한쪽만 고치기 쉬워서 여기서 막는다.
+// 3) 설정 백업(BACKUP_KEYS)이 저장되는 키와 같은지(아래).
+// 4) IPC 계약 — preload.js 가 내보내는 함수 · 채널, main.js 가 받는 채널, renderer.js 가 부르는 api 함수가 서로 맞는지.
+//    한쪽 이름만 바꾸면 그 기능이 조용히 죽는다(invoke 는 "No handler registered", 렌더러는 undefined 호출).
 import fs from 'node:fs';
 
 const renderer = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
@@ -73,6 +76,22 @@ if (backupKeys && allowList) {
   check('백업이 저장되는 설정을 모두 담는다', missing.length === 0 && extra.length === 0,
     missing.length || extra.length ? `빠짐: ${missing.join(' ')} · 더 있음: ${extra.join(' ')}` : `${backed.length}개`);
 }
+
+// 4) IPC 계약
+const preload = fs.readFileSync(new URL('../preload.js', import.meta.url), 'utf8');
+const exposed = new Map([...preload.matchAll(/^\s+(\w+): \([^)]*\) => ipcRenderer\.(?:invoke|send)\('([^']+)'/gm)].map((m) => [m[1], m[2]]));
+const handled = new Set([...main.matchAll(/ipcMain\.(?:handle|on)\('([^']+)'/g)].map((m) => m[1]));
+const used = new Set([...renderer.matchAll(/\bapi\.(\w+)\(/g)].map((m) => m[1]));
+check('preload · main · renderer 에서 IPC 를 찾았다', exposed.size > 0 && handled.size > 0 && used.size > 0,
+  `preload ${exposed.size} · main ${handled.size} · renderer ${used.size}`);
+const noHandler = [...exposed].filter(([, ch]) => !handled.has(ch)).map(([n, ch]) => `${n}→${ch}`);
+check('preload 가 보내는 채널을 main 이 모두 받는다', !noHandler.length, noHandler.join(' '));
+const unknown = [...used].filter((n) => !exposed.has(n));
+check('renderer 가 부르는 api 함수는 preload 에 모두 있다', !unknown.length, unknown.join(' '));
+const unusedFn = [...exposed.keys()].filter((n) => !used.has(n));
+check('preload 가 내보내는 함수는 renderer 가 모두 쓴다', !unusedFn.length, unusedFn.join(' '));
+const orphan = [...handled].filter((ch) => ![...exposed.values()].includes(ch));
+check('main 이 받는 채널은 preload 가 모두 내보낸다', !orphan.length, orphan.join(' '));
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

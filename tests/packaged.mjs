@@ -24,6 +24,14 @@ if (!fs.existsSync(ASAR) || !fs.readFileSync(ASAR).includes('KR_STOCK_WIDGET_CON
   process.exit(0);
 }
 
+// 빌드 뒤로 앱 소스를 고쳤으면 낡은 산출물을 지금 코드처럼 검사하게 된다(2026-10-21: 10/8 빌드에 그 뒤 커밋 52개) — 건너뛴다
+const SOURCES = ['main.js', 'preload.js', 'renderer.js', 'index.html', 'indicators.js', 'backtest.js', 'quote-session.cjs', 'package.json'];
+if (fs.statSync(ASAR).mtimeMs < Math.max(...SOURCES.map((f) => fs.statSync(path.join(APP_DIR, f)).mtimeMs))) {
+  console.log('SKIP: dist/ 빌드가 앱 소스보다 오래됐습니다. `npm run dist` 로 다시 빌드하세요.');
+  console.log('\nPASS: 실패 0건');
+  process.exit(0);
+}
+
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 

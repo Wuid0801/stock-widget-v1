@@ -1,5 +1,7 @@
 # 코스피 · 코스닥 지수 차트 Implementation Plan
 
+> **완료된 계획입니다.** 구현은 끝났고 아래 체크박스는 갱신하지 않았습니다 — 남은 작업이 아닙니다(2026-10-21 확인).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 상단 지수 줄의 코스피 · 코스닥을 누르면 관심종목처럼 "선택"되어 상세 헤더와 차트가 그 지수로 바뀐다.

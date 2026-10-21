@@ -1,5 +1,7 @@
 # indicators.js 분리 구현 계획
 
+> **완료된 계획입니다.** 구현은 끝났고 아래 체크박스는 갱신하지 않았습니다 — 남은 작업이 아닙니다(2026-10-21 확인).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `renderer.js` 의 순수 계산 함수 12개와 `TREND_*` 상수를 `indicators.js` 로 옮겨, 테스트가 소스를 문자열로 잘라 쓰지 않고 `import` 하게 만든다.

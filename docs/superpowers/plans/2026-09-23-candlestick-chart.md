@@ -1,5 +1,7 @@
 # 1M · 3M 캔들차트 구현 계획
 
+> **완료된 계획입니다.** 구현은 끝났고 아래 체크박스는 갱신하지 않았습니다 — 남은 작업이 아닙니다(2026-10-21 확인).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 1M · 3M 일봉 차트를 종가 라인 대신 캔들로 그리고, 타임프레임 줄의 토글 버튼으로 라인과 오갈 수 있게 한다.

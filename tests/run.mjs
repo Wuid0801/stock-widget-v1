@@ -6,6 +6,7 @@
 // 각 스위트는 실제 앱을 Electron 으로 띄우고 실제 API를 호출한다.
 // 설정 파일과 창을 공유하므로 반드시 순차 실행한다.
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,12 +96,23 @@ const run = (file) => new Promise((resolve) => {
   });
 });
 
+// 스위트가 앱 소스를 바꾸면 실패로 친다. 중간에 죽으면 바뀐 채로 남고, 도는 동안 편집한 내용을 옛 내용으로 덮을 수 있다
+// (alerts.mjs 가 renderer.js 에 훅을 붙였다 되돌렸다 — isolation.mjs 의 정규식 검사는 변수 이름에 빠져나갔다).
+const APP_SOURCES = ['main.js', 'preload.js', 'renderer.js', 'index.html', 'indicators.js', 'backtest.js', 'quote-session.cjs'];
+const digest = () => APP_SOURCES.map((f) => crypto.createHash('sha1')
+  .update(fs.readFileSync(path.join(HERE, '..', f))).digest('hex')).join();
+
 console.log(`${suites.length}개 스위트 실행\n`);
 const results = [];
 for (const file of suites) {
   try { resetConfig(); } catch { /* 설정 파일이 아직 없으면 무시 */ }
   process.stdout.write(`${file.padEnd(22)} ... `);
+  const before = digest();
   const r = await run(file);
+  if (digest() !== before) {
+    r.passed = false;
+    r.last = `앱 소스가 바뀌었다(스위트가 고쳐 썼거나 실행 중에 편집됨) — ${r.last}`;
+  }
   results.push(r);
   console.log(`${r.passed ? 'PASS' : 'FAIL'}  (${r.secs}s)  ${r.last}`);
   if (!r.passed) console.log(r.out.split('\n').filter((l) => l.startsWith('FAIL')).map((l) => `      ${l}`).join('\n'));

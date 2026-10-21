@@ -1,5 +1,7 @@
 # 이평선 백테스트 "추세 점검" Implementation Plan
 
+> **완료된 계획입니다.** 구현은 끝났고 아래 체크박스는 갱신하지 않았습니다 — 남은 작업이 아닙니다(2026-10-21 확인).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 선택한 종목의 5년 일봉으로 "20일선이 60일선 위면 보유" 규칙과 지금 이평 배열의 과거 성적을 계산해, 52주 줄 아래 한 줄 + 툴팁으로 보여 준다.

@@ -3,7 +3,6 @@ import { APP_DIR, CFG_PATH, SHOTS_DIR, launchApp, waitReady } from './_paths.mjs
 import { _electron as electron } from 'playwright-core';
 import path from 'node:path'; import fs from 'node:fs';
 const APP = APP_DIR;
-const RENDERER=path.join(APP,'renderer.js');
 const CFG = CFG_PATH;
 const SHOTS = SHOTS_DIR;
 const launch = launchApp;
@@ -11,21 +10,10 @@ const ready = waitReady;
 let fails=0;
 const check=(t,c,x='')=>{ if(!c) fails++; console.log(`${c?'OK  ':'FAIL'} ${t}${x?'  '+x:''}`); };
 
-// 통과 판정을 결정적으로 시험하기 위한 임시 훅 (검증 후 원복)
-const orig=fs.readFileSync(RENDERER,'utf8');
-const HOOK = `
-window.__t = {
-  setEnabled: (v) => { state.alerts.enabled = v; },
-  setTarget: (s, t) => { state.alerts.targets[s] = t; },
-  setMarketOpen: (v) => { marketOpen = v; },
-  setQuote: (s, price) => { quotes[s] = { price }; },
-  // prev 를 직전 판정 가격(alertBase)으로 두고 한 번 판정한다
-  check: (prev) => { for (const k in alertBase) delete alertBase[k]; Object.assign(alertBase, prev); checkAlerts(); },
-};
-`;
-fs.writeFileSync(RENDERER, orig + HOOK);
-
-try {
+// 통과 판정은 렌더러의 최상위 변수(state · marketOpen · quotes · alertBase)를 page.evaluate 로 바로 바꿔 결정적으로
+// 시험한다(after-hours.mjs 와 같다). 예전에는 renderer.js 끝에 훅을 붙여 쓰고 finally 에서 되돌렸는데, 중간에 죽으면 훅이
+// 남고, 도는 동안 renderer.js 를 저장하면 그 수정을 옛 내용으로 덮었다(2026-10-21 리뷰).
+{
   fs.writeFileSync(CFG,'{}');
   const app=await launch(); const page=await app.firstWindow();
   const errs=[]; page.on('pageerror',e=>errs.push(e.message));
@@ -78,11 +66,14 @@ try {
   const S='005930.KS';
   const scenario = async (tag, {enabled, open, prev, now, target}, expectCount, expectText) => {
     await clear();
-    await page.evaluate(([s,en,op,tg,pr])=>{
-      window.__t.setEnabled(en); window.__t.setMarketOpen(op);
-      window.__t.setTarget(s,tg); window.__t.setQuote(s,pr);
-    },[S,enabled,open,target,now]);
-    await page.evaluate(([s,p])=>window.__t.check(p===null?{}:{[s]:p}), [S,prev]);
+    // prev 를 직전 판정 가격(alertBase)으로 두고 한 번 판정한다
+    await page.evaluate(([s,en,op,tg,pr,p])=>{
+      state.alerts.enabled = en; marketOpen = op;
+      state.alerts.targets[s] = tg; quotes[s] = { price: pr };
+      for (const k in alertBase) delete alertBase[k];
+      Object.assign(alertBase, p===null ? {} : {[s]:p});
+      checkAlerts();
+    },[S,enabled,open,target,now,prev]);
     await page.waitForTimeout(300);
     const n=await notes();
     const ok = n.length===expectCount && (!expectText || (n[0]&&n[0].title.includes(expectText)));
@@ -114,10 +105,6 @@ try {
   await page2.click('#bell'); await page2.waitForTimeout(500);
   check('재실행 후 알림 켜짐 유지', await page2.evaluate(()=>document.getElementById('alertOn').checked));
   await app2.close();
-} finally {
-  fs.writeFileSync(RENDERER, orig);
-  console.log('\n  (renderer.js 원복)');
 }
-check('renderer.js 원복 확인', fs.readFileSync(RENDERER,'utf8')===orig);
 fs.writeFileSync(CFG,'{}');
 console.log(`\n${fails===0?'PASS':'FAIL'}: 실패 ${fails}건`);
