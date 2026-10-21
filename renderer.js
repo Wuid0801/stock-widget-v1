@@ -1137,6 +1137,8 @@ async function pickRank(it) {
     await select(it.symbol);
     return;
   }
+  // 같은 줄을 또 눌렀다 — 먼저 누른 것이 넣는 중이다. addSymbol 이 바로 돌아와 아래에서 "추가하지 못했습니다"로 적었다.
+  if (adding.has(it.symbol)) return;
   msg.textContent = `${it.name} 추가하는 중…`;
   msg.hidden = false;
   await addSymbol({ symbol: it.symbol, name: it.name });
@@ -2824,10 +2826,18 @@ async function refreshAll() {
 
     // 실시간 현재가는 한 번에 (요청 1건), 일봉은 rate limit 고려해 종목별 순차
     const liveMap = await fetchLive(state.watchlist.map((i) => i.symbol));
-    for (const item of state.watchlist) {
+    // 목록은 처음 받는 종목만 그때그때(첫 화면이 빨리 차게), 나머지는 끝에 한 번 다시 그린다 — 종목마다 그리면 갱신
+    // 한 번에 목록을 종목 수만큼 새로 만들고, 받는 사이 줄 요소가 바뀌어 누름 · 끌기가 끊길 수 있었다.
+    // 순서 바꾸기 · 지우기가 목록을 바꿔도 흔들리지 않게 사본을 돌고, 그사이 지운 종목은 묻지 않는다. 받는 사이 지운
+    // 종목의 시세는 남기지 않는다 — 지울 때 지운 시세가 늦게 온 응답으로 되살아나 영영 남았다.
+    for (const item of [...state.watchlist]) {
+      if (!state.watchlist.includes(item)) continue;
+      const first = !quotes[item.symbol];
       await loadQuote(item, liveMap[item.symbol.split('.')[0]]);
-      renderList();
+      if (!state.watchlist.includes(item)) { delete quotes[item.symbol]; continue; }
+      if (first) renderList();
     }
+    renderList();
     // 지수도 종목과 같은 시세로 만든다 — 누르면 바로 뜨게 둘 다. 네이버 지수를 못 받았으면
     // 실시간 없이 들어가 야후 값(20분지연)이 된다(종목 폴백과 같다).
     for (const ix of INDICES) await loadQuote(ix, indexLive(indexNow.find((n) => n.code === ix.code)));

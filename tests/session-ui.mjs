@@ -1249,6 +1249,7 @@ await test('rank groups: clicking a group opens its stocks under a back row, bac
 
 await test('rank: clicking a stock already in the watchlist goes to it; a new one is added and opened; a failed add says so and keeps the panel', async () => {
   const { c, run, elements } = harness(['pickRank']);
+  run(source.match(/^const adding = .*$/m)[0]); // 넣는 중인 종목(addSymbol)
   const log = [];
   Object.assign(c, {
     select: async (s) => { log.push(`select ${s}`); },
@@ -1263,6 +1264,11 @@ await test('rank: clicking a stock already in the watchlist goes to it; a new on
   assert.deepEqual(log.splice(0), ['add BAD 없는'], '못 넣었으면 패널을 둔다');
   assert.match(elements.get('rankMsg').textContent, /없는: 추가하지 못했습니다/);
   assert.equal(elements.get('rankMsg').hidden, false);
+  // 같은 줄을 또 눌렀다 — 먼저 누른 것이 넣는 중이면(addSymbol 이 바로 돌아온다) 실패로 적지 않는다
+  run("adding.add('AMD'); document.getElementById('rankMsg').textContent = 'AMD 추가하는 중…';");
+  await c.pickRank({ symbol: 'AMD', name: 'AMD' });
+  assert.deepEqual(log.splice(0), [], '넣는 중이면 아무것도 하지 않는다');
+  assert.equal(elements.get('rankMsg').textContent, 'AMD 추가하는 중…');
 });
 
 await test('rank: the three panels (search, settings, rank) close each other, and a widget opened from compact folds back only when all are closed', () => {
@@ -2388,6 +2394,39 @@ await test('refresh builds index quotes from the Naver index line; a missing ind
   assert.ok(kosdaq, 'both indices are loaded every refresh');
   assert.equal(kosdaq[1], undefined, 'no Naver value → loadQuote without live (Yahoo, 20분지연)');
   assert.equal(run('busy'), false);
+});
+
+// 갱신 한 번에 목록을 종목 수만큼 다시 만들지 않는다 — 처음 받는 종목만 그때그때(첫 화면이 빨리 차게), 나머지는 끝에 한 번.
+// 받는 사이 지운 종목은 시세를 남기지 않는다 — 예전에는 살아 있는 목록을 돌아 지운 종목의 시세가 되살아났다.
+await test('refresh redraws the list once (plus once per first-time stock) and keeps no quote for a stock removed mid-refresh', async () => {
+  const { c, run } = harness(['refreshAll']);
+  let renders = 0;
+  const loaded = [];
+  Object.assign(c, {
+    loadIndices: async () => [], fetchLive: async () => ({}),
+    loadQuote: async (item) => {
+      if (isIndexSym(item.symbol)) return;
+      loaded.push(item.symbol);
+      // B 는 받는 사이에 지워진다(지우기가 먼저 끝나고 응답이 뒤에 온다)
+      if (item.symbol === 'B') run("state.watchlist = state.watchlist.filter((i) => i.symbol !== 'B'); delete quotes.B;");
+      run(`quotes['${item.symbol}'] = { price: 1 };`);
+      // A 를 받는 사이 C 가 지워진다 — C 는 묻지도 않는다
+      if (item.symbol === 'A') run("state.watchlist = state.watchlist.filter((i) => i.symbol !== 'C');");
+    },
+    renderList() { renders++; }, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderFolio: async () => {}, loadChart: async () => {}, renderUpdated() {},
+  });
+  const isIndexSym = (s) => s.startsWith('^') || s.endsWith('=X');
+  run(`state.watchlist = [{ symbol: 'A', name: 'a' }, { symbol: 'B', name: 'b' }, { symbol: 'C', name: 'c' }, { symbol: 'D', name: 'd' }];
+    quotes.A = { price: 0 }; quotes.B = { price: 0 }; quotes.C = { price: 0 }; quotes.D = { price: 0 };`);
+  await c.refreshAll();
+  assert.deepEqual(loaded, ['A', 'B', 'D'], '갱신 중에 지운 C 는 묻지 않는다');
+  assert.equal(run('quotes.B'), undefined, '받는 사이 지운 B 의 시세는 남기지 않는다');
+  assert.equal(renders, 1, '이미 있던 줄은 끝에 한 번만 다시 그린다');
+  run("state.watchlist.push({ symbol: 'E', name: 'e' });");
+  renders = 0;
+  await c.refreshAll();
+  assert.equal(renders, 2, '처음 받는 종목(E)은 받자마자 한 번 더');
 });
 
 await test('index detail: points with two decimals, no currency tag, no sector lookup', () => {
