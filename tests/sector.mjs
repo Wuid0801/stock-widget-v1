@@ -55,6 +55,12 @@ const YAHOO = {
   SPY: { symbol: 'SPY' },
 };
 let failNaver = false;
+let emptyIndustryList = false; // 네이버가 업종 목록을 빈 채로(200) 줄 때
+let NOW = Date.now();
+class FakeDate extends Date {
+  constructor(...a) { super(...(a.length ? a : [NOW])); }
+  static now() { return NOW; }
+}
 const calls = [];
 const reply = (ok, body) => ({ ok, status: ok ? 200 : 404, json: async () => body });
 const fakeFetch = async (url) => {
@@ -64,16 +70,29 @@ const fakeFetch = async (url) => {
     if (failNaver) return { ok: false, status: 500, json: async () => null };
     const auto = /autoComplete\?query=([^&]+)&target=stock$/.exec(url);
     if (auto) return reply(true, { result: { items: AUTO[decodeURIComponent(auto[1])] || [] } });
+    if (emptyIndustryList && url.includes('/api/stocks/industry?')) return reply(true, {});
     return url in NAVER ? reply(true, NAVER[url]) : reply(false, null);
   }
   const q = decodeURIComponent(/[?&]q=([^&]+)/.exec(url)[1]);
   return reply(true, { quotes: YAHOO[q] ? [YAHOO[q]] : [] });
 };
 
-new Function('require', 'process', 'fetch', 'AbortSignal', src)(
-  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal);
+new Function('require', 'process', 'fetch', 'AbortSignal', 'Date', src)(
+  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal, FakeDate);
 const sector = (symbol) => handlers['yf:sector']({}, symbol);
 const yahooAsked = () => calls.filter((u) => u.includes('yahoo')).length;
+
+// --- 빈 업종 목록은 기억하지 않는다 ---------------------------------------------------
+// 네이버가 목록을 한 번 빈 채로 주면, 기억할 경우 앱이 켜져 있는 동안 모든 국내 종목이 야후 영어 업종이 된다.
+{
+  emptyIndustryList = true;
+  let r = await sector('005930.KS');
+  check('업종 목록이 비어 오면 실패로 끝난다(굳히지 않는다)', r.ok === false, JSON.stringify(r));
+  emptyIndustryList = false;
+  r = await sector('005930.KS');
+  check('다음에는 목록을 다시 받아 네이버 업종 이름', r.ok && r.industry === '반도체와반도체장비', JSON.stringify(r));
+  calls.length = 0;
+}
 
 // --- 국내 --------------------------------------------------------------------
 {
@@ -81,8 +100,8 @@ const yahooAsked = () => calls.filter((u) => u.includes('yahoo')).length;
   check('국내 종목은 네이버 업종 이름 (삼성전자 → 반도체와반도체장비)', r.ok && r.industry === '반도체와반도체장비', JSON.stringify(r));
   r = await sector('042660.KS');
   check('한화오션 → 조선', r.ok && r.industry === '조선', JSON.stringify(r));
-  check('네이버 업종 이름 목록(79개)은 한 번만 받는다',
-    calls.filter((u) => u.includes('/api/stocks/industry?')).length === 1);
+  check('받아 둔 네이버 업종 이름 목록(79개)은 다시 받지 않는다(앞 절에서 받았다)',
+    calls.filter((u) => u.includes('/api/stocks/industry?')).length === 0);
   check('네이버에 이름이 있으면 야후를 묻지 않는다', yahooAsked() === 0, `${yahooAsked()}번`);
 
   r = await sector('069500.KS');
@@ -105,6 +124,19 @@ const yahooAsked = () => calls.filter((u) => u.includes('yahoo')).length;
     r.ok && r.industry === 'Insurance—Diversified' && r.sector === 'Financial Services', JSON.stringify(r));
   r = await sector('SPY');
   check('미국 ETF 도 비운다', r.ok && r.industry === null && r.sector === null, JSON.stringify(r));
+
+  // 못 찾음은 1시간만 기억한다 — 네이버가 잠깐 빈 결과를 줘도 재시작까지 그 종목의 시간외 시세 · 지표 · 일정 · 업종을
+  // 잃지 않게. 찾은 코드는 계속 기억한다.
+  const asked = (t) => calls.filter((u) => u.includes(`autoComplete?query=${t}&`)).length;
+  calls.length = 0;
+  await sector('BRK-B');
+  check('못 찾은 종목은 1시간 안에는 다시 찾지 않는다', asked('BRK-B') === 0, `${asked('BRK-B')}번`);
+  NOW += 61 * 60000;
+  await sector('BRK-B');
+  check('1시간이 지나면 다시 찾는다', asked('BRK-B') === 1, `${asked('BRK-B')}번`);
+  NOW += 5 * 3600000;
+  await sector('AAPL');
+  check('찾은 코드는 계속 기억한다', asked('AAPL') === 0, `${asked('AAPL')}번`);
 }
 
 // --- 실패 --------------------------------------------------------------------

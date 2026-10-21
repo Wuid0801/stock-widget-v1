@@ -2,7 +2,7 @@
 // 역할: 프레임리스/반투명/항상위 위젯 창 생성, 창 상태 저장·복원,
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu, dialog, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
@@ -37,12 +37,21 @@ const FETCH_TIMEOUT = 8000;
 // 인터넷이 끊기거나 서버에 닿지 못하면 Node fetch 는 영어 'fetch failed'(TypeError)를 던진다 —
 // 화면에 그대로 뜨면("삼성전자 차트: fetch failed") 원인을 알기 어렵다. 원인 코드(cause.code)는
 // 상황마다 달라(DNS 실패 ENOTFOUND, 연결 거부는 없음) 한 문구로 묶는다.
+// 시간 제한 신호는 본문을 읽는 동안에도 살아 있다 — 머리는 왔는데 본문이 늦으면 res.json() 이 영어 TimeoutError
+// ("The operation was aborted due to timeout")로 끝나 화면에 그대로 떴다. 본문 읽기의 실패도 같은 문구로 바꾼다.
+const netError = (e) => {
+  if (e?.name === 'TimeoutError') return new Error('응답 시간 초과');
+  if (e instanceof TypeError && e.message === 'fetch failed') return new Error('네트워크 연결 실패');
+  return e;
+};
 const netFetch = (url, opt = {}) => rawFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT), ...opt })
-  .catch((e) => {
-    if (e?.name === 'TimeoutError') throw new Error('응답 시간 초과');
-    if (e instanceof TypeError && e.message === 'fetch failed') throw new Error('네트워크 연결 실패');
-    throw e;
-  });
+  .then((res) => {
+    for (const k of ['json', 'text']) {
+      const read = res[k];
+      if (typeof read === 'function') res[k] = () => read.call(res).catch((e) => { throw netError(e); });
+    }
+    return res;
+  }, (e) => { throw netError(e); });
 
 // 'regular' | 'pre' | 'after' | 'closed' 로 장 상태를 고정한다.
 // 실제 장 시간에 기대면 밤·주말에는 폴링 간격 검증을 돌릴 수 없다.
@@ -129,9 +138,12 @@ function reachable(b, displays) {
 }
 
 function createWindow() {
-  const b = store.get('bounds');
-  const width = b.width || 340;
-  const height = b.height || 520;
+  // 손으로 고친 설정(bounds: null · 크기 없음)에도 뜬다 — 예외로 창 없이 프로세스만 남으면 단일 실행 잠금을 쥔 채라
+  // 다시 실행해도 뜨지 않았다.
+  const saved = store.get('bounds');
+  const b = saved && typeof saved === 'object' ? saved : {};
+  const width = b.width > 0 ? b.width : 340;
+  const height = b.height > 0 ? b.height : 520;
   // 저장된 위치가 지금 어느 화면에서도 잡히지 않으면(외부 모니터를 뗀 채 실행) 위치는 버리고
   // 크기만 쓴다 — 첫 실행처럼 OS 가 가운데에 놓는다.
   const placed = Number.isInteger(b.x) && Number.isInteger(b.y)
@@ -163,7 +175,7 @@ function createWindow() {
   // (640,210 요청 → 54,352 배치). setBounds는 정확하므로 저장된 위치를 다시 잡아준다.
   // 최초 실행에는 저장된 좌표가 없으므로 OS가 알아서 중앙 배치한다.
   if (placed) {
-    win.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
+    win.setBounds({ x: b.x, y: b.y, width, height });
   }
 
   // 전체화면 앱 위에서도 유지되도록 screen-saver 레벨
@@ -224,12 +236,17 @@ ipcMain.handle('state:get', () => ({
   extHours: store.get('extHours'),
 }));
 
+// 받은 키를 모아 한 번에 쓴다 — conf 는 set 을 부를 때마다 파일 전체를 읽고 다시 써서(fsync 포함), 키마다 부르면
+// save() 한 번(14키)에 47~71ms 메인이 멈췄다(↑↓ 를 누르고 있으면 초당 30번, 2026-10-21 측정). 한 번에 쓰면 4~5ms 이고
+// 일부 키만 저장된 채 남지 않는다.
 ipcMain.handle('state:set', (_e, patch) => {
+  const next = {};
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'].includes(k)) next[k] = v;
   }
+  if (Object.keys(next).length) store.set(next);
 });
 
 // ---- 설정 백업 · 복원 -----------------------------------------------------------
@@ -327,7 +344,7 @@ ipcMain.handle('backup:import', async () => {
       detail: `관심종목 ${counts.watchlist}개 · 보유 ${counts.holdings}개 · 목표가 ${counts.targets}개\n바꾸기 전 설정은 ${before} 에 저장해 둡니다.` }));
     if (ans.response !== 0) return { ok: false, canceled: true };
     fs.writeFileSync(before, backupJson());
-    for (const [k, v] of Object.entries(next)) store.set(k, v);
+    store.set(next); // 한 번에 쓴다(state:set 과 같은 이유)
     return { ok: true, counts, before };
   } catch (err) {
     return { ok: false, error: err.message || '불러오기 실패' };
@@ -335,7 +352,9 @@ ipcMain.handle('backup:import', async () => {
 });
 
 // 목표가 도달 알림. 렌더러가 켜져 있을 때만 보낸다(켜고 끄는 판단은 렌더러 쪽).
-ipcMain.on('notify', (_e, { title, body }) => {
+// 렌더러가 보내는 값의 모양을 믿지 않는다 — ipcMain.on 안의 예외는 메인 프로세스의 잡히지 않은 예외가 된다.
+ipcMain.on('notify', (_e, payload) => {
+  const { title, body } = payload || {};
   if (!Notification.isSupported()) return;
   new Notification({ title: String(title || ''), body: String(body || '') }).show();
 });
@@ -368,6 +387,7 @@ function unfold() {
 ipcMain.on('win:dock', (_e, on, height) => {
   if (!win) return;
   if (!on) { unfold(); return; }
+  if (!Number.isFinite(height) || height <= 0 || height > 4000) return; // 렌더러가 잰 줄 높이 합 — 이상하면 접지 않는다
   compact = true;
   // store의 bounds에는 창을 한 번도 옮기지 않았으면 x/y가 없다.
   // 그 값으로 되돌리면 크기만 바뀌고 우하단에 머무르므로 직접 기억해 둔다.
@@ -403,6 +423,7 @@ ipcMain.on('win:minimize', () => {
 // 미국 종목은 네이버 해외 시세로 따로 받는다 — 야후는 정규장 가격만 줘서 프리 · 애프터마켓
 // 움직임이 안 보였다. 한쪽이 실패해도 다른 쪽 시세는 쓴다(빠진 종목은 렌더러가 야후로 채운다).
 ipcMain.handle('quote:realtime', async (_e, symbols) => {
+  if (!Array.isArray(symbols)) return { ok: false, error: '잘못된 요청' };
   const usPending = usRealtime(symbols);
   const kr = await domesticRealtime(symbols);
   const us = await usPending;
@@ -624,12 +645,15 @@ const naverJson = async (url) => {
   return res.json();
 };
 
-// 네이버 국내 업종 번호 → 이름(79개). 한 번 받으면 앱이 켜져 있는 동안 쓴다.
+// 네이버 국내 업종 번호 → 이름(79개). 한 번 받으면 앱이 켜져 있는 동안 쓴다. 빈 목록은 기억하지 않는다 — 기억하면
+// 네이버가 한 번 빈 채로 준 것으로 앱이 켜져 있는 동안 모든 국내 종목이 야후 영어 업종이 된다(실패로 끝내고 다시 묻는다).
 let naverIndustryNames = null;
 async function naverIndustryName(no) {
   if (!naverIndustryNames) {
     const j = await naverJson('https://m.stock.naver.com/api/stocks/industry?page=1&pageSize=100');
-    naverIndustryNames = new Map((j.groups || []).map((g) => [Number(g.no), g.name]));
+    const names = new Map((j.groups || []).map((g) => [Number(g.no), g.name]));
+    if (!names.size) throw new Error('업종 목록 없음');
+    naverIndustryNames = names;
   }
   return naverIndustryNames.get(Number(no)) || null;
 }
@@ -649,15 +673,18 @@ async function naverIndustry(symbol) {
 
 // 미국: 앱에는 야후 티커(AAPL)만 있다 — 네이버 검색으로 네이버 코드(AAPL.O)를 찾는다(업종 · 실시간 시세).
 // 정확히 같은 티커만 쓴다. BRK-B(네이버 BRK.B)처럼 표기가 다르면 못 찾고 야후로 간다.
-// 찾은 결과(못 찾음 포함)는 앱이 켜져 있는 동안 기억한다. 요청이 실패하면 기억하지 않는다.
-const naverUsCodes = new Map();
+// 찾은 코드는 앱이 켜져 있는 동안, 못 찾음은 1시간만 기억한다 — 네이버가 잠깐 빈 결과를 줘도 재시작까지 그 종목의
+// 시간외 시세 · 지표 · 일정 · 한글 업종을 잃지 않게. 요청이 실패하면 기억하지 않는다.
+const NAVER_MISS_TTL = 3600000;
+const naverUsCodes = new Map(); // symbol -> { code(없으면 null), at }
 async function naverUsCode(symbol) {
-  if (naverUsCodes.has(symbol)) return naverUsCodes.get(symbol);
+  const known = naverUsCodes.get(symbol);
+  if (known && (known.code || Date.now() - known.at < NAVER_MISS_TTL)) return known.code;
   const s = await naverJson('https://m.stock.naver.com/front-api/search/autoComplete'
     + `?query=${encodeURIComponent(symbol)}&target=stock`);
   const hit = (s.result?.items || []).find((i) => i.nationCode === 'USA' && i.code === symbol);
   const code = hit?.reutersCode || null;
-  naverUsCodes.set(symbol, code);
+  naverUsCodes.set(symbol, { code, at: Date.now() });
   return code;
 }
 
@@ -1180,7 +1207,8 @@ function fillExtGaps(s, step) {
   return toSeries(bars);
 }
 
-ipcMain.handle('yf:chart', async (_e, { symbol, range, interval, extended }) => {
+ipcMain.handle('yf:chart', async (_e, req) => {
+  const { symbol, range, interval, extended } = req || {};
   if (!SYMBOL_RE.test(String(symbol ?? '')) || !RANGES.has(range) || !INTERVALS.has(interval)) {
     return { ok: false, error: '잘못된 요청' };
   }
@@ -1303,6 +1331,9 @@ if (!app.requestSingleInstanceLock()) {
     // 살아 있어서 Ctrl+W 는 앱을 끄고(알림도 끊긴다) Ctrl+M 은 작업표시줄 버튼 없는 창을 숨기고
     // Ctrl+R 은 접힌 상태를 어긋나게 한다. 개발 실행은 새로고침 · 개발자 도구를 쓰도록 둔다.
     if (app.isPackaged) Menu.setApplicationMenu(null);
+    // 이 앱은 권한(카메라 · 마이크 · 위치 · 알림 등)이 필요한 웹 기능을 하나도 쓰지 않는다 — 요청은 모두 거절한다
+    // (알림은 메인 프로세스의 Notification 이라 상관없다). Electron 은 따로 정하지 않으면 허락한다.
+    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     createWindow();
     registerToggle();
     // 깨진 설정을 옮겨 두고 처음 상태로 떴다 — 목록이 비어 보이는 까닭과 원래 파일 자리를 알린다
@@ -1312,6 +1343,10 @@ if (!app.requestSingleInstanceLock()) {
         body: `처음 상태로 시작했습니다. 원래 파일은 ${path.basename(brokenConfig)} 로 옮겨 두었습니다.`,
       }).show();
     }
+  }).catch((e) => {
+    // 시작하다 실패하면 창 없이 프로세스만 남아 단일 실행 잠금을 쥔다(다시 실행해도 안 뜬다) — 알리고 끝낸다
+    dialog.showErrorBox('위젯을 시작하지 못했습니다', String((e && e.stack) || e));
+    app.quit();
   });
 }
 

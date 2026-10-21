@@ -184,7 +184,7 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 삼성전자 · 반도체와반도체장비
 ```
 
-- **국내** — `m.stock.naver.com/api/stock/<코드>/integration` 의 `industryCode` 를 네이버 업종 목록(`/api/stocks/industry`, 79개)에서 이름으로 바꿉니다. 목록은 한 번 받아 앱이 켜져 있는 동안 씁니다.
+- **국내** — `m.stock.naver.com/api/stock/<코드>/integration` 의 `industryCode` 를 네이버 업종 목록(`/api/stocks/industry`, 79개)에서 이름으로 바꿉니다. 목록은 한 번 받아 앱이 켜져 있는 동안 씁니다. 빈 목록(200)은 기억하지 않고 실패로 끝내 다음에 다시 묻습니다 — 기억하면 앱이 켜져 있는 동안 모든 국내 종목이 야후 영어 업종이 됩니다.
 - **미국** — 앱에는 야후 티커(`AAPL`)만 있어, 네이버 자동완성으로 네이버 코드(`AAPL.O`)를 찾고 `api.stock.naver.com/stock/<코드>/basic` 의 `industryCodeType.industryGroupKor` 를 씁니다. 티커가 정확히 같을 때만 씁니다 — `BRK-B`(네이버 `BRK.B`)처럼 표기가 다르면 못 찾고 Yahoo 로 갑니다.
 - **ETF** 는 네이버가 "기타" 만 줘서 쓰지 않습니다(Yahoo 도 값이 없어 비웁니다).
 - **네이버 요청이 실패하면 실패로 끝냅니다.** Yahoo 영어로 넘어가면 렌더러가 그 값을 세션 내내 캐시해 영어로 굳습니다. 실패는 캐시하지 않으므로 다음에 다시 묻습니다.
@@ -608,7 +608,7 @@ Yahoo의 1D 봉은 20분 전에서 끊기므로, 장중에는 현재가를 끝�
 
 예전에는 Yahoo 차트 응답의 `regularMarketPrice` 만 썼습니다. 이 값은 정규장이 끝나면 그 종가에서 멈춰서, 프리 · 애프터마켓의 움직임이 안 보였습니다(2026-10-14 17:03 실측: SOXL 프리마켓 126.20 인데 위젯은 127.57). 헤더도 늘 `20분지연` 이었는데, 야후의 미국 시세는 늦지 않습니다(프리마켓 마지막 분봉이 4초 전, 네이버 지연 표시 `실시간`).
 
-- `main.js` `usRealtime` — 접미사 없는 티커만(`US_RE`) 네이버 자동완성으로 네이버 코드(`SOXL.K`, `AAPL.O`)를 찾고(`naverUsCode`, 업종 조회와 공유 · 앱이 켜져 있는 동안 기억), `polling.finance.naver.com/api/realtime/worldstock/stock/<코드들>` 을 한 번 부릅니다. 국내 조회와 함께 돌고, 한쪽이 실패해도 다른 쪽 시세는 씁니다. `BRK-B`(네이버 `BRK.B`)처럼 코드를 못 찾거나 응답이 빈 종목은 빠지고 렌더러가 Yahoo 로 채웁니다.
+- `main.js` `usRealtime` — 접미사 없는 티커만(`US_RE`) 네이버 자동완성으로 네이버 코드(`SOXL.K`, `AAPL.O`)를 찾고(`naverUsCode`, 업종 조회와 공유 · 찾은 코드는 앱이 켜져 있는 동안, 못 찾음은 1시간만 기억 — 네이버가 잠깐 빈 결과를 줘도 재시작까지 굳지 않게), `polling.finance.naver.com/api/realtime/worldstock/stock/<코드들>` 을 한 번 부릅니다. 국내 조회와 함께 돌고, 한쪽이 실패해도 다른 쪽 시세는 씁니다. `BRK-B`(네이버 `BRK.B`)처럼 코드를 못 찾거나 응답이 빈 종목은 빠지고 렌더러가 Yahoo 로 채웁니다.
 - `quote-session.cjs` `normalizeWorldQuote` — 국내와 같은 모양으로 바꿉니다. 최상위 기록이 정규장이고(`marketStatus` `OPEN` = 정규장 거래 중, `CLOSE` = 마지막 정규장 종가), `overMarketPriceInfo` 가 프리(`PRE_MARKET`) · 애프터(`AFTER_MARKET`)입니다.
   - 가격은 정규장 종가로 다시 계산합니다. 프리마켓은 그 종가 대비(네이버가 주는 등락과 같음 — 세 종목 실측), 애프터마켓은 국내처럼 **전일 종가 대비**이고 `종가대비` 줄이 오늘 종가와의 차이입니다. 애프터마켓이 끝나도 마지막 가격과 차이를 유지합니다.
   - "오늘" 은 **미국 거래소 날짜**입니다(`localTradedAt` 의 -04:00 · -05:00 로 셈). 정규장이 한국 자정을 넘기 때문에 한국 날짜로 보면 거래 중인 하루가 둘로 쪼개집니다.

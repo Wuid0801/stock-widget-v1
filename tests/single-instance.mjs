@@ -28,8 +28,10 @@ async function launch(gotLock, packaged = false, env = {}) {
   const ipc = {};
   let displays = env.displays || [{ workArea: { x: 0, y: 0, width: 1920, height: 1040 } }];
   let win = null;
+  let permission = null; // 권한 요청 처리기(카메라 · 알림 등) — 이 앱은 하나도 쓰지 않는다
   class FakeWindow {
     constructor(o) {
+      if (env.windowFails) throw new Error('창을 만들지 못함');
       win = this; this.visible = true; this.minimized = false;
       this.wcEvents = {};
       this.webContents = {
@@ -59,6 +61,8 @@ async function launch(gotLock, packaged = false, env = {}) {
       isPackaged: packaged,
     },
     Menu: { setApplicationMenu: (m) => menus.push(m) },
+    dialog: { showErrorBox: (title) => log.push(`errorbox:${title}`) },
+    session: { defaultSession: { setPermissionRequestHandler: (fn) => { permission = fn; } } },
     BrowserWindow: FakeWindow,
     ipcMain: { handle() {}, on: (ch, fn) => { ipc[ch] = fn; } },
     globalShortcut: { register: () => true },
@@ -86,7 +90,7 @@ async function launch(gotLock, packaged = false, env = {}) {
         // conf 는 읽지 못한 JSON 을 SyntaxError 로 그대로 던진다(clearInvalidConfig 기본 false)
         if (env.brokenConfig && stores.length === 1) throw new SyntaxError('Unexpected token } in JSON at position 31');
         this.d = structuredClone(o.defaults);
-        if (env.bounds) this.d.bounds = env.bounds;
+        if ('bounds' in env) this.d.bounds = env.bounds; // null 도 그대로(손으로 고친 설정)
       }
       get(k) { return this.d[k]; } set(k, v) { this.d[k] = v; }
     },
@@ -101,7 +105,8 @@ async function launch(gotLock, packaged = false, env = {}) {
   new Function('require', 'process', 'fetch', 'AbortSignal', '__dirname', src)(
     require, { env: {}, platform: 'test' }, () => Promise.reject(new Error('네트워크 없음')), AbortSignal, ROOT);
   await new Promise((r) => setImmediate(r)); // whenReady().then(...) 가 돌 때까지
-  return { log, appEvents, menus, ipc, stores, renames, notes, get win() { return win; }, setDisplays(d) { displays = d; } };
+  return { log, appEvents, menus, ipc, stores, renames, notes, get win() { return win; }, get permission() { return permission; },
+    setDisplays(d) { displays = d; } };
 }
 
 {
@@ -225,6 +230,35 @@ const placed = async (bounds, displays = [MAIN]) => {
   // 메모장 · PowerShell 이 붙인 UTF-8 BOM 은 깨진 게 아니다 — 읽을 때 떼어 낸다
   const read = fine.stores[0].deserialize;
   check('BOM 이 붙은 설정도 그대로 읽는다', typeof read === 'function' && read('\uFEFF{"a":1}').a === 1 && read('{"a":2}').a === 2);
+}
+
+// 손으로 고친 설정 — bounds 가 null 이거나 크기가 없으면 예외로 창 없이 프로세스만 남았다. 단일 실행 잠금을 쥔 채라
+// 다시 실행해도 뜨지 않았다(작업 관리자로 꺼야 했다).
+{
+  const nul = await launch(true, false, { bounds: null });
+  check('bounds 가 null 이어도 기본 크기로 뜬다', nul.win && nul.win.opts.width === 340 && nul.win.opts.height === 520,
+    JSON.stringify(nul.win && nul.win.opts));
+  const noSize = await launch(true, false, { bounds: { x: 100, y: 100 } });
+  const last = noSize.win && noSize.win.sets.at(-1);
+  check('위치만 있고 크기가 없으면 기본 크기로 놓는다', last && last.width === 340 && last.height === 520, JSON.stringify(last));
+  const broken = await launch(true, false, { windowFails: true });
+  check('시작하다 실패하면 알리고 끝낸다(프로세스만 남아 잠금을 쥐지 않게)',
+    broken.log.some((l) => l.startsWith('errorbox:')) && broken.log.includes('quit'), broken.log.join(','));
+}
+
+// 렌더러가 보내는 값의 모양을 믿지 않는다 — ipcMain.on 안의 예외는 메인 프로세스의 잡히지 않은 예외가 된다.
+// 이 앱은 권한(카메라 · 마이크 · 위치 · 알림 등)이 필요한 웹 기능을 하나도 쓰지 않는다 — 요청은 모두 거절한다.
+{
+  const app = await launch(true);
+  let threw = null;
+  try { app.ipc.notify({}, null); } catch (e) { threw = e; }
+  check('알림 요청의 값이 없어도 예외를 내지 않는다', threw === null, String(threw));
+  const before = app.win.sets.length;
+  for (const h of ['x', -5, NaN, 99999]) app.ipc['win:dock']({}, true, h);
+  check('접기 높이가 숫자가 아니거나 터무니없으면 무시한다', app.win.sets.length === before, JSON.stringify(app.win.sets.slice(before)));
+  let granted = null;
+  app.permission?.({}, 'media', (ok) => { granted = ok; });
+  check('웹 권한 요청은 모두 거절한다', typeof app.permission === 'function' && granted === false, String(granted));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

@@ -250,8 +250,8 @@ const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // 종목명은 외부 API 응답이라 innerHTML에 그대로 넣지 않는다
-const esc = (s) => String(s).replace(/[&<>"]/g,
-  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s).replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function labelFor(ms, timeframe) {
   const d = new Date(ms);

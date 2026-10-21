@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <!-- 렌더러는 네트워크를 직접 쓰지 않는다(모든 요청은 IPC → 메인). connect-src를 막아 강제. -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'" />
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'" />
 <title>관심종목</title>
 <style>
   /* 색은 전부 아래 변수로만 쓴다. 라이트 테마는 [data-theme="light"] 에서 값만 갈아끼운다.

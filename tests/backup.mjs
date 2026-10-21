@@ -25,10 +25,15 @@ const data = {
   chartMode: 'candle', plainChart: false, infoOpen: true, indicators: { bb: true, sar: false }, extHours: true,
   bounds: { width: 340, height: 520 },
 };
+// conf 는 set 을 부를 때마다 파일 전체를 읽고 다시 쓴다 — 부른 횟수(writes)가 곧 파일 쓰기 횟수다
 const sets = [];
+let writes = 0;
 class FakeStore {
   get(k) { return JSON.parse(JSON.stringify(data[k] ?? null)); }
-  set(k, v) { sets.push(k); data[k] = v; }
+  set(k, v) {
+    writes++;
+    for (const [a, b] of Object.entries(typeof k === 'object' ? k : { [k]: v })) { sets.push(a); data[a] = b; }
+  }
 }
 // 파일 창 · 확인 창 — 다음에 돌려줄 값을 테스트가 정한다
 const dialogs = [];
@@ -92,8 +97,10 @@ const file = (name, body) => { const f = path.join(dir, name); fs.writeFileSync(
   nextOpen = { canceled: false, filePaths: [file('in.json', '﻿' + JSON.stringify(incoming))] };
   nextAnswer = 0;
   sets.length = 0;
+  writes = 0;
   const before = JSON.parse(JSON.stringify(data));
   const r = await handlers['backup:import']({});
+  check('불러온 설정은 파일에 한 번에 쓴다', writes === 1, `${writes}번`);
   check('불러오기 성공 — 불러온 뒤의 수(지금의 2개가 아니라 3개)', r.ok && same(r.counts, { watchlist: 3, holdings: 1, targets: 1 }), JSON.stringify(r));
   const box = dialogs.at(-1);
   check('바꾸기 전에 확인 창 — 무엇이 몇 개인지와 직전 설정을 어디에 두는지', box[0] === 'box' && box[1].buttons[0] === '바꾸기'
@@ -122,6 +129,20 @@ const file = (name, body) => { const f = path.join(dir, name); fs.writeFileSync(
   check('이동평균 기간은 1~1000 정수만 남긴다', r.ok && same(data.maPeriods, [5, 20]), JSON.stringify(data.maPeriods));
   check('틀린 투명도 · 선택 · 기간 · 켬은 바꾸지 않는다', same(sets, ['maPeriods']) && data.opacity === 74 && data.selected === '005930.KS'
     && data.timeframe === '3M' && data.infoOpen === true && data.plainChart === true && data.extHours === false, sets.join(' '));
+}
+
+// --- 2b. 설정 저장(state:set) — 렌더러 save() 는 클릭마다 키 14개를 보낸다 ----------------------------
+// 키마다 store.set 을 부르면 파일을 14번 읽고 쓴다(저장 1회 47~71ms, 2026-10-21 측정) — 한 번에 쓴다.
+{
+  writes = 0;
+  sets.length = 0;
+  await handlers['state:set']({}, { theme: 'dark', opacity: 80, selected: '005930.KS', timeframe: '1W', bounds: { x: 1 }, nope: 1, plainChart: undefined });
+  check('저장은 파일에 한 번 쓴다', writes === 1, `${writes}번`);
+  check('아는 키만 · undefined 는 빼고', same(sets, ['theme', 'opacity', 'selected', 'timeframe']) && data.opacity === 80, sets.join(' '));
+  writes = 0;
+  await handlers['state:set']({}, { nope: 1 });
+  await handlers['state:set']({}, null);
+  check('쓸 것이 없으면 쓰지 않는다', writes === 0, `${writes}번`);
 }
 
 // --- 3. 취소 · 잘못된 파일 ------------------------------------------------------------------

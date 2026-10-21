@@ -1098,6 +1098,7 @@ await test('rank: list shows rank, name with a check for watchlist stocks, price
   assert.match(text(html), /^10\/16 14:22 기준 · 일반 주식만\(ETF · ETN · 우선주 제외\) · 거래대금 10억 원 이상 · 코스피 \+ 코스닥1/,
     '기준 문구는 목록 맨 위 — 열자마자 보인다(스크롤해야 보이면 지난 장 순위인지 모른다)');
   assert.ok(html.indexOf('rnote') < html.indexOf('rrow'), '기준 문구가 첫 줄보다 위');
+  assert.equal(run(`esc("L'Oreal & <b>")`), 'L&#39;Oreal &amp; &lt;b&gt;', '홑따옴표도 — 속성에 홑따옴표를 쓰는 곳이 생겨도 깨지지 않게');
   c.D = { ...KR_RANK, kind: 'search', filtered: false };
   assert.match(text(run("rankHtml(D, 'kr', 'search')")), /^[^가-힣]*기준 · 네이버 인기 검색 순1/);
 

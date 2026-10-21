@@ -95,5 +95,34 @@ for (const cause of [{ code: 'ENOTFOUND' }, undefined]) {
   check(`네트워크 실패(${tag})는 한글로 알린다`, offChart.error === '네트워크 연결 실패', JSON.stringify(offChart));
 }
 
+// 머리(상태 줄)는 오는데 본문이 끊긴 서버 — 시간 제한 신호는 본문을 읽는 동안에도 살아 있어 res.json() 이 영어
+// TimeoutError("The operation was aborted due to timeout")로 끝났다(느린 회선에서 야후 5년 일봉을 받을 때).
+{
+  const slowBody = async (_url, opt = {}) => ({
+    ok: true, status: 200,
+    // 진짜 fetch 처럼 이미 끊긴 신호면 바로 실패한다
+    json: () => new Promise((_, reject) => (opt.signal?.aborted ? reject(opt.signal.reason)
+      : opt.signal?.addEventListener('abort', () => reject(opt.signal.reason)))),
+  });
+  new Function('require', 'process', 'fetch', 'AbortSignal', src)(
+    require, { env: {}, platform: 'test' }, slowBody, FastAbortSignal);
+  const keepAlive = setTimeout(() => {}, GUARD); // AbortSignal.timeout 의 타이머는 프로세스를 붙잡지 않는다
+  const out = await Promise.all(Object.entries(CALLS).map(async ([name, args]) => [name, await handlers[name]({}, ...args)]));
+  clearTimeout(keepAlive);
+  const english = out.filter(([, o]) => /aborted|TimeoutError/.test(JSON.stringify(o)));
+  check('본문을 받다 시간이 다 돼도 영어 문구를 내보내지 않는다', english.length === 0,
+    english.map(([n, o]) => `${n} ${JSON.stringify(o)}`).join(' / '));
+  const slowChart = out.find(([n]) => n === 'yf:chart')[1];
+  check('본문 시간 초과도 "응답 시간 초과"', slowChart.error === '응답 시간 초과', JSON.stringify(slowChart));
+}
+
+// 렌더러가 보내는 값의 모양을 믿지 않는다 — 구조 분해 · 배열 메서드가 예외로 끝나지 않고 { ok:false } 로 답한다
+{
+  const chartNull = await handlers['yf:chart']({}, null);
+  check('차트 요청 값이 없으면 잘못된 요청', chartNull.ok === false && chartNull.error === '잘못된 요청', JSON.stringify(chartNull));
+  const rtBad = await handlers['quote:realtime']({}, '005930.KS');
+  check('실시간 시세 요청이 배열이 아니면 잘못된 요청', rtBad.ok === false && rtBad.error === '잘못된 요청', JSON.stringify(rtBad));
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);
