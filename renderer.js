@@ -803,8 +803,8 @@ function metricsVolume(symbol, today) {
   const d = quotes[symbol] && quotes[symbol].dailyVolume;
   const at = today && today.at ? Date.parse(today.at) : NaN;
   if (!d || today.volume == null || !Number.isFinite(at)) return null;
-  // 그 시장의 날짜 — 국내는 한국 날짜, 미국은 UTC 날짜(뉴욕 날짜와 같다). prevDayRange 와 같다.
-  const day = (ms) => Math.floor((ms + (isOverseas(symbol) ? 0 : 9 * 3600000)) / 86400000);
+  // 그 시장의 날짜(marketDay) — 미국 애프터(겨울 19~20시 ET)의 거래량이 오늘을 평균에 넣지 않게
+  const day = (ms) => marketDay(ms, symbol);
   const before = [];
   for (let i = 0; i < d.times.length; i++) {
     if (day(d.times[i]) < day(at) && d.volumes[i] > 0) before.push(d.volumes[i]);
@@ -2412,13 +2412,21 @@ function seriesVolAvg(volumes, ext) {
   return out;
 }
 
-// 1D 가 보여 주는 날의 바로 앞 거래일 고가 · 저가(전고 · 전저). 날짜는 그 시장의 날짜다 —
-// 국내 일봉은 09:00 KST(00:00 UTC), 국내 1D 프리 봉(08:00 KST)은 UTC 로 전날이라 한국 날짜로 센다.
-// 미국 일봉은 13:30 UTC 이고 미국 1D 봉(뉴욕 04:00~20:00)은 UTC 날짜가 뉴욕 날짜와 같다.
+// 시장 날짜(일 번호) — 시간외 봉과 일봉을 같은 날로 짝지을 때. 국내는 한국 날짜다 — NXT 프리(08:00 KST)는 UTC 로
+// 전날이다. 미국 종목 · 지수는 뉴욕 시각을 -5시간 고정으로 센다 — 04:00~20:00 ET 가 서머타임이든 아니든 같은 날로
+// 떨어진다(UTC 로 세면 겨울에 19~20시 ET 가 다음 날이 된다). 일봉(국내 00:00 UTC · 미국 13:30/14:30 UTC)은 어느 쪽으로
+// 세도 그날이다. 환율은 하루 내내 돌아 예전처럼 UTC 날짜.
+function marketDay(ms, symbol) {
+  const usMarket = isUs(symbol) || (symbol.startsWith('^') && isOverseas(symbol));
+  const offset = usMarket ? -5 : isOverseas(symbol) ? 0 : 9;
+  return Math.floor((ms + offset * 3600000) / 86400000);
+}
+
+// 1D 가 보여 주는 날의 바로 앞 거래일 고가 · 저가(전고 · 전저). 날짜는 그 시장의 날짜다(marketDay).
 function prevDayRange(symbol, times) {
   const r = quotes[symbol] && quotes[symbol].recentBars;
   if (!r || !times.length) return null;
-  const day = (ms) => Math.floor((ms + (isOverseas(symbol) ? 0 : 9 * 3600000)) / 86400000);
+  const day = (ms) => marketDay(ms, symbol);
   const shown = day(times[times.length - 1]);
   for (let i = r.times.length - 1; i >= 0; i--) {
     if (day(r.times[i]) < shown && r.highs[i] > 0 && r.lows[i] > 0) return { high: r.highs[i], low: r.lows[i] };
@@ -2427,13 +2435,14 @@ function prevDayRange(symbol, times) {
 }
 
 // 툴팁 가격 옆 등락률의 기준(봉마다). 1D 는 전일 종가 — 차트의 '전일' 선 · 위 등락률과 같은 값. 1W(30분봉)는 그 봉
-// 날짜의 앞 거래일 종가(일봉, maFor 와 같은 UTC 날짜 짝짓기) — 바로 앞 30분봉과 견주면 0.1% 남짓의 잡음이다. 일봉 ·
+// 날짜(시장 날짜 — 국내 프리 · 미국 겨울 애프터 봉이 UTC 로 하루 밀린다)의 앞 거래일 종가(일봉) — 바로 앞 30분봉과
+// 견주면 0.1% 남짓의 잡음이다. 일봉 ·
 // 월봉은 앞 봉 종가(그날 · 그달 등락률)이고, 일봉의 첫 봉은 일봉에서 그 앞 거래일 종가. 빈 종가는 건너뛰고, 없으면 null.
 function tipBases(symbol, times, closes) {
   const q = quotes[symbol];
   if (state.timeframe === '1D') return times.map(() => (q && q.prevClose > 0 ? q.prevClose : null));
   const d = q && q.daily;
-  const dayOf = (t) => Math.floor(t / 86400000);
+  const dayOf = (t) => marketDay(t, symbol);
   let j = 0; let last = null;
   const before = (t) => { // t 의 날짜 앞의 마지막 일봉 종가 — times 는 오름차순이라 앞으로만 간다
     while (d && j < d.times.length && dayOf(d.times[j]) < dayOf(t)) { if (d.closes[j] > 0) last = d.closes[j]; j++; }
@@ -2449,17 +2458,11 @@ function maFor(symbol, times, period) {
   const d = quotes[symbol] && quotes[symbol].daily;
   if (!d || d.closes.length < period) return null;
 
-  // 시각이 아니라 날짜로 짝짓는다. 장중 오늘 봉의 시각은 마지막 체결 시각이라
+  // 시각이 아니라 날짜로 짝짓는다(alignByDay). 장중 오늘 봉의 시각은 마지막 체결 시각이라
   // 일봉과 차트를 받은 순간마다 달라서(실측 1초 차), 정확히 맞추면 오늘 값이 빠진다.
   // UTC 날짜를 쓰는 건 한국(00:00~06:30 UTC)·미국(13:30~21:00 UTC) 장이 모두 하루 안에
   // 들어가서다 — 한국 날짜로 자르면 미국 장이 자정을 넘겨 오늘 봉이 이틀로 갈린다.
-  const dayOf = (t) => Math.floor(t / 86400000);
-  const values = sma(d.closes, period);
-  const byDay = new Map();
-  for (let i = 0; i < d.times.length; i++) byDay.set(dayOf(d.times[i]), values[i]);
-
-  const out = times.map((t) => (byDay.has(dayOf(t)) ? byDay.get(dayOf(t)) : null));
-  return out.some((v) => v != null) ? out : null;
+  return alignByDay(d.times, sma(d.closes, period), times);
 }
 
 // 실시간 시세 조회 (실패해도 조용히 빈 값 → Yahoo 지연 시세로 동작)
@@ -2601,7 +2604,10 @@ async function loadChart() {
   // 칩 설정은 그대로 두고 그리기만 건너뛰어, 다시 누르면 원래대로 돌아온다. 가격과 거래량 막대는 남는다.
   const plain = state.plainChart === true;
   // 지수 대비 수익률(보조 지표)은 같은 기간의 지수 차트가 필요하다 — 종목 차트와 함께 받는다(같은 캐시).
-  const bench = !plain && state.indicators && state.indicators.rel && state.timeframe !== '1D' ? benchmarkOf(item.symbol) : null;
+  // 일봉(1M 이상)만이다 — 지수와 날짜로 짝짓는데, 1W(30분봉)는 지수 기준이 첫날 마지막 봉 · 종목 기준이 첫 봉이 되고
+  // 비교선이 계단이 됐다(종목 · 지수 모두 +10% 인데 초과 +5.24%p).
+  const bench = !plain && state.indicators && state.indicators.rel && !['1D', '1W'].includes(state.timeframe)
+    ? benchmarkOf(item.symbol) : null;
   const [got, benchGot] = await Promise.all([fetchChartCached(item.symbol, tf),
     bench ? fetchChartCached(bench.symbol, tf).catch(() => null) : null]);
   if (seq !== chartSeq) return; // 더 새 요청이 있다 — 불러오는 중은 그 요청이 내린다
@@ -2609,9 +2615,13 @@ async function loadChart() {
   const r = got.ok && tf.years ? lastYears(got, tf.years) : got; // 3Y: 5년치에서 3년만
 
   if (!r.ok) {
-    // 실패 시 이전 차트를 남겨두면 헤더와 다른 종목을 보여주게 되므로 지운다
-    clearChart();
-    document.getElementById('period').hidden = true;
+    // 다른 종목 · 기간의 차트는 남겨 두면 헤더와 다른 것을 보이므로 지운다(위에서 이미 지웠다 — drawnKey 가 다르다).
+    // 같은 화면의 갱신이 한 번 실패(야후 429 · 시간 초과)한 것은 그리던 차트를 두고 오류만 적는다 — 지우면 다음 갱신
+    // (장 마감 뒤 5분)까지 빈칸이었다. 장 시작 직후의 빈 응답은 그날 차트가 아직 없다는 뜻이라 지운다.
+    if (key !== drawnKey || r.error === '빈 데이터') {
+      clearChart();
+      document.getElementById('period').hidden = true;
+    }
     // 장 시작 직후엔 Yahoo가 한국 분봉을 아직 안 채워 빈 응답이 온다.
     // 일봉(1M 이상)은 정상이므로 고장이 아니라는 걸 알려주고, 언제 들어오는지 말한다.
     const intraday = tf.interval !== '1d';

@@ -562,13 +562,7 @@ ipcMain.handle('quote:indices', async () => {
     const n = s ? Number(s) : NaN;
     return Number.isFinite(n) ? n : null;
   };
-  const naver = async (url) => {
-    const res = await netFetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()).datas || [];
-  };
+  const naver = async (url) => (await naverJson(url)).datas || [];
   const item = (d, code, name) => ({
     code,
     name,

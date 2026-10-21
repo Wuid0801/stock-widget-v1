@@ -52,7 +52,7 @@ function harness(extra = []) {
     loadEvents: async () => {}, // 갱신이 부르는 관심종목 일정 — 진짜는 extra 로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'chartTf', 'rankPct', 'rankCount', 'rankKey', 'rankBackHtml', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'rankCount', 'rankKey', 'rankBackHtml', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -617,6 +617,10 @@ await test('indicators: volume average leaves out extended and zero-volume bars;
   run(`quotes.SOXL = { recentBars: { times: [${Date.parse('2026-10-13T13:30:00Z')}, ${Date.parse('2026-10-14T13:30:00Z')}],
     highs: [128, 130], lows: [115, 110] } };`);
   assert.deepEqual({ ...c.prevDayRange('SOXL', [Date.parse('2026-10-15T08:55:00+09:00')]) }, { high: 128, low: 115 });
+  // 서머타임이 끝나면(11/1~) 뉴욕 19:00~20:00 이 UTC 로 다음 날이다 — 11/17 19:55 EST 봉에서 11/17 일봉(그날)을 고르면 안 된다
+  run(`quotes.SOXL = { recentBars: { times: [${Date.parse('2026-11-16T14:30:00Z')}, ${Date.parse('2026-11-17T14:30:00Z')}],
+    highs: [128, 130], lows: [115, 110] } };`);
+  assert.deepEqual({ ...c.prevDayRange('SOXL', [Date.parse('2026-11-18T00:55:00Z')]) }, { high: 128, low: 115 }, '겨울(EST) 애프터 끝');
   assert.equal(c.prevDayRange('000660.KS', [1]), null, '일봉이 없으면 그리지 않는다');
 });
 
@@ -1478,6 +1482,42 @@ await test('ext hours: the period badge starts at the first regular bar, so 정�
 // 네트워크가 느리면 차트 응답까지 몇 초가 걸린다. 그동안 탭 · 헤더는 새 종목 · 기간인데 차트 · 기간 배지는
 // 옛 것이라 "눌러도 데이터가 안 바뀐다"로 보였다(2026-10-15). 다른 화면으로 넘어가면 옛 차트를 먼저 지우고
 // 불러오는 중을 띄운다. 같은 화면의 30초 갱신은 지우지 않는다(깜빡이지 않게).
+// 같은 종목 · 기간의 갱신이 한 번 실패(야후 429 · 시간 초과)하면 그리던 차트를 두고 오류만 적는다 — 지우면 다음 갱신
+// (장 마감 뒤 5분)까지 빈칸이었다. 다른 화면으로 넘어간 뒤의 실패와 장 시작 직후의 빈 응답은 지운다.
+await test('slow network: a failed refresh of the same chart keeps it with the error; another screen or an empty reply clears it', async () => {
+  const { c, run } = harness(['loadChart']);
+  let reply;
+  let cleared = 0;
+  const errs = [];
+  const series = (closes) => ({ ok: true, closes, times: closes.map((_, i) => Date.parse(`2026-09-0${i + 1}T00:00:00Z`)),
+    volumes: closes.map(() => 1), opens: closes, highs: closes, lows: closes });
+  Object.assign(c, {
+    fetchChartCached: async () => reply, err: (m) => errs.push(m), quoteErrText: () => '', renderPeriod: () => {},
+    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: () => {},
+    clearChart: () => { cleared++; run('drawnKey = null;'); }, intradayWaitText: () => 'WAIT',
+  });
+  run("let lastDrawSig = null; state.timeframe = '1M';");
+  reply = series([1, 2]);
+  await c.loadChart();
+  reply = { ok: false, error: 'HTTP 429' };
+  await c.loadChart();
+  assert.equal(cleared, 0, '같은 화면의 갱신 실패는 차트를 둔다');
+  assert.match(errs.at(-1), /차트: HTTP 429$/, '오류는 적는다');
+
+  run("state.timeframe = '3M';");
+  await c.loadChart();
+  assert.ok(cleared >= 1, '다른 기간으로 넘어간 뒤의 실패는 지운다');
+
+  run("state.timeframe = '1D'; lastDrawSig = null;");
+  reply = series([1, 2]);
+  await c.loadChart();
+  const before = cleared;
+  reply = { ok: false, error: '빈 데이터' };
+  await c.loadChart();
+  assert.equal(cleared, before + 1, '빈 응답(장 시작 직후 1D)은 지운다');
+  assert.equal(errs.at(-1), 'WAIT');
+});
+
 await test('slow network: switching symbol or period clears the old chart and shows loading until the new one arrives', async () => {
   const { c, run, elements } = harness(['loadChart']);
   const draws = [];
@@ -1591,6 +1631,28 @@ await test('indicators: loadChart passes the comparison line with the index char
   assert.equal(draws.at(-1).benchLine, null, '차트만 보기면 없다');
 });
 
+// 지수 대비는 일봉(1M 이상)만 — 날짜로 짝짓기라 1W(30분봉)는 지수 기준이 첫날 마지막 봉, 종목 기준이 첫 봉이 되고
+// 비교선은 그날 종가가 그날 모든 봉에 들어가 계단이 됐다(종목 · 지수 모두 +10% 인데 초과 +5.24%p).
+await test('indicators: the index comparison is off on 1W — 30-minute bars cannot be matched to the index by date', async () => {
+  const { c, run } = harness(['loadChart', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange']);
+  const asked = [];
+  const draws = [];
+  const periods = [];
+  const t0 = Date.parse('2026-10-15T00:00:00Z');
+  const series = { ok: true, closes: [100, 110], times: [t0, t0 + 1800000], volumes: [1, 1], opens: [100, 110], highs: [100, 110], lows: [100, 110] };
+  Object.assign(c, {
+    fetchChartCached: async (s) => { asked.push(s); return series; },
+    err: () => {}, quoteErrText: () => '', renderPeriod: (...a) => periods.push(a), renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+  });
+  run(`let lastDrawSig = null; state.timeframe = '1W'; state.indicators = cleanIndicators({ rel: true });
+    quotes['005930.KS'] = { price: 110, prevClose: 100, change: 10 };`);
+  await c.loadChart();
+  assert.deepEqual([...asked], ['005930.KS'], '지수 차트를 받지 않는다');
+  assert.equal(draws.at(-1).benchLine, null, '비교선 없음');
+  assert.equal(periods.at(-1)[2], null, '초과 배지 없음');
+});
+
 await test('indicators: the comparison line is a dashed line on the price axis with its own legend entry', () => {
   const { c, run, elements } = harness(['drawChart', 'labelFor', 'renderMaLegend']);
   run(formatting);
@@ -1636,6 +1698,13 @@ await test('tooltip: change is measured from the previous close — 1D prev clos
   assert.deepEqual(bases('1D', [day(16, 1), day(16, 2)], [101, 102]), [100, 100], '1D 는 전일 종가');
   assert.deepEqual(bases('1W', [day(13, 1), day(13, 5), day(14, 1), day(15, 1), day(16, 1)], [1, 2, 3, 4, 5]), [90, 90, 90, 95, 99],
     '1W 는 그날 앞 거래일의 일봉 종가(빈 날은 건너뜀)');
+  // 국내 NXT 프리(10/15 08:00 KST)는 UTC 로 전날 23시다 — 한국 날짜로 세야 10/14 종가 기준
+  assert.deepEqual(bases('1W', [Date.parse('2026-10-15T08:00:00+09:00'), day(15, 1)], [1, 2]), [95, 95], '국내 1W 프리 봉');
+  // 미국 겨울(EST) 애프터 19:30 ET 는 UTC 로 다음 날 — 그날(11/17)의 앞 거래일(11/16) 종가 기준
+  run(`state.timeframe = '1W'; quotes.SOXL = { daily: { times: [${Date.parse('2026-11-16T14:30:00Z')}, ${Date.parse('2026-11-17T14:30:00Z')}],
+    closes: [200, 210] } };`);
+  assert.equal(JSON.stringify(run(`tipBases('SOXL', [${Date.parse('2026-11-17T15:00:00Z')}, ${Date.parse('2026-11-18T00:30:00Z')}], [1, 2])`)),
+    '[200,200]', '미국 1W 겨울 애프터 끝 봉');
   assert.deepEqual(bases('1M', [day(14), day(15), day(16)], [95, null, 101]), [90, 95, 95], '일봉은 앞 봉, 첫 봉은 일봉에서');
   assert.deepEqual(bases('전체', [day(14), day(15)], [95, 101]), [null, 95], '월봉의 첫 봉은 기준 없음');
   run("quotes['005930.KS'] = { price: 101 };");
