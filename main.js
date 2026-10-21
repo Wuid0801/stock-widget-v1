@@ -82,6 +82,7 @@ const storeOptions = {
     maStyles: {}, // 이동평균선별로 바꾼 색 · 굵기 { [기간]: { color, width } } — 바꾼 것만
     chartMode: 'candle', // 'candle' | 'line'
     plainChart: false, // 차트만 보기(이동평균 · 보조 지표 · 기준선을 그리지 않는다)
+    extHours: true, // 1D · 1W 를 장전 · 장후까지(전체) 볼지, 정규장만 볼지
     infoOpen: true, // 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지
     // 보조 지표(설정의 칩). 기본은 모두 꺼짐 — 이동평균 · 추세선과 겹치면 작은 차트가 빽빽해진다.
     indicators: { bb: false, vwap: false, volAvg: false, prevHL: false, vp: false, rel: false, sar: false },
@@ -220,13 +221,14 @@ ipcMain.handle('state:get', () => ({
   plainChart: store.get('plainChart'),
   infoOpen: store.get('infoOpen'),
   indicators: store.get('indicators'),
+  extHours: store.get('extHours'),
 }));
 
 ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'plainChart', 'infoOpen', 'indicators'].includes(k)) store.set(k, v);
+    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'].includes(k)) store.set(k, v);
   }
 });
 
@@ -237,7 +239,7 @@ ipcMain.handle('state:set', (_e, patch) => {
 // 쓴다(세세한 값은 렌더러가 시작할 때 다시 거른다). 확인 창에서 바꾸기를 눌러야만 바꾸고, 그 직전 설정은 고른
 // 파일과 같은 폴더에 따로 저장해 잘못 불러와도 되돌릴 수 있게 한다. 파일에 없는 설정은 그대로 둔다.
 const BACKUP_KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles',
-  'chartMode', 'plainChart', 'infoOpen', 'indicators'];
+  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'];
 const BACKUP_MAX_BYTES = 1024 * 1024;
 const BACKUP_FILTERS = [{ name: '설정 백업(JSON)', extensions: ['json'] }];
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -285,7 +287,7 @@ function cleanBackup(raw) {
   if (Array.isArray(s.maPeriods)) out.maPeriods = s.maPeriods.filter((p) => Number.isInteger(p) && p > 0 && p <= 1000).slice(0, 20);
   if (isPlain(s.maStyles)) out.maStyles = JSON.parse(JSON.stringify(s.maStyles)); // 렌더러가 시작할 때 다시 거른다(cleanMaStyles)
   if (s.chartMode === 'candle' || s.chartMode === 'line') out.chartMode = s.chartMode;
-  for (const k of ['plainChart', 'infoOpen']) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['plainChart', 'infoOpen', 'extHours']) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (isPlain(s.indicators)) out.indicators = Object.fromEntries(Object.entries(s.indicators).filter(([, v]) => typeof v === 'boolean'));
   return Object.keys(out).length ? out : null;
 }
@@ -1023,13 +1025,16 @@ async function fillGaps(symbol, stamps, q) {
   });
 }
 
-// --- 1D 시간외 봉 ---------------------------------------------------------------
-// 1D 는 정규장만 그렸다. 프리 · 애프터마켓 봉을 시각 순서대로 이어 붙이고 봉마다 세션을 단다
-// (ext: 'pre' · 'after', 정규장은 null) — 렌더러가 그 구간의 배경을 옅게 칠한다.
+// --- 1D · 1W 시간외 봉 ------------------------------------------------------------
+// 1D · 1W 는 정규장만 그렸다. 프리 · 애프터마켓 봉을 시각 순서대로 이어 붙이고 봉마다 세션을 단다
+// (ext: 'pre' · 'after', 정규장은 null) — 렌더러가 그 구간의 배경을 옅게 칠한다. 렌더러의 정규장 / 전체
+// 버튼이 정규장이면 extended 를 끄고 묻는다.
 // 미국은 야후가 includePrePost 로 같이 주고, 어디까지가 정규장인지는 응답의 tradingPeriods 가 알려 준다.
-// 국내는 야후가 15:30 까지만 줘서(includePrePost 도 같다) 네이버 NXT 분봉을 5분봉으로 묶어 붙인다.
+// 국내는 야후가 15:30 까지만 줘서(includePrePost 도 같다) 네이버 NXT 분봉을 5분봉(1W 는 30분봉)으로 묶어 붙인다.
 // NXT 는 프리(08:00~08:50) · 애프터(15:40~20:00)를 연속 매매로 연다. ETF 는 NXT 에 없어 빈 응답이다.
 const STEP_5M = 300000;
+const STEP_30M = 1800000;
+const EXT_FILL_MAX = 12 * 3600000; // 이보다 긴 빈 칸은 하루를 넘는다 — 채우지 않는다(fillExtGaps)
 const EXT_WINDOWS = [['pre', '0800', '0850'], ['after', '1530', '2000']];
 const EXT_TTL = 30000;
 const naverMinutes = new Map(); // '코드|YYYYMMDD|창' → { at, bars, done }
@@ -1073,6 +1078,24 @@ async function naverWindow(code, day, [name, from, to], now) {
   return bars;
 }
 
+// 5분봉을 step 칸으로 다시 묶는다(1W 30분봉). 30분 칸은 UTC 와 한국 시각에서 같은 곳에 떨어진다.
+function rebucket(bars, step) {
+  const out = [];
+  for (const b of bars) {
+    const at = Math.floor(b.time / step) * step;
+    const last = out[out.length - 1];
+    if (last && last.time === at && last.ext === b.ext) {
+      last.close = b.close;
+      last.high = Math.max(last.high, b.high);
+      last.low = Math.min(last.low, b.low);
+      last.volume += b.volume;
+    } else {
+      out.push({ ...b, time: at });
+    }
+  }
+  return out;
+}
+
 const toSeries = (bars) => ({
   closes: bars.map((b) => b.close), times: bars.map((b) => b.time), volumes: bars.map((b) => b.volume),
   opens: bars.map((b) => b.open), highs: bars.map((b) => b.high), lows: bars.map((b) => b.low),
@@ -1081,38 +1104,50 @@ const toSeries = (bars) => ({
 
 // 국내 1D 에 그날 NXT 프리 · 애프터 봉을 붙인다. 그날 = 오늘이다 — 프리마켓이 열리면 새 하루라
 // 08:00 부터는 어제 정규장이 빠진다. 오늘 시간외가 아직 없으면(08:00 전 · 휴장일) 야후 봉의 날을 쓴다.
-// 그날이 아닌 봉은 버린다. 네이버가 실패하면 던지고, 부르는 쪽이 정규장만 그린다.
-async function withNaverExtended(code, series, now) {
+// 1W(week)는 야후 봉의 날마다 붙이고 30분 칸으로 묶는다 — 프리마켓이 열렸는데 야후에 아직 오늘이 없으면
+// 오늘 프리도 끝에 붙인다. 지난 날의 창은 끝났으니 한 번만 묻는다(naverWindow).
+// 그 날들이 아닌 봉은 버린다. 네이버가 실패하면 던지고, 부르는 쪽이 정규장만 그린다.
+async function withNaverExtended(code, series, now, week = false) {
   const today = kstDay(now);
   const clock = kstClock(now);
   const dayBars = async (day) => (await Promise.all(EXT_WINDOWS
     .filter(([, from]) => day < today || clock >= from)
     .map((w) => naverWindow(code, day, w, now)))).flat();
-  let day = today;
-  let ext = await dayBars(today);
-  const yahooDay = series.times.length ? kstDay(series.times[series.times.length - 1]) : null;
-  if (!ext.length && yahooDay && yahooDay !== today) {
-    day = yahooDay;
-    ext = await dayBars(yahooDay);
+  let days;
+  let ext;
+  if (week) {
+    days = [...new Set(series.times.map(kstDay))];
+    if (!days.includes(today) && clock >= EXT_WINDOWS[0][1]) days.push(today);
+    ext = rebucket((await Promise.all(days.map(dayBars))).flat(), STEP_30M);
+  } else {
+    let day = today;
+    ext = await dayBars(today);
+    const yahooDay = series.times.length ? kstDay(series.times[series.times.length - 1]) : null;
+    if (!ext.length && yahooDay && yahooDay !== today) {
+      day = yahooDay;
+      ext = await dayBars(yahooDay);
+    }
+    days = [day];
   }
   if (!ext.length) return series;
   const bars = series.times.map((t, i) => ({ time: t, open: series.opens[i], high: series.highs[i],
     low: series.lows[i], close: series.closes[i], volume: series.volumes[i], ext: null }));
   const taken = new Set(bars.map((b) => b.time));
   return toSeries([...bars, ...ext.filter((b) => !taken.has(b.time))]
-    .filter((b) => kstDay(b.time) === day)
+    .filter((b) => days.includes(kstDay(b.time)))
     .sort((a, b) => a.time - b.time));
 }
 
-// 시간외는 거래가 드물어 5분 칸이 군데군데 빈다(SOXL 애프터 48칸 중 18칸, 2026-10-14). x축이 봉 순서라
-// 그대로 두면 네 시간이 한 시간 반처럼 눌린다 — 같은 세션 안의 빈 칸을 직전 종가로 채운다(거래량 0).
-// 세션이 바뀌는 곳(프리 → 정규장 → 애프터)은 채우지 않는다.
-function fillExtGaps(s) {
+// 시간외는 거래가 드물어 칸(1D 5분 · 1W 30분)이 군데군데 빈다(SOXL 애프터 48칸 중 18칸, 2026-10-14). x축이 봉
+// 순서라 그대로 두면 네 시간이 한 시간 반처럼 눌린다 — 같은 세션 안의 빈 칸을 직전 종가로 채운다(거래량 0).
+// 세션이 바뀌는 곳(프리 → 정규장 → 애프터)과 하루를 넘는 빈 칸은 채우지 않는다 — 1W 에서 야후가 하루를
+// 통째로 비우고 그날 프리도 없으면 애프터끼리 맞닿는다.
+function fillExtGaps(s, step) {
   const bars = [];
   for (let i = 0; i < s.times.length; i++) {
-    if (i > 0 && s.ext[i] && s.ext[i] === s.ext[i - 1]) {
+    if (i > 0 && s.ext[i] && s.ext[i] === s.ext[i - 1] && s.times[i] - s.times[i - 1] < EXT_FILL_MAX) {
       const c = s.closes[i - 1];
-      for (let t = s.times[i - 1] + STEP_5M; t < s.times[i]; t += STEP_5M) {
+      for (let t = s.times[i - 1] + step; t < s.times[i]; t += step) {
         bars.push({ time: t, open: c, high: c, low: c, close: c, volume: 0, ext: s.ext[i] });
       }
     }
@@ -1126,8 +1161,9 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval, extended }) => 
   if (!SYMBOL_RE.test(String(symbol ?? '')) || !RANGES.has(range) || !INTERVALS.has(interval)) {
     return { ok: false, error: '잘못된 요청' };
   }
-  // 시간외는 1D(5분봉)에만 붙인다. 지수는 시간외가 없다.
-  const ext = extended === true && range === '1d' && interval === '5m';
+  // 시간외는 1D(5분봉) · 1W(30분봉)에만 붙인다. 지수는 시간외가 없다.
+  const week = range === '5d' && interval === '30m';
+  const ext = extended === true && ((range === '1d' && interval === '5m') || week);
   const usExt = ext && US_RE.test(symbol);
   const krExt = ext ? /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol) : null;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
@@ -1169,15 +1205,23 @@ ipcMain.handle('yf:chart', async (_e, { symbol, range, interval, extended }) => 
 
     let series = { closes, times, volumes, opens, highs, lows, ext: null };
     if (usExt) {
-      const reg = (result.meta?.tradingPeriods?.regular || []).flat()
-        .find((p) => Number.isFinite(p?.start) && Number.isFinite(p?.end));
-      if (reg) series.ext = times.map((t) => (t < reg.start * 1000 ? 'pre' : t >= reg.end * 1000 ? 'after' : null));
+      // 정규장 구간은 날마다 하나다(1D 는 하루, 1W 는 닷새 — 2026-10-21 실측). 봉은 그날 구간의 앞이면 pre,
+      // 끝부터 after. 그날 = 정규장 시작 6시간 전(프리 04:00 은 5시간 반 전)부터 끝난 뒤 5시간(애프터 20:00 은
+      // 4시간 뒤)까지 — 첫날 구간 하나로 가르면 둘째 날 프리가 첫날 애프터가 된다.
+      const regs = (result.meta?.tradingPeriods?.regular || []).flat()
+        .filter((p) => Number.isFinite(p?.start) && Number.isFinite(p?.end));
+      if (regs.length) {
+        series.ext = times.map((t) => {
+          const p = regs.find((x) => t >= x.start * 1000 - 6 * 3600000 && t < x.end * 1000 + 5 * 3600000);
+          return !p ? null : t < p.start * 1000 ? 'pre' : t >= p.end * 1000 ? 'after' : null;
+        });
+      }
     }
     if (krExt) {
       // 장 시작 직후 야후가 빈 응답이어도(20분 지연) 프리 봉은 그린다
-      try { series = await withNaverExtended(krExt[1], series, Date.now()); } catch { /* 정규장만 그린다 */ }
+      try { series = await withNaverExtended(krExt[1], series, Date.now(), week); } catch { /* 정규장만 그린다 */ }
     }
-    if (series.ext && series.ext.some(Boolean)) series = fillExtGaps(series);
+    if (series.ext && series.ext.some(Boolean)) series = fillExtGaps(series, week ? STEP_30M : STEP_5M);
     else delete series.ext; // 시간외가 없으면 응답 모양은 예전 그대로
     if (!series.closes.length) return { ok: false, error: '빈 데이터' };
 

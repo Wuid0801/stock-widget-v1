@@ -52,7 +52,7 @@ function harness(extra = []) {
     loadEvents: async () => {}, // 갱신이 부르는 관심종목 일정 — 진짜는 extra 로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'chartTf', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -1318,6 +1318,97 @@ await test('plain chart: the switch beside the candle/line icon shows its state 
   assert.equal(b.className, 'on');
   assert.equal(b.title, '덧그림 다시 보기');
   assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('plainChart'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
+});
+
+// 정규장 / 전체(장전 · 장후 포함) — 1D · 1W 는 정규장만 보기(state.extHours === false)가 아니면 시간외 봉까지
+// 묻는다(main.js 가 미국은 야후 프리 · 애프터, 국내는 NXT 분봉을 붙인다). 두 응답은 캐시에서 따로 둔다.
+await test('ext hours: 1D · 1W ask for pre/after-hours bars unless the regular-only view is on, and the cache keeps the two apart', async () => {
+  const { c, run } = harness(['fetchChartCached']);
+  const asked = [];
+  c.api.fetchChart = async (a) => { asked.push(JSON.stringify(a)); return { ok: true, closes: [1], times: [1] }; };
+  run('var chartCache = new Map(); var chartTtl = () => 60000; state.extHours = true;');
+  const ask = (tf) => c.fetchChartCached('005930.KS', c.chartTf(tf));
+  await ask('1W');
+  assert.equal(asked.at(-1), JSON.stringify({ symbol: '005930.KS', range: '5d', interval: '30m', extended: true }));
+  run('state.extHours = false;');
+  await ask('1W');
+  assert.equal(asked.length, 2, '정규장만 보기는 다른 응답이다 — 받아 둔 전체를 꺼내지 않는다');
+  assert.equal(asked.at(-1), JSON.stringify({ symbol: '005930.KS', range: '5d', interval: '30m', extended: false }));
+  await ask('1D');
+  assert.equal(asked.at(-1), JSON.stringify({ symbol: '005930.KS', range: '1d', interval: '5m', extended: false }));
+  run('state.extHours = true;');
+  await ask('1W');
+  assert.equal(asked.length, 3, '전체로 돌아오면 받아 둔 것을 쓴다');
+  await ask('1M');
+  assert.equal(asked.at(-1), JSON.stringify({ symbol: '005930.KS', range: '1mo', interval: '1d' }), '일봉은 시간외가 없다');
+});
+
+await test('ext hours: the 정규장/전체 switch shows only on 1D · 1W for stocks, names the view and hides with the chart', () => {
+  const { c, run, elements } = harness(['renderChartMode']);
+  c.MODE_ICON = { candle: 'C', line: 'L' };
+  run(`state.watchlist = [{ symbol: '005930.KS', name: '삼성전자' }]; state.selected = '005930.KS';
+    state.timeframe = '1W'; state.extHours = true; renderChartMode(0, false);`);
+  const b = elements.get('extHours');
+  assert.equal(b.hidden, false);
+  assert.equal(b.textContent, '전체');
+  assert.equal(b.className, '');
+  assert.equal(b.title, '전체(장전 · 장후 포함) — 누르면 정규장만');
+  run('state.extHours = false; renderChartMode(0, false);');
+  assert.equal(b.textContent, '정규장');
+  assert.equal(b.className, 'on', '정규장만 보고 있으면 또렷하게 — 빠진 구간이 있다');
+  assert.equal(b.title, '정규장만 — 누르면 장전 · 장후까지');
+  run("state.timeframe = '1M'; renderChartMode(20, true);");
+  assert.equal(b.hidden, true, '일봉은 정규장만 있다');
+  run("state.timeframe = '1D'; state.selected = '^KS11'; renderChartMode(0, false);");
+  assert.equal(b.hidden, true, '지수 · 환율은 시간외가 없다');
+  run("state.selected = '005930.KS'; renderChartMode(0, false);");
+  assert.equal(b.hidden, false);
+  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('extHours'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
+});
+
+await test('ext hours: the switch flips the view, saves it and redraws', async () => {
+  const { c, run } = harness(['toggleExtHours']);
+  const log = [];
+  Object.assign(c, { save: () => log.push('save'), loadChart: async () => log.push(`load:${run('state.extHours')}`) });
+  run('state.extHours = true;');
+  await c.toggleExtHours();
+  assert.deepEqual(log.splice(0), ['save', 'load:false']);
+  await c.toggleExtHours();
+  assert.deepEqual(log.splice(0), ['save', 'load:true']);
+});
+
+await test('ext hours: loadChart asks with the view the switch picked', async () => {
+  const { c, run } = harness(['loadChart']);
+  const asked = [];
+  Object.assign(c, {
+    fetchChartCached: async (_s, tf) => { asked.push(tf.extended); return { ok: false, error: 'x' }; },
+    err: () => {}, clearChart: () => {},
+  });
+  run("state.timeframe = '1W'; state.extHours = false;");
+  await c.loadChart();
+  run('state.extHours = true;');
+  await c.loadChart();
+  assert.deepEqual(asked, [false, true]);
+});
+
+// 기간 배지는 첫 정규장 봉부터 — 1W 전체의 첫 봉은 그날 프리라 그대로 쓰면 정규장 / 전체에 따라 값이 달라진다
+await test('ext hours: the period badge starts at the first regular bar, so 정규장 and 전체 show the same return', async () => {
+  const { c, run } = harness(['loadChart', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange']);
+  const periods = [];
+  const t0 = Date.parse('2026-10-14T23:00:00Z'); // 10/15 08:00 KST
+  const times = [t0, t0 + 3600000, t0 + 7200000];
+  Object.assign(c, {
+    fetchChartCached: async () => ({ ok: true, closes: [90, 100, 110], times, volumes: [1, 1, 1],
+      opens: [90, 100, 110], highs: [90, 100, 110], lows: [90, 100, 110], ext: ['pre', null, null] }),
+    benchReturn: (_b, _g, since) => { periods.push(['since', since]); return null; },
+    err: () => {}, quoteErrText: () => '', renderPeriod: (...a) => periods.push(a), renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: () => {},
+  });
+  run(`let lastDrawSig = null; state.timeframe = '1W'; state.indicators = cleanIndicators({});
+    quotes['005930.KS'] = { price: 120, prevClose: 110, change: 10 };`);
+  await c.loadChart();
+  assert.deepEqual(periods.find((p) => p[0] === 'since'), ['since', times[1]], '지수 대비도 같은 봉부터');
+  assert.equal(periods.find((p) => p[0] !== 'since')[0], 100, '프리 봉(90)이 아니라 첫 정규장 봉(100)부터');
 });
 
 // 네트워크가 느리면 차트 응답까지 몇 초가 걸린다. 그동안 탭 · 헤더는 새 종목 · 기간인데 차트 · 기간 배지는

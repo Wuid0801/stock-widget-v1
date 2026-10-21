@@ -5,9 +5,10 @@ const UP = '#e24b4a';   // 상승 = 빨강 (한국 관례)
 const DOWN = '#185fa5'; // 하락 = 파랑
 
 const TF = {
-  // 1D 는 시간외(프리 · 애프터) 봉까지 받는다 — 미국은 야후, 국내는 네이버 NXT 분봉(main.js).
+  // 1D · 1W 는 시간외(프리 · 애프터) 봉까지 받는다 — 미국은 야후, 국내는 네이버 NXT 분봉(main.js).
+  // 차트 위 정규장 / 전체 버튼으로 끌 수 있다(chartTf).
   '1D': { range: '1d', interval: '5m', extended: true },
-  '1W': { range: '5d', interval: '30m' },
+  '1W': { range: '5d', interval: '30m', extended: true },
   '1M': { range: '1mo', interval: '1d' },
   '3M': { range: '3mo', interval: '1d' },
   '1Y': { range: '1y', interval: '1d' },
@@ -1812,6 +1813,7 @@ function clearChart() {
   renderTrendBadges([], 0);
   document.getElementById('chartMode').hidden = true; // 차트가 없으면 전환할 것도 없다
   document.getElementById('plainChart').hidden = true;
+  document.getElementById('extHours').hidden = true;
   document.getElementById('zoomReset').hidden = true; // 차트가 없으면 풀 확대도 없다
 }
 
@@ -2316,7 +2318,7 @@ function bandFor(symbol, times) {
 
 // 파라볼릭 SAR(보조 지표). SAR 은 지난 흐름(극값 · 가속)을 이어받아서 차트 첫 봉에서 새로 시작하면 1M 은
 // 대부분 다른 값이 된다 — 일봉 기간은 차트 첫날 앞의 5년치 일봉 고 · 저를 이어 붙여 계산한다. 차트 봉은 오늘
-// 봉을 실시간 캔들로 맞춘 값이라 차트 쪽을 쓴다. 1D · 1W(ext 를 넘긴다, 없으면 null)는 받은 분봉만으로 첫 봉부터, 1D 는
+// 봉을 실시간 캔들로 맞춘 값이라 차트 쪽을 쓴다. 1D · 1W(ext 를 넘긴다, 없으면 null)는 받은 분봉만으로 첫 봉부터,
 // 정규장 봉만 — 시간외는 거래가 드물어 빈 칸을 채운 평평한 봉이 많아 엉뚱한 곳에서 뒤집힌다. 시간외 칸은 null.
 // 돌려주는 값: { data, up(봉마다), rising(지금 상승인지), since(전환 봉부터 센 봉 수), flipAt(전환 봉 시각) } | null
 function sarFor(symbol, times, highs, lows, ext) {
@@ -2437,11 +2439,16 @@ async function fetchLive(symbols) {
 // 차트 응답 캐시. 종목·타임프레임을 오갈 때마다 같은 걸 다시 받으면
 // 매번 네트워크 왕복을 기다리게 된다. 1D(5분봉)만 폴링 주기와 같은 30초로 두고
 // 나머지는 5분 — 일봉이 30초마다 바뀔 일은 없다.
-const chartCache = new Map(); // `symbol|range|interval` -> { at, ttl, r }
+const chartCache = new Map(); // `symbol|range|interval|ext` -> { at, ttl, r }
 const chartTtl = (interval) => (interval === '5m' ? 30000 : 5 * 60 * 1000);
 
+// 차트 요청. 시간외를 받을 수 있는 기간(1D · 1W)이라도 정규장만 보기(state.extHours === false)면 묻지 않는다.
+function chartTf(key) {
+  return TF[key].extended && state.extHours === false ? { ...TF[key], extended: false } : TF[key];
+}
+
 async function fetchChartCached(symbol, tf) {
-  const key = `${symbol}|${tf.range}|${tf.interval}`;
+  const key = `${symbol}|${tf.range}|${tf.interval}|${tf.extended ? 'ext' : ''}`; // 정규장 · 전체는 다른 응답이다
   const hit = chartCache.get(key);
   if (hit && Date.now() - hit.at < hit.ttl) return hit.r;
 
@@ -2539,7 +2546,7 @@ async function loadChart() {
     document.getElementById('chartBox').className = 'chartbox loading';
   }
   const seq = ++chartSeq;
-  const tf = TF[state.timeframe];
+  const tf = chartTf(state.timeframe);
   // 차트만 보기(차트 위 버튼): 이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지를 그리지 않는다.
   // 칩 설정은 그대로 두고 그리기만 건너뛰어, 다시 누르면 원래대로 돌아온다. 가격과 거래량 막대는 남는다.
   const plain = state.plainChart === true;
@@ -2568,7 +2575,7 @@ async function loadChart() {
   const q = quotes[item.symbol];
   const closes = r.closes.slice();
   const times = r.times.slice();
-  // 1D 시간외 봉(main.js): 봉마다 'pre' · 'after', 정규장은 null. 그 구간의 배경을 옅게 칠한다.
+  // 1D · 1W 시간외 봉(main.js): 봉마다 'pre' · 'after', 정규장은 null. 그 구간의 배경을 옅게 칠한다.
   const ext = r.ext ? r.ext.slice() : null;
 
   // Yahoo 1D 봉은 20분 전에서 끊긴다. 끝점을 이어붙이거나(장중 현재가 · 장 마감 뒤 종가)
@@ -2594,10 +2601,12 @@ async function loadChart() {
   }
 
   // 1D 외에는 "일간 등락"만 보여주면 탭과 안 맞는다. 해당 구간 수익률도 같이 표시.
+  // 시작은 첫 정규장 봉이다 — 1W 전체의 첫 봉은 그날 프리라 그대로 쓰면 정규장 / 전체에 따라 값이 달라진다.
   if (plain) document.getElementById('period').hidden = true;
   else {
-    renderPeriod(r.closes[0], q && q.price != null ? q.price : closes[closes.length - 1],
-      benchReturn(bench, benchGot, r.times[0]));
+    const first = r.ext ? r.ext.indexOf(null) : 0;
+    renderPeriod(r.closes[first], q && q.price != null ? q.price : closes[closes.length - 1],
+      benchReturn(bench, benchGot, r.times[first]));
   }
 
   // 이동평균선은 일봉 타임프레임(1M/3M/1Y/3Y)에서만 의미가 있다.
@@ -2792,6 +2801,7 @@ const save = () => api.setState({
   plainChart: state.plainChart,
   infoOpen: state.infoOpen,
   indicators: state.indicators,
+  extHours: state.extHours,
 });
 
 // 저장된 선택이 관심종목도 지수도 아니면 첫 관심종목. 관심종목이 비어 있으면 null —
@@ -3540,6 +3550,22 @@ function renderChartMode(bars, daily) {
   p.hidden = false;
   p.className = state.plainChart ? 'on' : '';
   p.title = state.plainChart ? '덧그림 다시 보기' : '차트만 보기 — 이동평균 · 보조 지표 · 기준선 끄기';
+  // 정규장 / 전체(장전 · 장후 포함) — 시간외를 받을 수 있는 기간(1D · 1W)의 종목만. 지수 · 환율은 시간외가 없다.
+  // 글자는 지금 보는 것이고, 정규장만 보고 있으면 차트만 보기처럼 또렷하게 — 빠진 구간이 있다.
+  const e = document.getElementById('extHours');
+  const item = selectedItem();
+  const full = state.extHours !== false;
+  e.hidden = !TF[state.timeframe].extended || !item || isIndex(item.symbol);
+  e.textContent = full ? '전체' : '정규장';
+  e.className = full ? '' : 'on';
+  e.title = full ? '전체(장전 · 장후 포함) — 누르면 정규장만' : '정규장만 — 누르면 장전 · 장후까지';
+}
+
+// 정규장 / 전체 버튼. 응답이 달라 다시 받는다(캐시는 둘을 따로 둔다 — fetchChartCached).
+async function toggleExtHours() {
+  state.extHours = state.extHours === false;
+  save();
+  await loadChart();
 }
 
 function renderTabs() {
@@ -3727,6 +3753,8 @@ async function refreshNow() {
   // 저장값에 없거나 모르는 값이면 캔들로 시작한다
   state.chartMode = state.chartMode === 'line' ? 'line' : 'candle';
   state.plainChart = state.plainChart === true;
+  // 정규장 / 전체 — 정규장만 보기로 저장된 때만 정규장
+  state.extHours = state.extHours !== false;
   // 보유 · 52주 · 추세 점검은 접었다고 저장된 때만 접는다
   state.infoOpen = state.infoOpen !== false;
   applyInfoOpen();
@@ -3755,6 +3783,7 @@ async function refreshNow() {
     save();
     await loadChart(); // 서명에 plainChart 가 있어 다시 그려지고, drawChart 가 버튼 강조도 바꾼다
   };
+  document.getElementById('extHours').onclick = () => toggleExtHours().catch(console.error);
   document.getElementById('zoomReset').onclick = resetZoom;
   bindZoom();
   renderTabs();

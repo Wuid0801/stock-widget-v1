@@ -22,7 +22,8 @@ const data = {
   watchlist: [{ symbol: '005930.KS', name: '삼성전자' }, { symbol: 'AAPL', name: '애플' }],
   selected: '005930.KS', timeframe: '3M', alerts: { enabled: true, targets: { '005930.KS': { up: 250000 } } },
   holdings: { '005930.KS': { qty: 10, avg: 200000 } }, theme: 'dark', opacity: 74, maPeriods: [5, 20, 60], maStyles: {},
-  chartMode: 'candle', plainChart: false, infoOpen: true, indicators: { bb: true, sar: false }, bounds: { width: 340, height: 520 },
+  chartMode: 'candle', plainChart: false, infoOpen: true, indicators: { bb: true, sar: false }, extHours: true,
+  bounds: { width: 340, height: 520 },
 };
 const sets = [];
 class FakeStore {
@@ -56,7 +57,7 @@ new Function('require', 'process', src)(require, { env: {}, platform: 'test' });
 const p2 = (n) => String(n).padStart(2, '0');
 const today = (() => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; })();
 const KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles',
-  'chartMode', 'plainChart', 'infoOpen', 'indicators'];
+  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'];
 
 // --- 1. 내보내기 ------------------------------------------------------------------------
 {
@@ -85,7 +86,7 @@ const file = (name, body) => { const f = path.join(dir, name); fs.writeFileSync(
       { symbol: 'NVDA', name: '두 번' }, { name: '기호 없음' }, { symbol: 'TSLA', name: '테슬라' }],
     holdings: { '000660.KS': { qty: 2, avg: 1600000 }, NVDA: { qty: 0, avg: 100 }, AAPL: { qty: '5', avg: 1 } },
     alerts: { enabled: 'yes', targets: { '000660.KS': { up: 1800000, down: -5 }, BAD$: { up: 1 } } },
-    theme: 'purple', opacity: 74, chartMode: 'line', plainChart: true, indicators: { bb: true, vp: 'no' },
+    theme: 'purple', opacity: 74, chartMode: 'line', plainChart: true, indicators: { bb: true, vp: 'no' }, extHours: false,
     bounds: { width: 9999 }, __proto__x: 1,
   } };
   nextOpen = { canceled: false, filePaths: [file('in.json', '﻿' + JSON.stringify(incoming))] };
@@ -106,20 +107,21 @@ const file = (name, body) => { const f = path.join(dir, name); fs.writeFileSync(
   check('목표가 — 0보다 큰 값 · 맞는 기호만, 켬은 true 일 때만', same(data.alerts, { enabled: false, targets: { '000660.KS': { up: 1800000 } } }),
     JSON.stringify(data.alerts));
   check('모르는 값(테마 purple)은 바꾸지 않는다', data.theme === 'dark' && !sets.includes('theme'));
-  check('아는 값은 바꾼다', data.chartMode === 'line' && data.plainChart === true && same(data.indicators, { bb: true }));
+  check('아는 값은 바꾼다', data.chartMode === 'line' && data.plainChart === true && same(data.indicators, { bb: true })
+    && data.extHours === false);
   check('모르는 키(창 위치 등)는 쓰지 않는다', !sets.includes('bounds') && !sets.some((k) => !KEYS.includes(k)), sets.join(' '));
   check('파일에 없는 설정은 그대로 둔다', data.timeframe === '3M' && same(data.maPeriods, [5, 20, 60]));
 }
 {
   // 모양이 틀린 값은 그 설정만 건너뛴다 — 범위 밖 투명도 · 잘못된 기호 · 문자열 아닌 기간 · 참거짓 아닌 켬
   nextOpen = { canceled: false, filePaths: [file('odd.json', { state: { opacity: 5, selected: '../x', timeframe: { a: 1 },
-    maPeriods: [5, -1, 2.5, 'x', 1001, 20], infoOpen: 'yes', plainChart: 1 } })] };
+    maPeriods: [5, -1, 2.5, 'x', 1001, 20], infoOpen: 'yes', plainChart: 1, extHours: 'no' } })] };
   nextAnswer = 0;
   sets.length = 0;
   const r = await handlers['backup:import']({});
   check('이동평균 기간은 1~1000 정수만 남긴다', r.ok && same(data.maPeriods, [5, 20]), JSON.stringify(data.maPeriods));
   check('틀린 투명도 · 선택 · 기간 · 켬은 바꾸지 않는다', same(sets, ['maPeriods']) && data.opacity === 74 && data.selected === '005930.KS'
-    && data.timeframe === '3M' && data.infoOpen === true && data.plainChart === true, sets.join(' '));
+    && data.timeframe === '3M' && data.infoOpen === true && data.plainChart === true && data.extHours === false, sets.join(' '));
 }
 
 // --- 3. 취소 · 잘못된 파일 ------------------------------------------------------------------
