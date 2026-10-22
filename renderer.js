@@ -786,6 +786,11 @@ function renderDetail() {
 
   const lv = levelOf(q && q.rsi);
   badge.textContent = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
+  // 툴팁에 일봉 · 주봉 RSI 를 함께 — 주봉은 이번 주가 진행 중인 값이다(최근 상장이라 15주가 안 되면 없다)
+  badge.title = q && q.rsi != null
+    ? `일봉 RSI ${q.rsi.toFixed(1)}${q.rsiWeek != null ? ` · 주봉 RSI ${q.rsiWeek.toFixed(1)} (이번 주 진행 중)` : ''}\n`
+      + `15:30 정규장 종가 기준, ${q.rsiWeek != null ? '오늘 · 이번 주는' : '오늘은'} 지금 가격 · 과열도는 일봉 RSI`
+    : '';
   badge.style.color = lv.color;
   badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : cssVar('--chip');
   renderMetrics(); // 지표 보기가 열려 있으면 고른 종목 것으로(1분이 지났으면 다시 받는다)
@@ -2315,6 +2320,8 @@ async function loadQuote(item, live) {
     change,
     pct: prevClose ? (change / prevClose) * 100 : 0,
     rsi: calcRSI(closes),
+    // 주봉 RSI — 같은 일봉(오늘은 지금 가격)을 주로 묶은 종가로. 이번 주는 진행 중인 값이다. 과열도는 일봉 RSI 다.
+    rsiWeek: calcRSI(weekCloses(times, closes)),
     live: !!live,
     // 실시간 없이 야후도 실패해 캐시로 만든 가격 — 받은 시각과 함께 "갱신 실패" 로 보인다(renderUpdated).
     // 실시간이 있으면 가격은 새것이다. 낡은 일봉은 RSI · 이동평균 · 52주에만 쓰인다.

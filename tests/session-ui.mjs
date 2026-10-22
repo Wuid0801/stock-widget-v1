@@ -2460,6 +2460,48 @@ await test('index detail: points with two decimals, no currency tag, no sector l
   assert.equal(lookups, 1, 'stocks still look up their sector');
 });
 
+// 과열도 배지의 툴팁 — 일봉 RSI 와 주봉 RSI(이번 주 진행 중). 배지 글자 · 색은 일봉 RSI 그대로다.
+await test('loadQuote keeps a weekly RSI next to the daily one — the same daily closes grouped Monday to Sunday', async () => {
+  const { c, run } = harness(['loadQuote']);
+  const t0 = Date.parse('2026-01-05T00:00:00Z'); // 월요일, 국내 일봉 시각
+  const times = [];
+  const closes = [];
+  for (let i = 0; i < 200; i++) {
+    const t = t0 + i * 86400000;
+    if ([0, 6].includes(new Date(t).getUTCDay())) continue; // 주말 없음
+    times.push(t);
+    closes.push(Math.round(100 + Math.sin(i / 7) * 10 + i * 0.1));
+  }
+  c.dailyFor = async () => ({ price: closes.at(-1), closes, times, currency: 'KRW' });
+  await c.loadQuote({ symbol: '005930.KS' }, undefined);
+  const q = run("quotes['005930.KS']");
+  const want = run(`calcRSI(weekCloses(${JSON.stringify(times)}, ${JSON.stringify(closes)}))`);
+  assert.ok(want > 0 && want < 100, String(want));
+  assert.equal(q.rsiWeek, want, '주간 종가에 같은 RSI');
+  assert.notEqual(q.rsiWeek, q.rsi, '일봉 RSI 와는 다른 값');
+});
+
+await test('RSI badge tooltip shows daily and weekly RSI; the badge itself stays on daily RSI', () => {
+  const { c, run, elements } = harness(['renderDetail']);
+  run(formatting);
+  Object.assign(c, {
+    sectors: new Map(), loadSector: () => Promise.resolve(),
+    renderHolding: () => {}, renderW52: () => {}, renderTrendCheck: () => {}, candleTag: () => '',
+    levelOf: () => ({ label: '중립', color: '#000000' }), cssVar: () => '#000000', hexA: () => 'x',
+  });
+  run("state.selected = '005930.KS'; quotes['005930.KS'] = { price: 224500, currency: 'KRW', rsi: 39.0739, rsiWeek: 43.46 };");
+  c.renderDetail();
+  const b = elements.get('badge');
+  assert.equal(b.textContent, '중립 · RSI 39', '배지는 일봉 RSI');
+  assert.equal(b.title, '일봉 RSI 39.1 · 주봉 RSI 43.5 (이번 주 진행 중)\n15:30 정규장 종가 기준, 오늘 · 이번 주는 지금 가격 · 과열도는 일봉 RSI');
+  run("quotes['005930.KS'].rsiWeek = null;");
+  c.renderDetail();
+  assert.equal(b.title, '일봉 RSI 39.1\n15:30 정규장 종가 기준, 오늘은 지금 가격 · 과열도는 일봉 RSI', '주봉이 모자라면(최근 상장) 일봉만');
+  run("quotes['005930.KS'].rsi = null;");
+  c.renderDetail();
+  assert.equal(b.title, '', 'RSI 가 없으면 툴팁도 없다');
+});
+
 await test('loadChart draws the selected index from its Yahoo symbol in points', async () => {
   const { c, run } = harness(['loadChart']);
   run(formatting);

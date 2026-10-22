@@ -139,6 +139,21 @@ function volumeProfile(highs, lows, volumes, from, to, bins = 20) {
   return vols[poc] > 0 ? { lo, hi, step, vols, poc } : null;
 }
 
+// 주봉 종가 — 일봉을 월~일 주로 묶어 주마다 마지막 거래일 종가(이번 주는 진행 중인 마지막 값). 날짜는 UTC 날짜다 —
+// 국내 일봉(00:00 UTC) · 미국 일봉(13:30/14:30 UTC) 모두 그 시장 날짜 안이다(이동평균과 같다). 1970-01-01 이
+// 목요일이라 일 번호에 3을 더하면 월요일에 주가 바뀐다. 빈 종가는 건너뛴다. 주봉 RSI 는 이것에 calcRSI 를 쓴다.
+function weekCloses(times, closes) {
+  const out = [];
+  let week = null;
+  for (let i = 0; i < times.length; i++) {
+    if (!(closes[i] > 0)) continue;
+    const w = Math.floor((Math.floor(times[i] / 86400000) + 3) / 7);
+    if (w === week) out[out.length - 1] = closes[i];
+    else { out.push(closes[i]); week = w; }
+  }
+  return out;
+}
+
 // from 시점부터 last 까지의 수익률(%). 기준은 from 과 같은 날이거나 그 앞의 마지막 봉(UTC 날짜로 맞춘다 —
 // 이동평균 · 볼린저와 같다). 그런 봉이 없으면(시계열이 더 늦게 시작) 첫 봉.
 function returnSince(times, closes, from, last) {
@@ -457,7 +472,7 @@ function meetAt(a, b) {
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
-    calcRSI, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    calcRSI, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
