@@ -2812,7 +2812,9 @@ async function loadChart() {
     // 지수 비교선의 끝(실시간 지수) — 종목은 그대로여도 지수가 움직이면 다시 그린다
     + `|${bline ? bline.data[bline.data.length - 1] : ''}`
     // 차트만 보기 — 이동평균 · 가로선이 없던 화면이면 위 값이 같아도 추세선이 남는다
-    + `|${plain}`;
+    + `|${plain}`
+    // 정규장 / 전체 — NXT 에 없는 종목(ETF 등)은 두 응답이 똑같아, 서명에 없으면 다시 그리지 않아 버튼 글자도 그대로였다
+    + `|${state.extHours !== false}`;
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
   drawnKey = key;

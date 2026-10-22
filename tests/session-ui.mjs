@@ -1459,6 +1459,26 @@ await test('ext hours: the switch flips the view, saves it and redraws', async (
   assert.deepEqual(log.splice(0), ['save', 'load:true']);
 });
 
+// NXT 에 없는 종목(DSC인베스트먼트 · ETF)은 정규장 · 전체 응답이 똑같다 — 서명이 같아 다시 그리지 않으면 버튼 글자
+// (drawChart → renderChartMode)도 안 바뀌어 눌러도 안 되는 것처럼 보였다(2026-10-22). 캔들/선 · 차트만 보기처럼 서명에 넣는다.
+await test('ext hours: switching redraws even when both views return the same bars, so the switch label follows', async () => {
+  const { c, run } = harness(['loadChart', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange']);
+  const draws = [];
+  const t0 = Date.parse('2026-10-22T00:00:00Z');
+  const same = { ok: true, closes: [6700, 6620], times: [t0, t0 + 300000], volumes: [1, 1], opens: [6700, 6620], highs: [6700, 6620], lows: [6700, 6620] };
+  Object.assign(c, {
+    fetchChartCached: async () => same, err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {},
+    renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+  });
+  run("let lastDrawSig = null; state.timeframe = '1W'; state.indicators = cleanIndicators({}); state.extHours = true;");
+  await c.loadChart();
+  run('state.extHours = false;');
+  await c.loadChart();
+  assert.equal(draws.length, 2, '정규장으로 바꾸면 다시 그린다(버튼 글자가 따라온다)');
+  await c.loadChart();
+  assert.equal(draws.length, 2, '같은 보기의 30초 갱신은 그대로 둔다');
+});
+
 await test('ext hours: loadChart asks with the view the switch picked', async () => {
   const { c, run } = harness(['loadChart']);
   const asked = [];
