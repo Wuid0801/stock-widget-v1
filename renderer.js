@@ -127,8 +127,10 @@ const YAHOO_KR_DELAY_MIN = 20;
 
 // 상단 지수 줄. 누르면 관심종목처럼 "선택"되어 헤더 · 차트가 지수로 바뀐다.
 // 기호는 야후 것이다(차트 · 일봉을 야후에서 받는다). code 는 main.js quote:indices 의 code.
-// page 가 같은 것끼리 한 장 — 다섯 개는 340px 한 줄에 들어가지 않아 장을 넘긴다(국내 → 미국 → 환율).
-// overseas 는 야후 시세가 늦지 않고 하루가 한국 날짜와 다른 것(미국 지수 · 환율) — 미국 종목처럼 다룬다.
+// page 가 같은 것끼리 한 장 — 340px 한 줄에 둘씩 장을 넘긴다(국내 → 미국 → 선물 · 유가 → 환율 · 금리).
+// overseas 는 야후 시세가 국내처럼 20분 늦지 않고 하루가 한국 날짜와 다른 것(미국 지수 · 선물 · 유가 · 금리 · 환율)
+// — 미국 종목처럼 다룬다. delayMin 은 거래소가 늦게 주는 분이다 — 나스닥 100 선물(CME) · WTI(NYMEX)는 네이버 · 야후
+// 모두 10분 늦다(2026-10-23 실측). cur 는 값의 단위(없으면 포인트 'pt') — 미국채 10년은 금리 '%' 다.
 // loadChart 가 selectedItem 을 부르므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
 // 마커 앞)에 있어야 한다.
 const INDICES = [
@@ -136,7 +138,10 @@ const INDICES = [
   { symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥', page: 0 },
   { symbol: '^IXIC', code: 'NASDAQ', name: '나스닥', page: 1, overseas: true },
   { symbol: '^GSPC', code: 'SPX', name: 'S&P 500', page: 1, overseas: true },
-  { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 2, overseas: true },
+  { symbol: 'NQ=F', code: 'NQ', name: '나스닥 선물', page: 2, overseas: true, delayMin: 10 },
+  { symbol: 'CL=F', code: 'WTI', name: 'WTI', page: 2, overseas: true, delayMin: 10 },
+  { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 3, overseas: true },
+  { symbol: '^TNX', code: 'US10Y', name: '미국채 10년', page: 3, overseas: true, cur: '%' },
 ];
 
 function isIndex(symbol) {
@@ -234,16 +239,23 @@ const fmt = (v) => v == null ? '—'
 
 // 해외 종목은 통화가 다르다. 원화는 정수, 그 외(USD 등)는 소수 2자리로 보여준다.
 // 지수는 통화가 아니라 포인트다. money 는 원화가 아니면 소수 둘째 자리로 쓰므로 'pt' 를 주면
-// 헤더 · 오늘 캔들 안내 · 52주 · 차트 축 · 툴팁이 상단 지수 줄처럼 7,003.74 로 나온다.
-const curOf = (symbol) => (isIndex(symbol) ? 'pt' : (quotes[symbol] && quotes[symbol].currency) || 'KRW');
+// 헤더 · 오늘 캔들 안내 · 52주 · 차트 축 · 툴팁이 상단 지수 줄처럼 7,003.74 로 나온다. 금리(INDICES 의 cur '%')는
+// 하루에 0.01~0.1 움직여 둘째 자리로는 잘 보이지 않는다 — 셋째 자리까지(4.965).
+const curOf = (symbol) => (isIndex(symbol) ? INDICES.find((i) => i.symbol === symbol).cur || 'pt'
+  : (quotes[symbol] && quotes[symbol].currency) || 'KRW');
 const money = (v, cur) => {
   if (v == null) return '—';
   if (!cur || cur === 'KRW') return fmt(v);
-  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const digits = cur === '%' ? 3 : 2;
+  return v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 const signedMoney = (v, cur) => (v > 0 ? '+' : '') + money(v, cur);
 // 등락률은 자릿수가 흔들리지 않게 항상 소수 2자리
 const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+// 금리의 등락은 bp(0.01%p) — 4.953 → 4.970 은 +1.7bp. 금리가 몇 % 변했는지(+0.34%)보다 이것을 본다.
+// 헤더의 전일 대비는 현재가 - 전일 종가로 다시 센 값이라 -0.0225 가 -0.02249999… 가 되어 지수 줄(-2.3bp)과 갈렸다
+// (-2.2bp, 2026-10-26) — 네이버 금리의 자릿수(0.0001 = 0.01bp)에서 먼저 반올림한다.
+const fmtBp = (v) => (v > 0 ? '+' : '') + (Math.round(v * 1e4) / 100).toFixed(1) + 'bp';
 
 // 색은 CSS 변수 한 곳에서만 정의한다. 차트도 그리는 시점에 여기서 읽어가므로
 // 테마를 바꾸면 같은 값이 따라온다.
@@ -420,7 +432,7 @@ function moveSymbol(from, to) {
 // --- 지수 줄 ---------------------------------------------------------------------
 // 개별 종목이 빠질 때 시장 전체 흐름인지 바로 알 수 있게 한 줄로 보여준다.
 // 누르면 그 지수를 관심종목처럼 고른다(select) — 헤더 · 차트가 지수로 바뀐다.
-// 다섯 개(코스피 · 코스닥 · 나스닥 · S&P 500 · 원/달러)는 한 줄에 들어가지 않아 장(INDICES 의 page)을
+// 여덟 개(국내 · 미국 지수, 나스닥 선물 · WTI, 원/달러 · 미국채 10년)는 한 줄에 들어가지 않아 장(INDICES 의 page)을
 // 보유 합계 줄처럼 FOLIO_MS 마다 넘긴다. 마우스를 올리면 멈추고, 보고 있는 지수가 있으면 그 장에 머문다.
 let indexItems = []; // 마지막으로 받은 지수 항목 — 선택만 바뀔 때 강조를 다시 그리는 데 쓴다
 let indexPage = 0;   // 지금 보이는 장(indexPages 의 번호)
@@ -463,9 +475,10 @@ function renderIndices(animate = false) {
   box.innerHTML = `<div class="ixpage${animate ? ' in' : ''}">${pages[indexPage].items.map(({ ix, it }) => {
     const color = it.pct === 0 ? cssVar('--flat') : (it.pct > 0 ? UP : DOWN);
     const cls = ix.symbol === state.selected ? 'ix on' : 'ix';
-    return `<span class="${cls}" data-symbol="${ix.symbol}" title="${ix.name} 차트 보기"><span class="ixn">${esc(ix.name)}</span>`
-      + `<span class="ixv">${it.value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
-      + `<span class="ixp" style="color:${color}">${fmtPct(it.pct)}</span></span>`;
+    const move = ix.cur === '%' && it.change != null ? fmtBp(it.change) : fmtPct(it.pct); // 금리는 bp
+    return `<span class="${cls}" data-symbol="${ix.symbol}" title="${ix.name}${ix.delayMin ? ` (${ix.delayMin}분 지연)` : ''} 차트 보기">`
+      + `<span class="ixn">${esc(ix.name)}</span><span class="ixv">${money(it.value, curOf(ix.symbol))}</span>`
+      + `<span class="ixp" style="color:${color}">${move}</span></span>`;
   }).join('')}</div>${dots}`;
 }
 
@@ -728,10 +741,12 @@ function renderUpdated() {
   // 야후까지 실패해 캐시 값을 보이는 중이면 시각은 실제로 받은 때다(fetchedAt) — 지금 시각을 붙이면
   // 몇 시간 묵은 가격이 정상적인 20분 지연 시세처럼 보인다.
   const stale = fallback && q.stale;
-  el.innerHTML = `<span class="${q && q.live ? SESSION_CLASS[session] : 'delay'}">`
-    + `${stale ? '갱신 실패' : delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
+  // 선물 · 유가(지수 줄)는 거래소가 늦게 준다(INDICES 의 delayMin) — 거래 중에 정규장 · 실시간으로 보이지 않게
+  const lag = q && q.live && session === 'regular' ? INDICES.find((i) => i.symbol === state.selected)?.delayMin : null;
+  el.innerHTML = `<span class="${q && q.live && !lag ? SESSION_CLASS[session] : 'delay'}">`
+    + `${stale ? '갱신 실패' : lag ? `${lag}분지연` : delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
   const source = q && !q.error && q.price != null
-    ? `${q.live ? '실시간' : stale ? '마지막으로 받은 값' : delayed ? '20분지연' : '정규장 가격'}`
+    ? `${q.live ? (lag ? `${lag}분 지연` : '실시간') : stale ? '마지막으로 받은 값' : delayed ? '20분지연' : '정규장 가격'}`
       + ` · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
     : '확인 불가';
   el.title = `소스: ${source}${q && q.market ? ` · ${q.market}` : ''}`
@@ -766,7 +781,7 @@ function renderDetail() {
   if (q && q.change != null) {
     const color = q.change === 0 ? cssVar('--flat') : (q.change > 0 ? UP : DOWN);
     chgEl.style.color = color;
-    chgEl.innerHTML = `${signedMoney(q.change, cur)}<br>${fmtPct(q.pct)}`;
+    chgEl.innerHTML = `${cur === '%' ? fmtBp(q.change) : signedMoney(q.change, cur)}<br>${fmtPct(q.pct)}`; // 금리는 bp
   } else {
     chgEl.textContent = '';
   }
@@ -2424,10 +2439,12 @@ function seriesVolAvg(volumes, ext) {
 // 시장 날짜(일 번호) — 시간외 봉과 일봉을 같은 날로 짝지을 때. 국내는 한국 날짜다 — NXT 프리(08:00 KST)는 UTC 로
 // 전날이다. 미국 종목 · 지수는 뉴욕 시각을 -5시간 고정으로 센다 — 04:00~20:00 ET 가 서머타임이든 아니든 같은 날로
 // 떨어진다(UTC 로 세면 겨울에 19~20시 ET 가 다음 날이 된다). 일봉(국내 00:00 UTC · 미국 13:30/14:30 UTC)은 어느 쪽으로
-// 세도 그날이다. 환율은 하루 내내 돌아 예전처럼 UTC 날짜.
+// 세도 그날이다. 환율은 하루 내내 돌아 예전처럼 UTC 날짜. 선물(=F)은 야후 일봉 하나가 CME 하루(18:00 ET ~ 다음 날
+// 17:00 ET)이고 시각은 끝 날의 00:00 ET 다(2026-10-23 실측 NQ · CL — 일봉 시가가 전날 18:00 봉의 시가). +2시간이면
+// 서머타임이든 아니든 그 하루가 끝 날의 날짜로 떨어진다(쉬는 17~18시 ET 가 자정에 걸린다).
 function marketDay(ms, symbol) {
   const usMarket = isUs(symbol) || (symbol.startsWith('^') && isOverseas(symbol));
-  const offset = usMarket ? -5 : isOverseas(symbol) ? 0 : 9;
+  const offset = symbol.endsWith('=F') ? 2 : usMarket ? -5 : isOverseas(symbol) ? 0 : 9;
   return Math.floor((ms + offset * 3600000) / 86400000);
 }
 

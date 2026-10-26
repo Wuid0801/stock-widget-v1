@@ -551,9 +551,9 @@ async function domesticRealtime(symbols) {
   }
 }
 
-// 지수 줄 (실시간): 코스피 · 코스닥, 나스닥 · S&P 500(네이버 해외 지수), 원/달러(야후 — 차트와
-// 보유 합계의 원화 환산이 같은 값을 쓴다). 셋을 함께 받고, 하나가 실패해도 나머지는 보인다.
-// 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
+// 지수 줄 (실시간): 코스피 · 코스닥, 나스닥 · S&P 500(네이버 해외 지수), 나스닥 100 선물 · WTI(네이버 — 거래소가
+// 10분 늦게 준다), 미국채 10년(네이버 — 실시간), 원/달러(야후 — 차트와 보유 합계의 원화 환산이 같은 값을 쓴다).
+// 함께 받고, 하나가 실패해도 나머지는 보인다. 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
 const US_INDICES = { '.IXIC': { code: 'NASDAQ', name: '나스닥' }, '.INX': { code: 'SPX', name: 'S&P 500' } };
 ipcMain.handle('quote:indices', async () => {
   // 지수 헤더용 값. 빠진 값은 0 이 아니라 null — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
@@ -567,8 +567,9 @@ ipcMain.handle('quote:indices', async () => {
     code,
     name,
     value: opt(d.closePriceRaw ?? d.closePrice),
-    // 지수도 종목처럼 내리면 음수다(2026-10-02 코스닥 -1.00 실측)
-    change: opt(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice),
+    // 지수도 종목처럼 내리면 음수다(2026-10-02 코스닥 -1.00 실측). 유가 · 국채(시장지표)는 이름이 fluctuations 다
+    // (2026-10-23 금 -43.50 · 한국 국채 10년 -0.0600 — 내리면 음수인 것도 같다).
+    change: opt(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice ?? d.fluctuations),
     pct: opt(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
     open: opt(d.openPriceRaw ?? d.openPrice),
     high: opt(d.highPriceRaw ?? d.highPrice),
@@ -582,6 +583,13 @@ ipcMain.handle('quote:indices', async () => {
     naver('https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX')
       .then((ds) => ds.filter((d) => US_INDICES[d.reutersCode])
         .map((d) => item(d, US_INDICES[d.reutersCode].code, US_INDICES[d.reutersCode].name))),
+    naver('https://polling.finance.naver.com/api/realtime/worldstock/futures/NQcv1')
+      .then((ds) => ds.filter((d) => d.reutersCode === 'NQcv1').map((d) => item(d, 'NQ', '나스닥 선물'))),
+    naver('https://polling.finance.naver.com/api/realtime/marketindex/energy/CLcv1')
+      .then((ds) => ds.filter((d) => d.reutersCode === 'CLcv1').map((d) => item(d, 'WTI', 'WTI'))),
+    // 국채는 폴링 주소가 없다(404) — 상세를 받는다
+    naverJson('https://api.stock.naver.com/marketindex/bond/US10YT=RR')
+      .then((d) => (d && d.reutersCode === 'US10YT=RR' ? [item(d, 'US10Y', '미국채 10년')] : [])),
     usdKrwItem(),
   ]);
   // 종가 · 등락률이 비면 그 지수는 뺀다 — 0 으로 읽으면 지수 줄에 "코스피 0.00" 이 뜬다.
@@ -993,8 +1001,9 @@ ipcMain.handle('yf:search', async (_e, query) => {
 const RANGES = new Set(['1d', '5d', '1mo', '3mo', '1y', '5y', 'max']);
 const INTERVALS = new Set(['5m', '30m', '1d', '1mo']);
 // 지수는 야후 기호가 ^ 로 시작한다(^KS11 코스피 · ^KQ11 코스닥). 맨 앞 한 번만 받는다.
-// 환율은 끝에 =X 가 붙는다(KRW=X 원/달러 — 지수 줄에서 누르면 차트). = 는 그 자리 한 번만.
-const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}(?:=X)?$/;
+// 환율은 끝에 =X, 선물은 =F 가 붙는다(KRW=X 원/달러 · NQ=F 나스닥 100 선물 · CL=F WTI — 지수 줄에서 누르면 차트).
+// = 는 그 자리 한 번만.
+const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}(?:=[XF])?$/;
 
 // 야후는 국내 종목 일봉을 가끔 하루 통째로 비워 준다(종가 · 거래량 null). 2025-09-19 · 2026-10-12 는
 // 모든 국내 종목이 비었고 1년이 지나도 채워지지 않았다(2026-10-13 확인). 비운 채 두면 차트에서 그날이

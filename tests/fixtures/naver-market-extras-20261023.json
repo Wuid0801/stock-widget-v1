@@ -1,0 +1,213 @@
+{
+  "savedAt": "2026-10-23T04:58:46.536Z",
+  "futures": {
+    "pollingInterval": 7000,
+    "datas": [
+      {
+        "reutersCode": "NQcv1",
+        "futuresName": "나스닥 100 선물",
+        "stockExchangeType": {
+          "code": "CME",
+          "zoneId": "CST6CDT",
+          "nationType": "USA",
+          "delayTime": 10,
+          "startTime": "1700",
+          "endTime": "1600",
+          "closePriceSendTime": "1600",
+          "nameKor": "시카고상업거래소",
+          "nameEng": "Chicago Mercantile Exchange",
+          "nationCode": "USA",
+          "nationName": "미국",
+          "stockType": "worldstock",
+          "name": "CME"
+        },
+        "closePrice": "29,122.75",
+        "compareToPreviousClosePrice": "-19.25",
+        "compareToPreviousPrice": {
+          "code": "5",
+          "text": "하락",
+          "name": "FALLING"
+        },
+        "fluctuationsRatio": "-0.07",
+        "openPrice": "29,116.50",
+        "highPrice": "29,212.50",
+        "lowPrice": "29,022.75",
+        "accumulatedTradingVolume": "76,054",
+        "accumulatedTradingValue": "-",
+        "marketStatus": "OPEN",
+        "localTradedAt": "2026-10-22T23:48:45-05:00",
+        "symbolCode": "NQcv1",
+        "accumulatedTradingVolumeRaw": "76054",
+        "accumulatedTradingValueRaw": "",
+        "closePriceRaw": "29122.75",
+        "compareToPreviousClosePriceRaw": "-19.25",
+        "fluctuationsRatioRaw": "-0.07",
+        "openPriceRaw": "29116.50",
+        "highPriceRaw": "29212.50",
+        "lowPriceRaw": "29022.75"
+      }
+    ],
+    "time": "20261023135845"
+  },
+  "energy": {
+    "pollingInterval": 7000,
+    "datas": [
+      {
+        "reutersCode": "CLcv1",
+        "symbolCode": "CL",
+        "name": "WTI",
+        "stockExchangeType": {
+          "code": "NYM",
+          "zoneId": "CST6CDT",
+          "nationType": "USA",
+          "delayTime": 10,
+          "startTime": "1700",
+          "endTime": "1600",
+          "closePriceSendTime": "1600",
+          "nameKor": "뉴욕상업거래소",
+          "nameEng": "New York Mercantile Exchange",
+          "nationCode": "USA",
+          "nationName": "미국",
+          "stockType": "worldstock",
+          "name": "NYMEX"
+        },
+        "closePrice": "100.36",
+        "fluctuations": "0.89",
+        "fluctuationsRatio": "0.89",
+        "openPrice": "99.10",
+        "highPrice": "100.97",
+        "lowPrice": "98.84",
+        "accumulatedTradingVolume": "28,066",
+        "accumulatedTradingValue": "-",
+        "fluctuationsType": {
+          "code": "2",
+          "text": "상승",
+          "name": "RISING"
+        },
+        "marketStatus": "OPEN",
+        "localTradedAt": "2026-10-22T23:48:47-05:00",
+        "unit": "USD/BBL",
+        "tradeStopType": null,
+        "accumulatedTradingVolumeRaw": "28066",
+        "closePriceRaw": "100.36"
+      }
+    ],
+    "time": "20261023135847"
+  },
+  "bond": {
+    "categoryType": "bond",
+    "stockExchangeType": null,
+    "reutersCode": "US10YT=RR",
+    "symbolCode": null,
+    "name": "미국 국채 10년",
+    "fullName": null,
+    "nameEng": null,
+    "itemLogoUrl": "https://ssl.pstatic.net/imgstock/fn/real/logo/index/MarketIndexBondAndInterest.svg",
+    "itemLogoPngUrl": "https://ssl.pstatic.net/imgstock/fn/real/logo/png/index/MarketIndexBondAndInterest.png",
+    "delayTime": 0,
+    "delayTimeName": "실시간",
+    "description": null,
+    "localTradedAt": "2026-10-23T00:49:17-04:00",
+    "closePrice": "4.9700",
+    "fluctuations": "0.0167",
+    "fluctuationsRatio": "0.34",
+    "fluctuationsType": {
+      "code": "2",
+      "text": "상승",
+      "name": "RISING"
+    },
+    "marketStatus": "OPEN",
+    "priceDataType": "REALTIME",
+    "endUrl": "https://m.stock.naver.com/marketindex/bond/US10YT=RR",
+    "chartIqEndUrl": null,
+    "unit": null,
+    "degreeCount": null,
+    "imageCharts": {
+      "areaYear": "https://financial-vn.pstatic.net/chart/mobile/world/area/year/US10YT=RR_end.png",
+      "areaYearTen": "https://financial-vn.pstatic.net/chart/mobile/world/area/year10/US10YT=RR_end.png",
+      "areaMonthThree": "https://financial-vn.pstatic.net/chart/mobile/world/area/month3/US10YT=RR_end.png",
+      "areaYearThree": "https://financial-vn.pstatic.net/chart/mobile/world/area/year3/US10YT=RR_end.png"
+    },
+    "imageChartUrlInfo": {
+      "line": {
+        "month": "https://financial-vn.pstatic.net/chart/mobile/world/area/month/US10YT=RR_end.png",
+        "month3": "https://financial-vn.pstatic.net/chart/mobile/world/area/month3/US10YT=RR_end.png",
+        "year": "https://financial-vn.pstatic.net/chart/mobile/world/area/year/US10YT=RR_end.png",
+        "year3": "https://financial-vn.pstatic.net/chart/mobile/world/area/year3/US10YT=RR_end.png",
+        "year5": "https://financial-vn.pstatic.net/chart/mobile/world/area/year5/US10YT=RR_end.png",
+        "year10": "https://financial-vn.pstatic.net/chart/mobile/world/area/year10/US10YT=RR_end.png"
+      }
+    },
+    "scriptChartTypes": [
+      "day",
+      "areaMonth",
+      "areaMonthThree",
+      "areaYear",
+      "areaYearThree",
+      "areaYearFive",
+      "areaYearTen"
+    ],
+    "marketIndexTotalInfos": [
+      {
+        "code": "lastClosePrice",
+        "key": "전일",
+        "value": "4.9530"
+      },
+      {
+        "code": "openPrice",
+        "key": "시가",
+        "value": "4.9570",
+        "compareToPreviousPrice": {
+          "code": "2",
+          "text": "상승",
+          "name": "RISING"
+        }
+      },
+      {
+        "code": "highPrice",
+        "key": "고가",
+        "value": "4.9710",
+        "compareToPreviousPrice": {
+          "code": "2",
+          "text": "상승",
+          "name": "RISING"
+        }
+      },
+      {
+        "code": "lowPrice",
+        "key": "저가",
+        "value": "4.9450",
+        "compareToPreviousPrice": {
+          "code": "5",
+          "text": "하락",
+          "name": "FALLING"
+        }
+      },
+      {
+        "code": "highPriceOf52week",
+        "key": "52주 최고",
+        "value": "5.3640"
+      },
+      {
+        "code": "lowPriceOf52week",
+        "key": "52주 최저",
+        "value": "3.9260"
+      },
+      {
+        "code": "maturityDate",
+        "key": "만기일자",
+        "value": "2036.08.15."
+      }
+    ],
+    "statementSource": "레피니티브 기준",
+    "nationType": "USA",
+    "nationName": "미국",
+    "nextReleaseKoreaDate": null,
+    "calendars": null,
+    "openPrice": 4.957,
+    "highPrice": 4.971,
+    "lowPrice": 4.945,
+    "month": "",
+    "newPcUrl": "https://stock.naver.com/marketindex/bond/US10YT=RR"
+  }
+}

@@ -36,9 +36,11 @@ const require = (m) => {
 
 // 지수 주소면 픽스처, 아니면 봉 하나짜리 야후 차트를 돌려준다. 받은 주소를 기록한다.
 // 미국 지수(네이버 해외 지수)와 원/달러(야후 KRW=X)는 처음엔 비어 있다 — 아래에서 채워 본다.
+// 선물 · 유가 · 국채(extras)도 비어 있다가(야후 차트 모양이 와서 항목이 없다) 아래에서 채운다.
 let indexBody = fixture;
 let usIndexBody = { datas: [] };
 let fxBody = null;
+let extras = null;
 let failUrl = null;
 const fetched = [];
 const fakeFetch = async (url) => {
@@ -46,6 +48,9 @@ const fakeFetch = async (url) => {
   fetched.push(u);
   if (failUrl && u.includes(failUrl)) return { ok: false, status: 500, json: async () => ({}) };
   const body = u.includes('/worldstock/index/') ? usIndexBody : u.includes('/index/') ? indexBody
+    : extras && u.includes('/worldstock/futures/') ? extras.futures
+    : extras && u.includes('/marketindex/energy/') ? extras.energy
+    : extras && u.includes('/marketindex/bond/') ? extras.bond
     : u.includes('/chart/KRW=X') && fxBody ? fxBody : {
       chart: { result: [{ timestamp: [1], indicators: { quote: [{ close: [100] }] },
         meta: { regularMarketPrice: 100, currency: 'KRW' } }] },
@@ -57,15 +62,16 @@ new Function('require', 'process', 'fetch', 'AbortSignal', src)(
   require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal);
 
 // --- 차트 요청의 기호 ---------------------------------------------------------
-for (const symbol of ['^KS11', '^KQ11', '005930.KS', 'AAPL', 'BRK-B', '^IXIC', '^GSPC', 'KRW=X']) {
+for (const symbol of ['^KS11', '^KQ11', '005930.KS', 'AAPL', 'BRK-B', '^IXIC', '^GSPC', 'KRW=X', 'NQ=F', 'CL=F', '^TNX']) {
   fetched.length = 0;
   const r = await handlers['yf:chart']({}, { symbol, range: '1d', interval: '5m' });
   check(`${symbol} 차트 요청을 받는다`,
     r.ok === true && fetched.some((u) => u.includes(`/chart/${encodeURIComponent(symbol)}?`)),
     JSON.stringify(r).slice(0, 80));
 }
-// = 는 환율 기호 끝의 =X 한 번만 받는다
-for (const symbol of ['^^KS11', 'KS11^', '^', '^.KS', '^KS11/../x', '', '=X', 'KRW=', 'KRW=Y', 'KRW=X=X', 'A=B']) {
+// = 는 끝의 =X(환율) · =F(선물) 한 번만 받는다
+for (const symbol of ['^^KS11', 'KS11^', '^', '^.KS', '^KS11/../x', '', '=X', 'KRW=', 'KRW=Y', 'KRW=X=X', 'A=B',
+  '=F', 'NQ=FF', 'NQ=F=F', 'NQ=X=F']) {
   fetched.length = 0;
   const r = await handlers['yf:chart']({}, { symbol, range: '1d', interval: '5m' });
   check(`${JSON.stringify(symbol)} 는 거절한다`,
@@ -136,6 +142,39 @@ fxBody.chart.result[0].meta.regularMarketTime = fxTime - 3600; // 한 시간째 
 check('한 시간째 그대로면 쉬는 중', (await handlers['quote:indices']({})).items.find((i) => i.code === 'USDKRW')?.isOpen === false);
 fxBody.chart.result[0].meta.chartPreviousClose = undefined;
 check('전일 종가가 없으면 원/달러는 뺀다', !(await handlers['quote:indices']({})).items.some((i) => i.code === 'USDKRW'));
+
+// --- 나스닥 100 선물 · WTI · 미국채 10년 ------------------------------------------------
+// 네이버 응답(2026-10-23 13:49 KST — 셋 다 거래 중). 선물은 해외 지수처럼 compareToPreviousClosePrice, 유가 · 국채
+// (시장지표)는 fluctuations 가 전일 대비다. 국채는 폴링 주소가 없어(404) 상세(api.stock.naver.com)를 받는다.
+const extrasFixture = JSON.parse(fs.readFileSync(new URL('./fixtures/naver-market-extras-20261023.json', import.meta.url), 'utf8'));
+extras = extrasFixture;
+fxBody.chart.result[0].meta.chartPreviousClose = 1340.86;
+fetched.length = 0;
+const more = await handlers['quote:indices']({});
+check('선물 · 유가 · 금리까지 여덟', more.ok && same(more.items.map((i) => i.code),
+  ['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX', 'NQ', 'WTI', 'US10Y', 'USDKRW']), JSON.stringify(more.items?.map((i) => i.code)));
+for (const where of ['/worldstock/futures/NQcv1', '/marketindex/energy/CLcv1', '/marketindex/bond/US10YT=RR']) {
+  check(`${where} 를 한 번 묻는다`, fetched.filter((u) => u.includes(where)).length === 1, fetched.join(' '));
+}
+const byCode = (code) => more.items?.find((i) => i.code === code);
+check('나스닥 100 선물', same(byCode('NQ'), { code: 'NQ', name: '나스닥 선물', value: 29122.75, change: -19.25, pct: -0.07,
+  open: 29116.5, high: 29212.5, low: 29022.75, isOpen: true, tradedAt: '2026-10-22T23:48:45-05:00' }), JSON.stringify(byCode('NQ')));
+check('WTI — 전일 대비는 fluctuations', same(byCode('WTI'), { code: 'WTI', name: 'WTI', value: 100.36, change: 0.89, pct: 0.89,
+  open: 99.1, high: 100.97, low: 98.84, isOpen: true, tradedAt: '2026-10-22T23:48:47-05:00' }), JSON.stringify(byCode('WTI')));
+check('미국채 10년 — 전일 대비(fluctuations)는 금리 차라 등락률과 다르다', same(byCode('US10Y'), { code: 'US10Y',
+  name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34, open: 4.957, high: 4.971, low: 4.945, isOpen: true,
+  tradedAt: '2026-10-23T00:49:17-04:00' }), JSON.stringify(byCode('US10Y')));
+extras = { ...extrasFixture, futures: { datas: [{ ...extrasFixture.futures.datas[0], reutersCode: 'EScv1' }] } };
+check('다른 선물이 오면 빼고 나머지는 보인다', same((await handlers['quote:indices']({})).items.map((i) => i.code),
+  ['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX', 'WTI', 'US10Y', 'USDKRW']));
+extras = extrasFixture;
+failUrl = '/marketindex/bond/';
+const noBond = await handlers['quote:indices']({});
+check('국채가 실패해도 나머지는 보인다', noBond.ok && same(noBond.items.map((i) => i.code),
+  ['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX', 'NQ', 'WTI', 'USDKRW']), JSON.stringify(noBond.items?.map((i) => i.code)));
+failUrl = null;
+extras = null; // 아래 실패 검사는 원래의 넷(국내 · 미국 지수)으로 본다
+fxBody.chart.result[0].meta.chartPreviousClose = undefined;
 
 // 하나가 실패해도 나머지는 보인다
 failUrl = '/domestic/index/';

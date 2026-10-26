@@ -406,6 +406,44 @@ await test('US header: never 20분지연 — the Naver session when live, 확인
   }
 });
 
+// 선물 · 유가는 거래소가 10분 늦게 준다(네이버 · 야후 같다) — 거래 중에는 정규장 · 실시간이 아니라 10분지연. 금리는 실시간이다.
+await test('futures and oil say 10분지연 while trading and 장마감 when closed; the 10-year yield stays real-time', () => {
+  const { run, elements } = harness();
+  const header = () => elements.get('updated');
+  for (const s of ['NQ=F', 'CL=F']) {
+    run(`state.selected = '${s}'; quotes['${s}'] = {price:100, live:true, session:'regular', source:'Naver', fetchedAt:Date.now()};`);
+    run('renderUpdated()');
+    assert.match(header().innerHTML, /^<span class="delay">10분지연<\/span>/, s);
+    assert.match(header().title, /소스: 10분 지연 · Naver/, s);
+    run(`quotes['${s}'].session = 'closed';`);
+    run('renderUpdated()');
+    assert.match(header().innerHTML, /^<span class="closed">장마감<\/span>/, s);
+  }
+  run("state.selected = '^TNX'; quotes['^TNX'] = {price:4.97, live:true, session:'regular', source:'Naver', fetchedAt:Date.now()};");
+  run('renderUpdated()');
+  assert.match(header().innerHTML, /^<span class="live">정규장<\/span>/);
+  assert.match(header().title, /소스: 실시간 · Naver/);
+});
+
+// 선물(=F)의 하루는 CME 하루(18:00 ET ~ 다음 날 17:00 ET)이고 야후 일봉 시각은 끝 날 00:00 ET — 서머타임이든 아니든
+// 그 하루가 일봉과 같은 날짜로 떨어져야 1W 툴팁 등락률 · 전일 고저가 앞 거래일을 본다.
+await test('marketDay: a CME futures session (18:00 ET to 17:00 ET) is the day its Yahoo daily bar is stamped, summer or winter', () => {
+  const { c } = harness();
+  const day = (ymd) => Math.floor(Date.parse(`${ymd}T00:00:00Z`) / 86400000);
+  for (const [at, want] of [
+    ['2026-10-22T22:00:00Z', '2026-10-23'], // 10/22 18:00 EDT — 10/23 하루의 첫 봉
+    ['2026-10-23T04:00:00Z', '2026-10-23'], // 10/23 00:00 EDT — 10/23 일봉의 시각
+    ['2026-10-23T20:55:00Z', '2026-10-23'], // 10/23 16:55 EDT — 마지막 봉
+    ['2026-12-01T23:00:00Z', '2026-12-02'], // 12/01 18:00 EST
+    ['2026-12-02T05:00:00Z', '2026-12-02'], // 12/02 00:00 EST — 일봉
+    ['2026-12-02T21:55:00Z', '2026-12-02'], // 12/02 16:55 EST
+  ]) {
+    for (const s of ['NQ=F', 'CL=F']) assert.equal(c.marketDay(Date.parse(at), s), day(want), `${s} ${at}`);
+  }
+  // 미국채 10년(^TNX)은 미국 지수처럼 -5시간 — 08:20 ET 일봉도 그날
+  assert.equal(c.marketDay(Date.parse('2026-10-22T12:20:00Z'), '^TNX'), day('2026-10-22'));
+});
+
 await test('polling: a US stock counts by its own Naver session, not the Korean market', () => {
   const { c } = harness();
   const closed = { session: 'closed', isTrading: false };
@@ -2280,6 +2318,22 @@ await test('index numbers keep two decimals like the index line; stocks keep the
   assert.equal(run("curOf('AAPL')"), 'USD');
 });
 
+// 미국채 10년(지수 줄)은 금리라 소수 셋째 자리, 등락은 bp. 선물 · 유가는 다른 지수처럼 포인트(둘째 자리).
+await test('the 10-year yield keeps three decimals and moves in bp; futures and oil stay in points', () => {
+  const { run } = harness();
+  run(formatting);
+  assert.equal(run("curOf('^TNX')"), '%');
+  assert.equal(run("money(4.97, curOf('^TNX'))"), '4.970');
+  assert.equal(run('fmtBp(0.0167)'), '+1.7bp');
+  assert.equal(run('fmtBp(-0.06)'), '-6.0bp');
+  // 헤더는 현재가 - 전일 종가로 다시 세어 소수 잡음이 낀다 — 지수 줄(네이버 값 그대로)과 같은 글자여야 한다
+  assert.equal(run('fmtBp(-0.0225)'), '-2.3bp');
+  assert.equal(run('fmtBp(4.965 - (4.965 + 0.0225))'), '-2.3bp');
+  assert.equal(run("curOf('NQ=F')"), 'pt');
+  assert.equal(run("money(29122.75, curOf('NQ=F'))"), '29,122.75');
+  assert.equal(run("curOf('CL=F')"), 'pt');
+});
+
 // 지수 줄: 코스피 · 코스닥 → 나스닥 · S&P 500 → 원/달러, 한 장씩. 다섯 개는 340px 한 줄에 들어가지 않는다.
 await test('index line shows one page at a time, marks the selected index, and turns pages unless hovered or viewing one', () => {
   const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices']);
@@ -2386,6 +2440,34 @@ await test('index line dots show the page and jump to it; the turn waits a full 
   assert.match(source, /const dot = e\.target\.closest\('\.ixdot'\);\s*if \(dot\) \{ flipIndexPage\(Number\(dot\.dataset\.page\)\); return; \}/);
 });
 
+// 선물 · 유가는 셋째 장, 원/달러 · 미국채 10년은 넷째 장. 선물 · 유가는 10분 늦다는 것을 툴팁에, 금리는 등락을 bp 로.
+await test('index line: futures and oil on the third page, the dollar and the 10-year yield (in bp) on the fourth', () => {
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage']);
+  run(formatting);
+  for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
+  run(source.match(/^const FOLIO_MS = .*$/m)[0]);
+  Object.assign(c, { cssVar: () => '#888888', esc: String });
+  run(`state.selected = '005930.KS'; indexItems = [
+    { code: 'KOSPI', name: '코스피', value: 7003.74, change: 32.39, pct: 0.46 }, { code: 'KOSDAQ', name: '코스닥', value: 893.29, change: -1, pct: -0.11 },
+    { code: 'NASDAQ', name: '나스닥', value: 26692.87, change: -511.51, pct: -1.88 }, { code: 'SPX', name: 'S&P 500', value: 6600.1, change: -80, pct: -1.2 },
+    { code: 'NQ', name: '나스닥 선물', value: 29122.75, change: -19.25, pct: -0.07 }, { code: 'WTI', name: 'WTI', value: 100.36, change: 0.89, pct: 0.89 },
+    { code: 'USDKRW', name: '원/달러', value: 1351.4, change: 8.5, pct: 0.63 }, { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }];`);
+  const box = c.document.getElementById('indices');
+  const shown = () => [...box.innerHTML.matchAll(/data-symbol="([^"]+)"/g)].map((m) => m[1]).join(' ');
+  c.renderIndices();
+  assert.match(box.innerHTML, /data-page="2" title="나스닥 선물 · WTI"><\/button><button class="ixdot" data-page="3" title="원\/달러 · 미국채 10년"><\/button><\/span>$/,
+    '네 장');
+  c.flipIndexPage(2);
+  assert.equal(shown(), 'NQ=F CL=F');
+  assert.match(box.innerHTML, /title="나스닥 선물 \(10분 지연\) 차트 보기"><span class="ixn">나스닥 선물<\/span><span class="ixv">29,122\.75<\/span><span class="ixp" style="color:#185fa5">-0\.07%<\/span>/);
+  assert.match(box.innerHTML, /title="WTI \(10분 지연\) 차트 보기">/);
+  c.flipIndexPage(3);
+  assert.equal(shown(), 'KRW=X ^TNX');
+  assert.match(box.innerHTML, /title="미국채 10년 차트 보기"><span class="ixn">미국채 10년<\/span><span class="ixv">4\.970<\/span><span class="ixp" style="color:#e24b4a">\+1\.7bp<\/span>/,
+    '금리는 셋째 자리 · bp, 지연 표시 없음(실시간)');
+  assert.match(box.innerHTML, /<span class="ixv">1,351\.40<\/span><span class="ixp" style="color:#e24b4a">\+0\.63%<\/span>/, '원/달러는 그대로 %');
+});
+
 await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {
   const { c, run } = harness(['select', 'clearZooms']);
   let marks = 0;
@@ -2444,7 +2526,7 @@ await test('refresh redraws the list once (plus once per first-time stock) and k
     renderList() { renders++; }, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
     renderFolio: async () => {}, loadChart: async () => {}, renderUpdated() {},
   });
-  const isIndexSym = (s) => s.startsWith('^') || s.endsWith('=X');
+  const isIndexSym = (s) => c.isIndex(s); // 지수 줄 기호(^ 지수 · =X 환율 · =F 선물)
   run(`state.watchlist = [{ symbol: 'A', name: 'a' }, { symbol: 'B', name: 'b' }, { symbol: 'C', name: 'c' }, { symbol: 'D', name: 'd' }];
     quotes.A = { price: 0 }; quotes.B = { price: 0 }; quotes.C = { price: 0 }; quotes.D = { price: 0 };`);
   await c.refreshAll();
@@ -2478,6 +2560,28 @@ await test('index detail: points with two decimals, no currency tag, no sector l
   assert.equal(elements.get('dname').textContent, '삼성전자');
   assert.equal(elements.get('dprice').textContent, '271,500');
   assert.equal(lookups, 1, 'stocks still look up their sector');
+});
+
+// 미국채 10년을 고르면 헤더도 금리답게 — 이름 옆 단위(%), 셋째 자리, 전일 대비는 bp(등락률은 그 아래 그대로).
+await test('yield detail: percent unit tag, three decimals, change in bp over the ratio', () => {
+  const { c, run, elements } = harness(['renderDetail']);
+  run(formatting);
+  Object.assign(c, {
+    sectors: new Map(), loadSector: () => Promise.resolve(),
+    renderHolding: () => {}, renderW52: () => {}, renderTrendCheck: () => {}, candleTag: () => '',
+    levelOf: () => ({ label: '—', color: '#000000' }), cssVar: () => '#000000',
+  });
+  run(`state.selected = '^TNX'; quotes['^TNX'] = { price: 4.97, change: 0.0167, pct: 0.34,
+    live: true, session: 'regular', source: 'Naver', fetchedAt: Date.now() };`);
+  c.renderDetail();
+  assert.equal(elements.get('dname').textContent, '미국채 10년 (%)');
+  assert.equal(elements.get('dprice').textContent, '4.970');
+  assert.equal(elements.get('dchg').innerHTML, '+1.7bp<br>+0.34%');
+  run(`state.selected = 'CL=F'; quotes['CL=F'] = { price: 100.36, change: 0.89, pct: 0.89,
+    live: true, session: 'regular', source: 'Naver', fetchedAt: Date.now() };`);
+  c.renderDetail();
+  assert.equal(elements.get('dname').textContent, 'WTI', '유가 · 선물은 지수처럼 단위 표시 없이');
+  assert.equal(elements.get('dchg').innerHTML, '+0.89<br>+0.89%');
 });
 
 // 과열도 배지의 툴팁 — 일봉 RSI 와 주봉 RSI(이번 주 진행 중). 배지 글자 · 색은 일봉 RSI 그대로다.
@@ -2803,17 +2907,18 @@ await test('a failing Yahoo daily fetch is retried at most once per refresh, and
   const d = dailyRun({ yahoo: (s) => (up ? daily(100000) : { ok: false, error: 'HTTP 429' }) });
   d.run(`state.watchlist = [{symbol:'005930.KS',name:'삼성전자'},{symbol:'000660.KS',name:'SK하이닉스'},
     {symbol:'035420.KS',name:'NAVER'}];`);
-  await d.refresh(); // 0초 — 다 받는다(종목 3 + 지수 줄 5)
-  assert.equal(d.calls.length, 8);
+  const all = 3 + d.run('INDICES.length'); // 종목 3 + 지수 줄
+  await d.refresh(); // 0초 — 다 받는다
+  assert.equal(d.calls.length, all);
   up = false;
   d.calls.length = 0;
   for (const sec of [120, 150, 180, 210]) { d.at(sec); await d.refresh(); } // 캐시 만료(60초) 뒤 네 번
-  assert.equal(d.calls.length, 4, `one request per refresh, not 8 — got ${d.calls.join(',')}`);
+  assert.equal(d.calls.length, 4, `one request per refresh, not ${all} — got ${d.calls.join(',')}`);
   assert.equal(new Set(d.calls).size, 4, 'each refresh tries a different symbol — the failed ones rest');
   up = true;
   d.calls.length = 0;
   d.at(210 + 301); await d.refresh(); // 마지막 실패에서 5분 지남 — 모두 다시 받는다
-  assert.equal(d.calls.length, 8, 'after the rest every symbol fetches again');
+  assert.equal(d.calls.length, all, 'after the rest every symbol fetches again');
   assert.ok(!d.run("quotes['005930.KS'].stale"), 'fresh again');
 });
 
