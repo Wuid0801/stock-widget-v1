@@ -211,6 +211,9 @@ const rankCache = new Map(); // 'kr|up' · 'kr|industry|278' -> { at, d(naver:ra
 const rankLoading = new Set();
 let rankShown = { key: null, html: null }; // 지금 목록에 쓴 것
 const RANK_TTL = 60000;
+// 지표 화면의 수급 · 일별 종가 · HY OAS(main 의 market:extras). 지표 화면이 열려 있을 때만 받고 1분 쓴다(RANK_TTL).
+let marketExtras = null; // { at, d(market:extras 응답) }
+let marketLoading = false;
 // 관심종목 일정(실적 발표 · 배당락). 종목마다 6시간 쓴다 — 하루 몇 번이면 충분하고, 종목 수만큼 요청이 나간다.
 const eventCache = new Map(); // symbol -> { at, events: [{ kind: 'ir' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
 let eventsBusy = false;
@@ -1083,7 +1086,7 @@ function rankKey(v) {
 // 그 줄을 그리지 않는다.
 function marketRow(key) {
   const ix = INDICES.find((i) => i.code === key);
-  if (!ix) return null;
+  if (!ix) return marketExtraRow(key);
   const it = indexItems.find((i) => i.code === key);
   const q = quotes[ix.symbol];
   const value = it ? it.value : q && q.price;
@@ -1102,6 +1105,50 @@ function marketRow(key) {
   };
 }
 
+// 지표 화면에만 있는 줄 — 차트가 없어 누를 수 없다(symbol null). market:extras 를 아직 못 받았거나 그 부분이 실패했으면 null.
+//  - FUT 코스피200 선물: 값 · 등락률은 지수 줄과 함께 받은 FUT(20분 늦다), 5일 변화는 선물 일봉의 6번째 앞 종가 대비.
+//  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(네이버 표기 그대로 — 네이버 화면도 단위를 적지 않는다),
+//    5일 변화 자리에 확정일 끝에서 같은 부호가 이어진 날 수, 18:00 전 오늘 값은 잠정이라 메모에 따로.
+//  - HYOAS 미국 HY OAS: 마지막 값(%), 오늘 등락은 앞 줄 · 5일 변화는 다섯 줄 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다).
+function marketExtraRow(key) {
+  const x = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
+  const signed = (v) => (v > 0 ? '+' : '') + v.toLocaleString('ko-KR');
+  if (key === 'FUT') {
+    const it = indexItems.find((i) => i.code === 'FUT');
+    if (!it || !(it.value > 0)) return null;
+    const days = x && x.futDays;
+    const base = days && days.length >= 6 ? days[days.length - 6].close : null;
+    return { key, name: '코스피200 선물', symbol: null, value: it.value, cur: 'pt', pct: it.pct, change: it.change,
+      d5: base > 0 ? (it.value / base - 1) * 100 : null, d5Unit: '%', note: '20분 지연' };
+  }
+  if (key === 'SPOT' || key === 'FUTFLOW') {
+    const flows = x && (key === 'SPOT' ? x.spotFlows : x.futFlows);
+    const done = (flows || []).filter((f) => f.final);
+    const last = done[done.length - 1];
+    if (!last) return null;
+    let n = 0;
+    for (let i = done.length - 1; i >= 0 && Math.sign(done[i].foreign) === Math.sign(last.foreign) && done[i].foreign !== 0; i--) n++;
+    const today = flows[flows.length - 1].final ? null : flows[flows.length - 1];
+    return { key, name: key === 'SPOT' ? '외국인 현물' : '외국인 선물', symbol: null, value: last.foreign, pct: null, change: null,
+      d5: null, d5Unit: '%', valueText: signed(last.foreign), dayText: '', dayTone: last.foreign,
+      d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
+      note: today ? `오늘 잠정 ${signed(today.foreign)}` : '',
+      title: `외국인 순매수 ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 — 네이버 표기 그대로(단위 없음), 18:00 전 오늘 값은 잠정` };
+  }
+  if (key === 'HYOAS') {
+    const rows = x && x.hyOas;
+    if (!rows || !rows.length) return null;
+    const last = rows[rows.length - 1];
+    const prev = rows.length >= 2 ? rows[rows.length - 2].value : null;
+    const base = rows.length >= 6 ? rows[rows.length - 6].value : null;
+    return { key, name: '미국 HY OAS', symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
+      d5: base == null ? null : last.value - base, d5Unit: 'bp', valueText: `${last.value.toFixed(2)}%`,
+      note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 기준`,
+      title: '미국 하이일드 회사채 가산금리(ICE BofA US High Yield OAS, FRED) — 1~2영업일 늦다' };
+  }
+  return null;
+}
+
 // 지표 화면 HTML — 묶음 제목 줄과 줄들(이름 · 값 · 오늘 등락 · 5일 변화 · 메모). 누를 수 있는 줄(고를 수 있는 항목)만 data-sym.
 function marketHtml() {
   const tone = (v) => (v > 0 ? UP : v < 0 ? DOWN : cssVar('--flat'));
@@ -1112,11 +1159,12 @@ function marketHtml() {
     out.push(`<div class="qhint rnote mgroup">${title}</div>`);
     for (const r of rows) {
       const bp = r.d5Unit === 'bp';
-      const day = bp ? (r.change != null ? fmtBp(r.change) : '—') : (r.pct != null ? fmtPct(r.pct) : '—');
-      const d5 = r.d5 == null ? '—' : bp ? fmtBp(r.d5) : fmtPct(r.d5);
-      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" title="${esc(r.name)} 차트 보기">` : '<div class="rrow mrow mfix">';
-      out.push(`${open}<span class="hname">${esc(r.name)}</span><span class="mval">${money(r.value, r.cur)}</span>`
-        + `<span class="rpct" style="color:${tone(bp ? r.change : r.pct)}">${day}</span>`
+      const day = r.dayText != null ? r.dayText : bp ? (r.change != null ? fmtBp(r.change) : '—') : (r.pct != null ? fmtPct(r.pct) : '—');
+      const d5 = r.d5Text != null ? r.d5Text : r.d5 == null ? '—' : bp ? fmtBp(r.d5) : fmtPct(r.d5);
+      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(r.name)} 차트 보기">`
+        : `<div class="rrow mrow mfix" data-key="${r.key}"${r.title ? ` title="${esc(r.title)}"` : ''}>`;
+      out.push(`${open}<span class="hname">${esc(r.name)}</span><span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
+        + `<span class="rpct" style="color:${tone(r.dayTone != null ? r.dayTone : bp ? r.change : r.pct)}">${day}</span>`
         + `<span class="md5" title="5거래일 전 종가 대비">${d5}</span><span class="mnote">${esc(r.note || '')}</span></div>`);
     }
   }
@@ -1148,6 +1196,24 @@ function renderRank() {
     rankShown = { key, html };
   }
   if (!mk && (!hit || Date.now() - hit.at >= RANK_TTL)) loadRank(market, kind, group ? group.no : undefined);
+  if (mk && (!marketExtras || Date.now() - marketExtras.at >= RANK_TTL)) loadMarket();
+}
+
+// 지표 화면의 market:extras — 받는 중이면 또 묻지 않고, 다시 받다 실패하면 있던 것을 둔다(loadRank 와 같다). 받으면 다시 그린다.
+async function loadMarket() {
+  if (marketLoading) return;
+  marketLoading = true;
+  let d;
+  try {
+    d = await api.marketExtras();
+  } catch (e) {
+    d = { ok: false, error: e.message };
+  } finally {
+    marketLoading = false;
+  }
+  const keep = marketExtras && marketExtras.d && marketExtras.d.ok && !(d && d.ok);
+  marketExtras = { at: Date.now(), d: keep ? marketExtras.d : d || { ok: false, error: '응답 없음' } };
+  renderRank();
 }
 
 // 받는 중이면 또 묻지 않는다. 다시 받다 실패하면 있던 것을 둔다. 받으면 지금 보는 것을 다시 그린다 —

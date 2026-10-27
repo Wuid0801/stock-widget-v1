@@ -133,6 +133,15 @@ check('S&P 500 이름', all.items?.find((i) => i.code === 'SPX')?.name === 'S&P 
 usIndexBody = { datas: [...usFixture.datas, { ...usFixture.datas[0], reutersCode: '.DJI', indexName: '다우' }] };
 check('모르는 해외 지수가 섞여도 나스닥 · S&P 500 은 보인다',
   same((await handlers['quote:indices']({})).items.map((i) => i.code), ['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX', 'USDKRW']));
+// 코스피200 선물(시장 지표 화면)은 코스피 · 코스닥과 같은 요청에 붙는다 — 네이버가 20분 늦게 준다(2026-10-23 실측)
+indexBody = { datas: [...fixture.datas, { ...fixture.datas[0], itemCode: 'FUT', stockName: '코스피 200 선물', closePrice: '883.70',
+  closePriceRaw: undefined, fluctuationsRatio: '3.96', fluctuationsRatioRaw: undefined }] };
+fetched.length = 0;
+const withFut = await handlers['quote:indices']({});
+check('코스피200 선물은 코스피 · 코스닥과 한 요청으로', fetched.filter((u) => u.includes('/domestic/index/KOSPI,KOSDAQ,FUT')).length === 1
+  && withFut.items.find((i) => i.code === 'FUT')?.value === 883.7 && withFut.items.find((i) => i.code === 'FUT')?.name === '코스피 200 선물',
+  `${JSON.stringify(withFut.items.map((i) => [i.code, i.value]))} ${fetched.join(' ')}`);
+indexBody = fixture;
 // 시장 지표 화면의 VIX · SOX 는 나스닥 · S&P 500 과 같은 해외 지수 요청에 붙는다(2026-10-27 실측 .VIX 18.39 · .SOX 11,083.47)
 usIndexBody = { datas: [...usFixture.datas,
   { ...usFixture.datas[0], reutersCode: '.VIX', indexName: 'VIX', closePrice: '18.39', closePriceRaw: undefined, fluctuationsRatio: '-5.45',

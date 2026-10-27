@@ -580,7 +580,8 @@ ipcMain.handle('quote:indices', async () => {
     tradedAt: d.localTradedAt || null,
   });
   const parts = await Promise.allSettled([
-    naver('https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ')
+    // FUT(코스피200 선물)는 시장 지표 화면에만 쓴다 — 같은 요청에 붙여 요청이 늘지 않는다(20분 늦다, 2026-10-23 실측)
+    naver('https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ,FUT')
       .then((ds) => { noteKrxEnd(ds); return ds.map((d) => item(d, d.itemCode, d.stockName)); }),
     naver('https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX,.VIX,.SOX')
       .then((ds) => ds.filter((d) => US_INDICES[d.reutersCode])
@@ -620,6 +621,80 @@ async function usdKrwItem() {
     tradedAt: Number.isFinite(at) ? new Date(at).toISOString() : null,
   }];
 }
+
+// --- 시장 지표 화면(market:extras) ---------------------------------------------------------
+// 순위 패널의 '지표' 가 열려 있을 때 1분마다 묻는다. 다섯 부분은 따로 받아 하나가 실패해도 나머지는 온다(실패한 부분은 null).
+// - 외국인 현물 · 선물 수급: 네이버 모바일 지수 수급(trend?bizdate=) — 날짜를 주면 그날 값이다. 휴장일 · 미래 날짜도 오류 없이
+//   0 을 줘서(2026-10-27 실측 10/25 토 · 10/28) 코스피 일봉에 있는 날만 묻는다. 지난 날과 18:00 뒤의 오늘은 확정이라 기억한다.
+// - 코스피 · 코스피200 선물 일별 종가: 네이버 지수 일봉(최근 30일) — 장중에는 오늘 행이 있다.
+// - 미국 HY OAS(ICE BofA US High Yield OAS, %): FRED CSV(키 없음, 최근 3년, 1~2영업일 늦다) — 6시간 기억한다.
+const FLOW_FINAL = '1800';   // 이때부터 오늘 수급을 확정으로 본다(장중 값은 잠정치)
+const FLOW_DAYS = 10;        // 수급을 묻는 거래일 수
+const HYOAS_TTL = 6 * 3600000;
+const flowCache = new Map(); // '경로|YYYYMMDD' → 확정된 그날 수급
+let hyOasCache = null;       // { at, rows }
+
+// 수급 문자열 → 숫자. '+4,080' → 4080, '-9,811' → -9811, 빈 값 → null.
+function parseFlowValue(v) {
+  const s = String(v ?? '').replace(/[,+\s]/g, '');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+// 그날 외국인 · 기관 · 개인 순매수. path 는 'KOSPI'(현물) · 'FUT'(코스피200 선물). 모양이 다르거나 다른 날의 값이 오면 null.
+async function naverFlow(path, date, now) {
+  const key = `${path}|${date}`;
+  if (flowCache.has(key)) return flowCache.get(key);
+  const j = await naverJson(`https://m.stock.naver.com/api/index/${path}/trend?bizdate=${date}`);
+  const foreign = j && j.bizdate === date ? parseFlowValue(j.foreignValue) : null;
+  if (foreign == null) return null;
+  const row = { date, foreign, inst: parseFlowValue(j.institutionalValue), personal: parseFlowValue(j.personalValue),
+    final: date < kstDay(now) || kstClock(now) >= FLOW_FINAL };
+  if (row.final) flowCache.set(key, row);
+  return row;
+}
+
+// 지수 일별 종가(오름차순, 최근 30일) — path 'KOSPI' · 'FUT'.
+async function naverIndexCloses(path, now) {
+  const rows = await naverJson(`https://api.stock.naver.com/chart/domestic/index/${path}/day`
+    + `?startDateTime=${kstDay(now - 30 * 86400000)}&endDateTime=${kstDay(now)}`);
+  if (!Array.isArray(rows)) throw new Error('모양이 다른 응답');
+  return rows.map((r) => ({ date: String(r?.localDate ?? ''), close: Number(r?.closePrice) }))
+    .filter((r) => /^\d{8}$/.test(r.date) && r.close > 0).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 미국 HY OAS — FRED CSV 'observation_date,BAMLH0A0HYM2' 아래 '날짜,값'. 휴일은 값이 비고(또는 '.') 건너뛴다. 최근 60개.
+async function fredHyOas(now) {
+  if (hyOasCache && now - hyOasCache.at < HYOAS_TTL) return hyOasCache.rows;
+  const res = await netFetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2',
+    { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rows = (await res.text()).split(/\r?\n/).map((line) => line.split(','))
+    .filter(([d, v]) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && /^-?\d+(\.\d+)?$/.test((v || '').trim()))
+    .map(([d, v]) => ({ date: d.replace(/-/g, ''), value: Number(v) }))
+    .slice(-60);
+  if (!rows.length) throw new Error('빈 응답');
+  hyOasCache = { at: now, rows };
+  return rows;
+}
+
+ipcMain.handle('market:extras', async () => {
+  const now = Date.now();
+  const kospi = naverIndexCloses('KOSPI', now);
+  // 날마다 따로 — 하루가 실패하거나 모양이 다르면 그날만 빠지고, 모두 실패하면 그 부분이 실패다
+  const flows = (path) => kospi.then(async (days) => {
+    const got = await Promise.allSettled(days.slice(-FLOW_DAYS).map((d) => naverFlow(path, d.date, now)));
+    if (got.length && got.every((g) => g.status === 'rejected')) throw got[0].reason;
+    return got.map((g) => (g.status === 'fulfilled' ? g.value : null)).filter(Boolean);
+  });
+  const parts = await Promise.allSettled([flows('KOSPI'), flows('FUT'), kospi, naverIndexCloses('FUT', now), fredHyOas(now)]);
+  if (parts.every((p) => p.status === 'rejected')) {
+    return { ok: false, error: parts[0].reason?.message || '시장 지표 조회 실패' };
+  }
+  const [spotFlows, futFlows, kospiDays, futDays, hyOas] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
+  return { ok: true, spotFlows, futFlows, kospiDays, futDays, hyOas, at: new Date(now).toISOString() };
+});
 
 // 원/달러 환율. 포트폴리오 합계에서 달러 종목을 원화로 환산할 때만 쓴다.
 // 심볼 'KRW=X' 는 '=' 때문에 yf:chart 의 심볼 허용 패턴에 걸린다.

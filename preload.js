@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   sector: (symbol) => ipcRenderer.invoke('yf:sector', symbol),
   detail: (symbol) => ipcRenderer.invoke('naver:detail', symbol),
   rank: (req) => ipcRenderer.invoke('naver:rank', req),
+  marketExtras: () => ipcRenderer.invoke('market:extras'),
   events: (symbol) => ipcRenderer.invoke('naver:events', symbol),
   backupExport: () => ipcRenderer.invoke('backup:export'),
   backupImport: () => ipcRenderer.invoke('backup:import'),

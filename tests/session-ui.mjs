@@ -2518,8 +2518,9 @@ const MARKET_ITEMS = `indexItems = [
   { code: 'VIX', name: 'VIX', value: 18.39, change: -1.06, pct: -5.45 }, { code: 'SOX', name: 'SOX', value: 11083.47, change: 304, pct: 2.82 },
   { code: 'NQ', name: '나스닥 선물', value: 29358.25, change: -79.5, pct: -0.27 }, { code: 'WTI', name: 'WTI', value: 101.04, change: -0.72, pct: -0.71 },
   { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }, { code: 'USDKRW', name: '원/달러', value: 1323.23, change: -1.94, pct: -0.15 }];`;
-const marketHarness = () => {
-  const h = harness(['marketRow', 'marketHtml', 'renderRank', 'setRankView', 'rankClick', 'rankHtml']);
+const marketHarness = (extra = []) => {
+  const h = harness(['marketRow', 'marketExtraRow', 'marketHtml', 'renderRank', 'setRankView', 'rankClick', 'rankHtml', ...extra]);
+  if (!extra.includes('loadMarket')) h.c.loadMarket = async () => {}; // 지표 화면을 열면 market:extras 를 묻는다 — 따로 본다
   h.run(formatting);
   h.run(source.match(/^let indexItems = .*$/m)[0]);
   h.picked = [];
@@ -2574,6 +2575,71 @@ await test('market panel: same content is not rewritten (scroll stays)', () => {
   h.run("indexItems[0].value = 5630;");
   h.c.renderRank();
   assert.equal(writes, 2, '값이 바뀌면 다시 쓴다');
+});
+
+// 지표 화면의 수급 · 코스피200 선물 · HY OAS 줄 — main 의 market:extras 로 그린다(2단계). 누를 수 없는 줄이다(차트가 없다).
+const keyRow = (html, key) => (html.split(`data-key="${key}"`)[1] || '').split('</div>')[0];
+const EXTRAS = `marketExtras = { at: Date.now(), d: { ok: true,
+  spotFlows: [{ date: '20261021', foreign: -9811, final: true }, { date: '20261022', foreign: -6827, final: true },
+    { date: '20261023', foreign: 2100, final: true }, { date: '20261026', foreign: 3300, final: true }, { date: '20261027', foreign: 4080, final: false }],
+  futFlows: [{ date: '20261026', foreign: -1200, final: true }, { date: '20261027', foreign: 6185, final: false }],
+  kospiDays: null,
+  futDays: [{ date: '20261020', close: 850 }, { date: '20261021', close: 860 }, { date: '20261022', close: 857 },
+    { date: '20261023', close: 863.3 }, { date: '20261026', close: 850 }, { date: '20261027', close: 883.7 }],
+  hyOas: [{ date: '20261017', value: 3.1 }, { date: '20261020', value: 3.2 }, { date: '20261021', value: 3.27 },
+    { date: '20261022', value: 3.4 }, { date: '20261022', value: 3.4 }, { date: '20261023', value: 3.38 }] } };`;
+
+await test('market panel: flows show the last final day, the streak, and today\'s provisional value', () => {
+  const h = marketHarness();
+  h.run(EXTRAS);
+  const html = h.c.marketHtml();
+  const spot = keyRow(html, 'SPOT');
+  assert.match(spot, /외국인 현물/);
+  assert.match(spot, /<span class="mval">\+3,300<\/span>/, '마지막 확정일 값 — 단위 없이 네이버 표기 그대로');
+  assert.match(spot, /2일 연속 순매수/);
+  assert.match(spot, /오늘 잠정 \+4,080/);
+  assert.match(keyRow(html, 'FUTFLOW'), /1일 연속 순매도/);
+  assert.doesNotMatch(html, /data-sym="[^"]*"[^>]*data-key="SPOT"/, '수급 줄은 누를 수 없다');
+});
+
+await test('market panel: KOSPI 200 futures says 20분 지연 and cannot be clicked; HY OAS shows the date it is from', () => {
+  const h = marketHarness();
+  h.run("indexItems.push({ code: 'FUT', name: '코스피 200 선물', value: 883.7, change: 33.7, pct: 3.96 });");
+  h.run(EXTRAS);
+  const html = h.c.marketHtml();
+  const fut = keyRow(html, 'FUT');
+  assert.match(html, /<div class="rrow mrow mfix" data-key="FUT"/, '선물 줄은 누를 수 없다(차트 없음)');
+  assert.match(fut, /코스피200 선물/);
+  assert.match(fut, /883\.70/);
+  assert.match(fut, /20분 지연/);
+  assert.match(fut, /<span class="md5"[^>]*>\+3\.96%<\/span>/, '5일 변화는 선물 일봉의 6번째 앞 종가(850) 대비');
+  const oas = keyRow(html, 'HYOAS');
+  assert.match(oas, /<span class="mval">3\.38%<\/span>/);
+  assert.match(oas, /10\/23 기준/);
+  assert.match(oas, /<span class="md5"[^>]*>\+28\.0bp<\/span>/, '다섯 줄 앞(3.10) 대비 bp');
+  // 국내 묶음 순서: 코스피 · 코스닥 · 선물 · 현물 수급 · 선물 수급
+  assert.deepEqual([...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]).slice(0, 5), ['KOSPI', 'KOSDAQ', 'FUT', 'SPOT', 'FUTFLOW']);
+});
+
+await test('market panel: extras load once a minute while open, keep the last good answer on failure', async () => {
+  const h = marketHarness(['loadMarket']);
+  const realNow = h.c.Date.now;
+  let calls = 0;
+  let answer = { ok: true, spotFlows: [{ date: '20261026', foreign: 3300, final: true }], futFlows: null, kospiDays: null, futDays: null, hyOas: null };
+  h.c.api.marketExtras = async () => { calls++; return answer; };
+  h.c.setRankView('mk');
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls, 1, '열면 받는다');
+  assert.match(h.elements.get('rankList').innerHTML, /data-key="SPOT"/, '받으면 다시 그린다');
+  h.c.renderRank();
+  assert.equal(calls, 1, '1분 안에는 다시 묻지 않는다');
+  h.c.Date.now = () => NOW + 61000;
+  answer = { ok: false, error: 'HTTP 500' };
+  h.c.renderRank();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls, 2, '1분이 지나면 다시 묻는다');
+  assert.match(h.elements.get('rankList').innerHTML, /data-key="SPOT"/, '실패하면 있던 값을 둔다');
+  h.c.Date.now = realNow;
 });
 
 await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {

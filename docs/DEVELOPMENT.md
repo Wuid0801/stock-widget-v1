@@ -125,16 +125,16 @@ npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 
 스위트는 두 갈래입니다.
 
-- **앱을 띄우지 않는 스위트**(아래 CI 의 스물한 개) — 저장된 응답(`tests/fixtures`)과 고정 시계, 가짜 electron 으로 main.js · renderer.js 의 함수를 직접 부릅니다. 네트워크를 쓰지 않습니다.
+- **앱을 띄우지 않는 스위트**(아래 CI 의 스물두 개) — 저장된 응답(`tests/fixtures`)과 고정 시계, 가짜 electron 으로 main.js · renderer.js 의 함수를 직접 부릅니다. 네트워크를 쓰지 않습니다.
 - **앱을 띄우는 스위트**(나머지) — 실제 앱을 Electron 으로 띄우고 실제 API를 호출합니다. 테스트 전용 설정과 창을 공유하므로 순차 실행합니다. 장중/장마감처럼 외부 상태에 좌우되는 경로는 환경변수(`KR_STOCK_WIDGET_FORCE_SESSION` 등)로 강제합니다 — 앱 소스를 고쳐 쓰지 않습니다. `run.mjs` 는 스위트마다 앱 소스의 해시를 앞뒤로 견줘, 바뀌었으면 실패로 칩니다.
 
 session-ui 하네스 규칙 — renderer.js 를 `// 과열도 5단계` 앞(상태 선언, prelude)까지 통째로 넣고, 테스트하는 함수는 이름으로 꺼내 넣습니다. 그래서 테스트하는 함수가 쓰는 상태 선언은 그 표식 앞에 두고, 함수는 `function` 선언으로 쓰고(const 화살표 함수는 꺼내지 못합니다), `harness([...])` 나 기본 목록에 이름을 넣습니다. 표식 문구는 파일에 하나뿐이어야 합니다(하네스가 검사합니다).
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 스물한 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup` · `search`.
+푸시와 PR 마다 **앱을 띄우지 않는 스물두 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup` · `search` · `market`.
 
-이 스물한 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
+이 스물두 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 
@@ -148,7 +148,10 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 |---|---|---|
 | 현재가 · 등락 | Naver KRX·NXT | 거래소별 다종목 1회 요청, 거래 중이면 KRX 우선 |
 | 미국 현재가 · 등락 | Naver 해외 실시간 | 다종목 1회 요청(프리 · 정규 · 애프터). 네이버 코드는 종목당 1회 찾아 기억. 못 받으면 Yahoo 정규장 가격 |
-| 코스피 · 코스닥 지수 | Naver 실시간 | 두 지수 1회 요청. 지수 차트 · RSI · 52주는 Yahoo `^KS11` · `^KQ11` |
+| 코스피 · 코스닥 지수 · 코스피200 선물 | Naver 실시간 | `KOSPI,KOSDAQ,FUT` 1회 요청(선물은 20분 지연 — 시장 지표 화면에만). 지수 차트 · RSI · 52주는 Yahoo `^KS11` · `^KQ11` |
+| 외국인 현물 · 선물 수급(시장 지표) | Naver 모바일 지수 수급 | `m.stock.naver.com/api/index/{KOSPI · FUT}/trend?bizdate=` 날짜마다 1회, 최근 10거래일. 지난 날 · 18:00 뒤의 오늘은 기억. 지표 화면이 열려 있을 때만(1분) |
+| 코스피 · 선물 일별 종가(시장 지표) | Naver 지수 일봉 | `api.stock.naver.com/chart/domestic/index/{KOSPI · FUT}/day` 최근 30일 — 수급을 물을 거래일도 여기서 |
+| 미국 HY OAS(시장 지표) | FRED CSV | `fredgraph.csv?id=BAMLH0A0HYM2`(키 없음), 6시간 기억. 1~2영업일 늦다 |
 | 나스닥 · S&P 500 · VIX · SOX | Naver 해외 지수 실시간 | `.IXIC` · `.INX` · `.VIX` · `.SOX` 1회 요청(지수 줄과 함께 — VIX · SOX 는 시장 지표 화면에만). 차트는 Yahoo `^IXIC` · `^GSPC` · `^VIX` · `^SOX` |
 | 나스닥 100 선물 · WTI(지수 줄) | Naver 해외 선물 · 시장지표 | `NQcv1`(`/worldstock/futures/`) · `CLcv1`(`/marketindex/energy/`) 각 1회, 지수 줄과 함께. 거래소(CME · NYMEX)가 **10분 늦게** 준다 — 야후도 같다. 1D 차트는 Naver 하루 차트(아래), 1W · 일봉은 Yahoo `NQ=F` · `CL=F` |
 | 미국채 10년(지수 줄) | Naver 시장지표 | `US10YT=RR` 상세(`api.stock.naver.com/marketindex/bond/` — 폴링 주소는 404) 1회, 지수 줄과 함께. 실시간. 1D 차트는 Naver 하루 차트(최근 24시간), 1W · 일봉은 Yahoo `^TNX` — 미국 정규장(한국 21:20~04:00)만 움직인다 |
@@ -439,11 +442,15 @@ Yahoo의 1D 봉은 20분 전에서 끊기므로, 장중에는 현재가를 끝�
 
 ### 시장 지표 화면
 
-순위 패널의 시장 버튼 `[국내] [미국] [지표]` 에서 `지표`(`rankView.market === 'mk'`)를 고르면 탭 줄 없이 시장 항목을 묶음별로 보입니다 — **국내**(코스피 · 코스닥), **미국**(나스닥 · S&P 500 · 나스닥 선물 · SOX), **위험 · 자금**(VIX · 미국채 10년 · 원/달러 · WTI). 묶음과 순서는 `MARKET_GROUPS` 이고, 줄은 `marketRow` · `marketHtml` 이 그립니다(설계 `docs/superpowers/specs/2026-10-27-market-view-design.md`).
+순위 패널의 시장 버튼 `[국내] [미국] [지표]` 에서 `지표`(`rankView.market === 'mk'`)를 고르면 탭 줄 없이 시장 항목을 묶음별로 보입니다 — **국내**(코스피 · 코스닥 · 코스피200 선물 · 외국인 현물 수급 · 외국인 선물 수급), **미국**(나스닥 · S&P 500 · 나스닥 선물 · SOX), **위험 · 자금**(VIX · 미국채 10년 · 미국 HY OAS · 원/달러 · WTI). 묶음과 순서는 `MARKET_GROUPS` 이고, 줄은 `marketRow` · `marketHtml` 이 그립니다(설계 `docs/superpowers/specs/2026-10-27-market-view-design.md`).
 
 - 줄: 이름 · 값 · 오늘 등락 · 5일 변화 · 메모(`10분 지연`). 값은 지수 줄과 같은 실시간 값(없으면 받은 시세), 5일 변화는 일봉의 5거래일 전 종가(`closes[closes.length - 6]`) 대비이고 일봉이 6개 미만이면 `—` 입니다. 미국채는 오늘 등락 · 5일 변화를 bp 로 씁니다.
 - 누르면 패널을 닫고 그 항목을 고릅니다(`rankClick` → `select`) — 지수 줄을 누를 때와 같아 헤더 · 차트가 그 항목으로 바뀝니다.
-- 새 요청이 없습니다 — 지수 줄과 함께 받는 값과 이미 받은 일봉으로 그립니다. 30초 갱신마다 다시 그리되 내용이 같으면 목록을 다시 쓰지 않습니다(`rankShown` — 내려 둔 스크롤이 튀지 않게).
+- 지수 항목은 지수 줄과 함께 받는 값과 이미 받은 일봉으로 그립니다. 30초 갱신마다 다시 그리되 내용이 같으면 목록을 다시 쓰지 않습니다(`rankShown` — 내려 둔 스크롤이 튀지 않게).
+- 지표 화면에만 있는 줄(`marketExtraRow`)은 main 의 `market:extras` 로 그리고 누를 수 없습니다(차트가 없다). 지표 화면이 열려 있을 때만 1분마다 받고(`loadMarket`), 다시 받다 실패하면 있던 값을 둡니다. 다섯 부분(현물 · 선물 수급, 코스피 · 선물 일별 종가, HY OAS)은 따로 받아 하나가 실패해도 나머지 줄은 보입니다.
+  - **코스피200 선물** — 값 · 등락률은 지수 줄 요청에 붙여 받은 `FUT`(네이버가 20분 늦게 준다), 5일 변화는 선물 일봉 대비.
+  - **외국인 현물 · 선물 수급** — 마지막 확정일의 외국인 순매수, 5일 변화 자리에 `2일 연속 순매수` 처럼 확정일 끝에서 같은 부호가 이어진 날 수, 메모에 `오늘 잠정 +4,080`. 18:00 전 오늘 값은 장중 잠정치라 연속 일수에 넣지 않습니다. 값은 네이버 표기 그대로이고 단위를 적지 않습니다 — 네이버 화면도 단위 없이 숫자만 보입니다(2026-10-27 확인). 날짜를 주면 그날 값을 주는 주소라 휴장일 · 미래 날짜도 오류 없이 0 을 줘서, 코스피 일봉에 있는 날만 묻습니다.
+  - **미국 HY OAS** — FRED 의 ICE BofA US High Yield OAS(%). 오늘 등락은 앞 값 · 5일 변화는 다섯 값 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다 — 10/27 에 10/23 값).
 
 ### 시장 순위
 
