@@ -4,6 +4,7 @@
 // 미국은 야후가 includePrePost 로 프리 · 애프터 봉을 같이 주고, 응답의 tradingPeriods 가 정규장 구간이다.
 // 국내는 야후가 15:30 까지만 줘서 네이버 NXT 분봉(프리 08:00~08:50 · 애프터 15:40~20:00)을 5분봉으로
 // 묶어 붙인다. 응답 모양은 2026-10-14 실측(SOXL · 삼성전자)에서 쓰는 필드만 옮겼다.
+// 국내 정규장은 네이버 KRX 분봉(실시간)으로 그리고 실패하거나 비면 야후다(6번). 2~5번은 KRX 분봉이 비어 야후로 그린다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -61,8 +62,19 @@ let yahooBody = null;
 const yahooCalls = [];
 const naverCalls = [];
 let naverReply = () => [];
+// 국내 정규장(KRX) 분봉 · 일봉 — 기본은 빈 응답이라 야후로 그린다(6번에서 채운다)
+const krxCalls = [];
+let krxReply = () => [];
+let pollingBody = { datas: [] }; // 지수 줄 응답(6번 — 그날 장 종료 시각)
 const fakeFetch = async (url) => {
   url = String(url);
+  if (/\/chart\/domestic\/(item|index)\//.test(url)) {
+    krxCalls.push(url);
+    const body = krxReply(url);
+    if (body instanceof Error) throw body;
+    return { ok: true, status: 200, json: async () => body };
+  }
+  if (url.includes('polling.finance.naver.com')) return { ok: true, status: 200, json: async () => pollingBody };
   if (url.includes('api.stock.naver.com')) {
     naverCalls.push(url);
     const body = naverReply(url);
@@ -200,7 +212,7 @@ const krYahoo = (day) => yahoo([[`${day}T09:00`, 230000], [`${day}T09:05`, 23100
   naverCalls.length = 0;
   await handlers['yf:chart']({}, { symbol: '^KS11', range: '1d', interval: '5m', extended: true });
   await handlers['yf:chart']({}, { symbol: '005930.KS', range: '1mo', interval: '1d', extended: true });
-  check('지수와 일봉은 네이버 분봉을 묻지 않는다', naverCalls.length === 0, naverCalls.join(' '));
+  check('지수와 일봉은 NXT 시간외 분봉을 묻지 않는다', naverCalls.length === 0, naverCalls.join(' '));
 }
 
 // --- 5. 1W(30분봉) ------------------------------------------------------------------------
@@ -297,6 +309,103 @@ const weekRuns = (r) => r.times.map((t, i) => `${md(t)}${r.ext && r.ext[i] ? `:$
   naverCalls.length = 0;
   r = await oneWeek('035420.KS', false);
   check('정규장만(extended false)이면 네이버 분봉을 묻지 않는다', naverCalls.length === 0 && !('ext' in r));
+}
+
+// --- 6. 국내 정규장: 네이버 KRX 실시간 분봉 ---------------------------------------------------
+// 야후 국내 분봉은 20분 늦어 1D · 1W 정규장도 네이버 KRX 1분봉(실시간)으로 그린다. 종목은 15:30 봉이 공식 종가이고
+// 15:40 부터는 시간외라 장 종료 칸(15:30~15:34)까지만 쓴다(2026-10-26 실측 — 코스피 지수는 15:32 봉이 종가).
+// 앞 절에서 쓰지 않은 종목 · 날이다(분봉 캐시는 경로 · 날마다).
+const krxPathOf = (u) => u.replace('https://api.stock.naver.com/chart/domestic/', '');
+{
+  NOW = kst('2026-10-27T09:52');
+  yahooCalls.length = 0; naverCalls.length = 0; krxCalls.length = 0;
+  krxReply = (url) => (url.includes('/item/005380/minute?startDateTime=202610270000') ? [
+    minute('2026-10-27T09:00', 223250, 663527, 222000, 223500, 221500), minute('2026-10-27T09:01', 223000, 100, 223250, 223400, 222900),
+    minute('2026-10-27T09:04', 222750, 50), minute('2026-10-27T09:05', 222500, 30), minute('2026-10-27T09:51', 223750, 131)] : []);
+  let r = await oneDay('005380.KS', false);
+  check('1D 정규장은 네이버 KRX 분봉 — 오늘 하루를 장 종료 칸(15:35 앞)까지 묻는다', same(krxCalls.map(krxPathOf),
+    ['item/005380/minute?startDateTime=202610270000&endDateTime=202610271535']), krxCalls.join(' '));
+  check('야후는 묻지 않는다', yahooCalls.length === 0, yahooCalls.join(' '));
+  check('5분봉이 지금(09:51)까지 있다 — realtime', r.ok && r.realtime === true && same(r.times.map(hm), ['09:00', '09:05', '09:50'])
+    && !('ext' in r), JSON.stringify(r).slice(0, 200));
+  check('09:00 칸 = 09:00~09:04 (거래량에 시가 동시호가 포함)', same([r.opens[0], r.highs[0], r.lows[0], r.closes[0], r.volumes[0]],
+    [222000, 223500, 221500, 222750, 663677]), JSON.stringify([r.opens[0], r.highs[0], r.lows[0], r.closes[0], r.volumes[0]]));
+
+  naverReply = (url) => (url.includes('startDateTime=202610270800') ? [minute('2026-10-27T08:00', 221000), minute('2026-10-27T08:45', 222000)] : []);
+  r = await oneDay('005380.KS');
+  check('전체: NXT 프리 봉 뒤에 네이버 정규장 봉(30초 안이라 KRX 는 다시 묻지 않는다)', r.realtime === true && r.ext[0] === 'pre'
+    && hm(r.times[r.ext.indexOf(null)]) === '09:00' && r.closes.at(-1) === 223750 && krxCalls.length === 1, runs(r));
+
+  // 장 전 · 휴장: 오늘 정규장 봉이 없으면 앞 거래일(네이버 일봉의 날짜). 종가 동시호가(15:30)까지, 15:40 시간외는 뺀다.
+  krxCalls.length = 0;
+  NOW = kst('2026-10-28T08:30');
+  krxReply = (url) => (url.includes('/item/012330/day?') ? [{ localDate: '20261023' }, { localDate: '20261026' }, { localDate: '20261027' }]
+    : url.includes('/item/012330/minute?startDateTime=202610270000') ? [minute('2026-10-27T15:19', 213000, 31372),
+      minute('2026-10-27T15:30', 213000, 1346511), minute('2026-10-27T15:40', 213000, 751), minute('2026-10-27T16:00', 212500, 1672)]
+    : []);
+  r = await oneDay('012330.KS', false);
+  check('장 전에는 오늘 · 거래일 목록(3주) · 앞 거래일 순으로 묻는다', same(krxCalls.map(krxPathOf), [
+    'item/012330/minute?startDateTime=202610280000&endDateTime=202610281535',
+    'item/012330/day?startDateTime=20261007&endDateTime=20261028',
+    'item/012330/minute?startDateTime=202610270000&endDateTime=202610271535']), krxCalls.join(' '));
+  check('앞 거래일 정규장: 15:15 · 15:30(종가 동시호가) 칸, 15:40 · 16:00 시간외는 뺀다', r.realtime === true
+    && same(r.times.map(hm), ['15:15', '15:30']) && same(r.volumes, [31372, 1346511]), JSON.stringify(r).slice(0, 200));
+  krxCalls.length = 0;
+  NOW = kst('2026-10-28T08:31');
+  await oneDay('012330.KS', false);
+  check('지난 날 봉 · 거래일 목록은 다시 묻지 않는다(오늘만 10초마다)', same(krxCalls.map(krxPathOf),
+    ['item/012330/minute?startDateTime=202610280000&endDateTime=202610281535']), krxCalls.join(' '));
+
+  // 1W: 최근 다섯 거래일(오늘 포함)을 30분봉으로
+  krxCalls.length = 0;
+  NOW = kst('2026-10-27T10:00');
+  krxReply = (url) => {
+    if (url.includes('/item/011170/day?')) return ['20261020', '20261021', '20261022', '20261023', '20261026'].map((d) => ({ localDate: d }));
+    const m = /item\/011170\/minute\?startDateTime=(\d{4})(\d{2})(\d{2})0000/.exec(url);
+    if (!m) return [];
+    const d = `${m[1]}-${m[2]}-${m[3]}`;
+    return d === '2026-10-27' ? [minute(`${d}T09:00`, 100), minute(`${d}T09:31`, 101)]
+      : [minute(`${d}T09:00`, 90), minute(`${d}T15:30`, 95, 1000)];
+  };
+  r = await oneWeek('011170.KS', false);
+  check('1W 는 최근 다섯 거래일(오늘 포함)의 정규장 30분봉', r.realtime === true && same(r.times.map(md), ['10-21 09:00', '10-21 15:30',
+    '10-22 09:00', '10-22 15:30', '10-23 09:00', '10-23 15:30', '10-26 09:00', '10-26 15:30', '10-27 09:00', '10-27 09:30']), weekRuns(r));
+  check('1W 는 야후를 묻지 않는다', !yahooCalls.some((u) => u.includes('011170')), yahooCalls.join(' '));
+
+  // 코스피 지수: 15:32 봉이 공식 종가 — 15:30 칸의 종가가 된다
+  krxCalls.length = 0;
+  NOW = kst('2026-10-26T16:00');
+  krxReply = (url) => (url.includes('/index/KOSPI/minute?startDateTime=202610260000') ? [minute('2026-10-26T15:29', 5472.92, 0),
+    minute('2026-10-26T15:30', 5469.59, 8103), minute('2026-10-26T15:32', 5469.47, 12010)] : []);
+  r = await oneDay('^KS11');
+  check('코스피 지수도 네이버 — 15:32 공식 종가가 15:30 칸의 종가', krxCalls[0]?.includes('/chart/domestic/index/KOSPI/minute')
+    && r.realtime === true && r.closes.at(-1) === 5469.47 && !('ext' in r), JSON.stringify(r).slice(0, 200));
+
+  // 수능일처럼 장이 늦게 끝나는 날: 그날 네이버가 알려 준 종료 시각(지수 줄 응답)의 칸까지
+  NOW = kst('2026-11-19T16:50');
+  pollingBody = { datas: [{ itemCode: 'KOSPI', stockName: '코스피', closePrice: '5500.00', compareToPreviousClosePrice: '1.00',
+    fluctuationsRatio: '0.02', marketStatus: 'CLOSE', stockExchangeType: { startTime: '1000', endTime: '1630' } }] };
+  await handlers['quote:indices']({});
+  pollingBody = { datas: [] };
+  krxCalls.length = 0;
+  krxReply = (url) => (url.includes('/item/000810/minute?startDateTime=202611190000') ? [minute('2026-11-19T10:00', 100),
+    minute('2026-11-19T16:20', 101), minute('2026-11-19T16:30', 102, 5000), minute('2026-11-19T16:40', 102, 3)] : []);
+  r = await oneDay('000810.KS', false);
+  check('수능일: 16:30 칸까지 묻고 그린다(16:40 시간외는 뺀다)', krxCalls[0]?.endsWith('endDateTime=202611191635')
+    && same(r.times.map(hm), ['10:00', '16:20', '16:30']), `${krxCalls.join(' ')} ${JSON.stringify(r.times?.map(hm))}`);
+
+  // 네이버가 실패하면 야후(20분 지연)로 — realtime 없이. 실패는 기억하지 않는다.
+  krxCalls.length = 0; yahooCalls.length = 0;
+  NOW = kst('2026-10-27T11:00');
+  krxReply = () => new TypeError('fetch failed');
+  yahooBody = krYahoo('2026-10-27');
+  r = await oneDay('028260.KS', false);
+  check('네이버가 실패하면 야후로 그린다(realtime 없음)', r.ok && !('realtime' in r) && yahooCalls.length === 1
+    && same(r.closes, [230000, 231000, 232000]), JSON.stringify(r).slice(0, 200));
+  krxReply = (url) => (url.includes('/item/028260/minute?startDateTime=202610270000') ? [minute('2026-10-27T10:58', 1000)] : []);
+  r = await oneDay('028260.KS', false);
+  check('다음 요청에서 받으면 네이버로', r.realtime === true && r.closes.at(-1) === 1000, JSON.stringify(r).slice(0, 200));
+  krxReply = () => [];
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');

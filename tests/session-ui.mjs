@@ -291,6 +291,42 @@ await test('1D appends only active regular; pre/after lines retain price origin 
   assert.equal(draws.at(-1).hLines.length, 0);
 });
 
+// 국내 1D 정규장을 네이버 실시간 분봉으로 받으면(main.js 가 realtime 을 단다) 봉이 이미 지금까지 있다 — 현재가 ·
+// 종가를 끝에 덧붙이지 않는다. 덧붙이면 마지막 봉 뒤에 같은 순간의 점이 하나 더 생긴다. 야후로 그렸을 때는 그대로 붙인다.
+// 다만 받은 지 차트 캐시만큼 지나 끝이 헤더와 달랐다(2026-10-27 SK하이닉스 1,368,000 vs 1,365,000) — 장중이면 오늘
+// 마지막 봉을 현재가로 맞춘다(점은 더하지 않는다).
+await test('1D from Naver real-time bars: no end point is added; while trading the last bar follows the header price', async () => {
+  const { c, run } = harness(['loadChart']);
+  const draws = [];
+  const bars = { ok: true, realtime: true, closes: [98, 100], times: [NOW - 600000, NOW - 300000], volumes: [10, 20],
+    highs: [99, 101], lows: [97, 99] };
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
+    renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
+    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+  });
+  run('let lastDrawSig = null;');
+  const quote = (session, open) => run(`lastDrawSig = null; quotes['005930.KS'] = {price:102,prevClose:95,change:7,live:true,
+    open:${open},session:'${session}',priceSession:'${session}',tradedAt:new Date().toISOString(),closeTime:'1530'};`);
+  quote('regular', true);
+  await c.loadChart();
+  assert.deepEqual(draws.at(-1).closes, [98, 102], '장중: 마지막 봉 = 헤더 현재가, 봉 수는 그대로');
+  assert.deepEqual([draws.at(-1).highs[1], draws.at(-1).lows[1]], [102, 99], '고가를 넓힌다');
+  quote('closed', false);
+  await c.loadChart();
+  assert.deepEqual(draws.at(-1).closes, [98, 100], '장 마감 뒤: 받은 봉 그대로(15:30 봉이 공식 종가)');
+  bars.times = [NOW - 2 * 86400000, NOW - 2 * 86400000 + 300000]; // 장 전 · 휴장 — 지난 날 봉
+  quote('regular', true);
+  await c.loadChart();
+  assert.deepEqual(draws.at(-1).closes, [98, 100], '지난 날 봉은 건드리지 않는다');
+  bars.times = [NOW - 600000, NOW - 300000];
+  delete bars.realtime; // 야후로 그린 차트 — 장중 현재가를 덧붙인다
+  run("lastDrawSig = null; quotes['005930.KS'] = {price:102,prevClose:95,change:7,live:true,open:true,session:'regular',priceSession:'regular'};");
+  await c.loadChart();
+  assert.deepEqual(draws.at(-1).closes, [98, 100, 102]);
+});
+
 // 15:30 에 정규장이 끝나면 KRX 는 휴지(OPEN + break)이고 가격은 NXT 애프터마켓에서 온다(세션 애프터마켓).
 // 야후는 종가를 거래량 0 인 마지막 봉으로 싣는데 20분 늦어 15:50쯤 온다(2026-10-13 실측: regularMarketTime
 // 15:30:12). 예전에는 그사이 1D 차트가 20분 전 봉에서 멈췄다 — 확인된 종가로 끝낸다.

@@ -2666,10 +2666,11 @@ async function loadChart() {
 
   // Yahoo 1D 봉은 20분 전에서 끊긴다. 끝점을 이어붙이거나(장중 현재가 · 장 마감 뒤 종가)
   // 야후 종가 봉을 거래소 종가로 맞춰 차트 끝과 위에 표시된 가격이 어긋나 보이지 않게 한다.
-  // 미국 종목은 야후 분봉이 늦지 않아 맞출 것이 없다(intradayEnd 의 날짜 · 시각도 한국 기준이다).
+  // 미국 종목은 야후 분봉이 늦지 않아 맞출 것이 없다(intradayEnd 의 날짜 · 시각도 한국 기준이다). 국내도 네이버 실시간
+  // 분봉으로 받았으면(main.js 가 realtime 을 단다 — 야후로 그렸을 때만 없다) 봉이 이미 지금까지 있어 맞출 것이 없다.
   // 기준은 정규장의 마지막 봉이다 — 뒤에 애프터 봉이 붙어 있어도. 끝점은 시각 순서대로 끼운다.
   const lastReg = ext ? ext.lastIndexOf(null) : closes.length - 1;
-  const end = state.timeframe === '1D' && !isOverseas(item.symbol)
+  const end = state.timeframe === '1D' && !isOverseas(item.symbol) && !r.realtime
     ? intradayEnd(q, r.volumes && r.volumes[lastReg], Date.now()) : null;
   let endAt = -1; // 끼운 끝점의 자리 — 아래 봉 단위 배열들도 같은 자리를 채운다
   if (end && end.replace) {
@@ -2750,6 +2751,15 @@ async function loadChart() {
     opens[i] = todayBar.open;
     highs[i] = todayBar.high;
     lows[i] = todayBar.low;
+  }
+  // 네이버 실시간 봉(국내 1D · 1W)도 받은 지 차트 캐시(1D 30초 · 1W 5분)만큼 지나 끝이 헤더 현재가와 달랐다(2026-10-27
+  // SK하이닉스 헤더 1,368,000 · 차트 끝 1,365,000). 장중이면 오늘 마지막 정규장 봉의 종가를 현재가로 맞추고 고가 · 저가를
+  // 넓힌다 — 점을 더하지 않아 봉 수는 그대로다. 장 전 · 휴장(마지막 정규장 봉이 지난 날)과 장 마감 뒤는 건드리지 않는다.
+  if (r.realtime && q && q.live && q.open && q.session === 'regular' && q.price != null && lastReg >= 0
+    && daysAgo(times[lastReg]) === 0) {
+    closes[lastReg] = q.price;
+    highs[lastReg] = Math.max(highs[lastReg], q.price);
+    lows[lastReg] = Math.min(lows[lastReg], q.price);
   }
 
   // 추세선은 3M · 1Y 에서만. 검사를 통과 못 한 쪽은 빠지므로
