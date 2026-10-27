@@ -125,9 +125,10 @@ let dailyFailRound = -1;
 // (docs/DEVELOPMENT.md "왜 나눠 쓰는가"). 그래서 분봉은 개장 20분 뒤부터 들어온다.
 const YAHOO_KR_DELAY_MIN = 20;
 
-// 상단 지수 줄. 누르면 관심종목처럼 "선택"되어 헤더 · 차트가 지수로 바뀐다.
+// 고를 수 있는 시장 항목(상단 지수 줄 · 시장 지표 화면). 누르면 관심종목처럼 "선택"되어 헤더 · 차트가 그 항목으로 바뀐다.
 // 기호는 야후 것이다(차트 · 일봉을 야후에서 받는다). code 는 main.js quote:indices 의 code.
-// page 가 같은 것끼리 한 장 — 340px 한 줄에 둘씩 장을 넘긴다(국내 → 미국 → 선물 · 유가 → 환율 · 금리).
+// page 가 있는 것만 지수 줄에 오른다 — 같은 page 끼리 한 장, 340px 한 줄에 둘씩(국내 → 미국 → 나스닥 선물 · 원/달러,
+// 2026-10-27 대표 여섯으로 줄였다). page 가 없는 WTI · 미국채 10년 · VIX · SOX 는 시장 지표 화면에서 고른다.
 // overseas 는 야후 시세가 국내처럼 20분 늦지 않고 하루가 한국 날짜와 다른 것(미국 지수 · 선물 · 유가 · 금리 · 환율)
 // — 미국 종목처럼 다룬다. delayMin 은 거래소가 늦게 주는 분이다 — 나스닥 100 선물(CME) · WTI(NYMEX)는 네이버 · 야후
 // 모두 10분 늦다(2026-10-23 실측). cur 는 값의 단위(없으면 포인트 'pt') — 미국채 10년은 금리 '%' 다.
@@ -139,9 +140,11 @@ const INDICES = [
   { symbol: '^IXIC', code: 'NASDAQ', name: '나스닥', page: 1, overseas: true },
   { symbol: '^GSPC', code: 'SPX', name: 'S&P 500', page: 1, overseas: true },
   { symbol: 'NQ=F', code: 'NQ', name: '나스닥 선물', page: 2, overseas: true, delayMin: 10 },
-  { symbol: 'CL=F', code: 'WTI', name: 'WTI', page: 2, overseas: true, delayMin: 10 },
-  { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 3, overseas: true },
-  { symbol: '^TNX', code: 'US10Y', name: '미국채 10년', page: 3, overseas: true, cur: '%' },
+  { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 2, overseas: true },
+  { symbol: 'CL=F', code: 'WTI', name: 'WTI', overseas: true, delayMin: 10 },
+  { symbol: '^TNX', code: 'US10Y', name: '미국채 10년', overseas: true, cur: '%' },
+  { symbol: '^VIX', code: 'VIX', name: 'VIX', overseas: true },
+  { symbol: '^SOX', code: 'SOX', name: 'SOX', overseas: true },
 ];
 
 function isIndex(symbol) {
@@ -195,6 +198,13 @@ const RANK_TABS = {
   kr: [['search', '인기 검색'], ['up', '급등'], ['down', '급락'], ['value', '거래대금'], ['industry', '업종'], ['theme', '테마']],
   us: [['up', '급등'], ['down', '급락'], ['value', '거래대금'], ['cap', '시총 상위']], // 미국 인기 검색은 네이버에 없다
 };
+// 패널의 지표 화면(시장 버튼 '지표', market 'mk') — 묶음과 줄 순서. 키는 INDICES 의 code 이고, 그 밖은 지표 화면만의 줄이다
+// (FUT 코스피200 선물 · SPOT 외국인 현물 수급 · FUTFLOW 외국인 선물 수급 · HYOAS 미국 하이일드 스프레드 — 2단계).
+const MARKET_GROUPS = [
+  ['국내', ['KOSPI', 'KOSDAQ', 'FUT', 'SPOT', 'FUTFLOW']],
+  ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
+  ['위험 · 자금', ['VIX', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']],
+];
 // group: 업종 · 테마 안으로 들어가 있으면 그 묶음({ no, name, pct, count, up, down }), 아니면 null
 let rankView = { market: 'kr', kind: 'search', group: null };
 const rankCache = new Map(); // 'kr|up' · 'kr|industry|278' -> { at, d(naver:rank 응답) }
@@ -432,7 +442,7 @@ function moveSymbol(from, to) {
 // --- 지수 줄 ---------------------------------------------------------------------
 // 개별 종목이 빠질 때 시장 전체 흐름인지 바로 알 수 있게 한 줄로 보여준다.
 // 누르면 그 지수를 관심종목처럼 고른다(select) — 헤더 · 차트가 지수로 바뀐다.
-// 여덟 개(국내 · 미국 지수, 나스닥 선물 · WTI, 원/달러 · 미국채 10년)는 한 줄에 들어가지 않아 장(INDICES 의 page)을
+// 여섯 개(코스피 · 코스닥, 나스닥 · S&P 500, 나스닥 선물 · 원/달러)는 한 줄에 들어가지 않아 장(INDICES 의 page)을
 // 보유 합계 줄처럼 FOLIO_MS 마다 넘긴다. 마우스를 올리면 멈추고, 보고 있는 지수가 있으면 그 장에 머문다.
 let indexItems = []; // 마지막으로 받은 지수 항목 — 선택만 바뀔 때 강조를 다시 그리는 데 쓴다
 let indexPage = 0;   // 지금 보이는 장(indexPages 의 번호)
@@ -447,10 +457,12 @@ async function loadIndices() {
   return indexItems;
 }
 
-// 받은 항목을 장으로 — INDICES 순서대로, 항목이 하나도 없는 장은 뺀다. 모르는 지수는 보이지 않는다.
+// 받은 항목을 장으로 — INDICES 순서대로, 항목이 하나도 없는 장은 뺀다. 모르는 지수 · page 없는 항목(시장 지표 화면 것)은
+// 보이지 않는다.
 function indexPages() {
   const pages = [];
   for (const ix of INDICES) {
+    if (ix.page == null) continue;
     const it = indexItems.find((i) => i.code === ix.code);
     if (!it) continue;
     const page = pages.find((p) => p.no === ix.page);
@@ -1066,18 +1078,68 @@ function rankKey(v) {
   return `${v.market}|${v.kind}${v.group ? `|${v.group.no}` : ''}`;
 }
 
+// 지표 화면의 줄 하나. 고를 수 있는 시장 항목(INDICES)은 값이 지수 줄 값(없으면 받은 시세)이고, 5일 변화는 일봉의 5거래일 전
+// 종가 대비다(일봉이 6개 미만이면 null). 금리는 오늘 등락 · 5일 변화를 bp 로 쓴다(d5 는 %p 차이). 데이터가 없으면 null —
+// 그 줄을 그리지 않는다.
+function marketRow(key) {
+  const ix = INDICES.find((i) => i.code === key);
+  if (!ix) return null;
+  const it = indexItems.find((i) => i.code === key);
+  const q = quotes[ix.symbol];
+  const value = it ? it.value : q && q.price;
+  if (!(value > 0)) return null;
+  const cur = curOf(ix.symbol);
+  const closes = q && q.daily && q.daily.closes;
+  const base = closes && closes.length >= 6 ? closes[closes.length - 6] : null;
+  const bp = cur === '%';
+  return {
+    key, name: ix.name, symbol: ix.symbol, value, cur,
+    pct: it ? it.pct : q && q.pct != null ? q.pct : null,
+    change: it ? it.change : q && q.change != null ? q.change : null,
+    d5: base > 0 ? (bp ? value - base : (value / base - 1) * 100) : null,
+    d5Unit: bp ? 'bp' : '%',
+    note: ix.delayMin ? `${ix.delayMin}분 지연` : '',
+  };
+}
+
+// 지표 화면 HTML — 묶음 제목 줄과 줄들(이름 · 값 · 오늘 등락 · 5일 변화 · 메모). 누를 수 있는 줄(고를 수 있는 항목)만 data-sym.
+function marketHtml() {
+  const tone = (v) => (v > 0 ? UP : v < 0 ? DOWN : cssVar('--flat'));
+  const out = [];
+  for (const [title, keys] of MARKET_GROUPS) {
+    const rows = keys.map(marketRow).filter(Boolean);
+    if (!rows.length) continue;
+    out.push(`<div class="qhint rnote mgroup">${title}</div>`);
+    for (const r of rows) {
+      const bp = r.d5Unit === 'bp';
+      const day = bp ? (r.change != null ? fmtBp(r.change) : '—') : (r.pct != null ? fmtPct(r.pct) : '—');
+      const d5 = r.d5 == null ? '—' : bp ? fmtBp(r.d5) : fmtPct(r.d5);
+      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" title="${esc(r.name)} 차트 보기">` : '<div class="rrow mrow mfix">';
+      out.push(`${open}<span class="hname">${esc(r.name)}</span><span class="mval">${money(r.value, r.cur)}</span>`
+        + `<span class="rpct" style="color:${tone(bp ? r.change : r.pct)}">${day}</span>`
+        + `<span class="md5" title="5거래일 전 종가 대비">${d5}</span><span class="mnote">${esc(r.note || '')}</span></div>`);
+    }
+  }
+  return out.length ? out.join('') : '<div class="qhint">시장 지표를 불러오는 중…</div>';
+}
+
 // 시장 · 탭 버튼과 목록을 지금 보는 것으로 그린다. 같은 목록이면 다시 쓰지 않는다(30초마다 다시 쓰면
-// 내려 둔 스크롤이 맨 위로 튄다). 탭이 바뀌면 맨 위부터.
+// 내려 둔 스크롤이 맨 위로 튄다). 탭이 바뀌면 맨 위부터. 지표 화면(mk)은 탭 줄이 없다.
 function renderRank() {
   if (document.getElementById('rank').hidden) return;
   const { market, kind, group } = rankView;
-  document.getElementById('rankMarket').innerHTML = [['kr', '국내'], ['us', '미국']]
+  const mk = market === 'mk';
+  document.getElementById('rankMarket').innerHTML = [['kr', '국내'], ['us', '미국'], ['mk', '지표']]
     .map(([m, label]) => `<button data-market="${m}"${m === market ? ' class="on"' : ''}>${label}</button>`).join('');
-  document.getElementById('rankTabs').innerHTML = RANK_TABS[market]
-    .map(([k, label]) => `<button data-kind="${k}"${k === kind ? ' class="on"' : ''}>${label}</button>`).join('');
-  const key = rankKey(rankView);
-  const hit = rankCache.get(key);
-  const html = (group ? rankBackHtml(kind, group) : '') + rankHtml(hit && hit.d, market, kind);
+  const tabs = document.getElementById('rankTabs');
+  tabs.hidden = mk;
+  if (!mk) {
+    tabs.innerHTML = RANK_TABS[market]
+      .map(([k, label]) => `<button data-kind="${k}"${k === kind ? ' class="on"' : ''}>${label}</button>`).join('');
+  }
+  const key = mk ? 'mk' : rankKey(rankView);
+  const hit = mk ? null : rankCache.get(key);
+  const html = mk ? marketHtml() : (group ? rankBackHtml(kind, group) : '') + rankHtml(hit && hit.d, market, kind);
   const list = document.getElementById('rankList');
   if (html !== rankShown.html || key !== rankShown.key) {
     const keep = key === rankShown.key ? list.scrollTop : 0;
@@ -1085,7 +1147,7 @@ function renderRank() {
     list.scrollTop = keep;
     rankShown = { key, html };
   }
-  if (!hit || Date.now() - hit.at >= RANK_TTL) loadRank(market, kind, group ? group.no : undefined);
+  if (!mk && (!hit || Date.now() - hit.at >= RANK_TTL)) loadRank(market, kind, group ? group.no : undefined);
 }
 
 // 받는 중이면 또 묻지 않는다. 다시 받다 실패하면 있던 것을 둔다. 받으면 지금 보는 것을 다시 그린다 —
@@ -1110,6 +1172,12 @@ async function loadRank(market, kind, no) {
 
 // 시장을 바꿔도 지금 탭이 그 시장에도 있으면 그대로(급등 → 급등), 없으면(국내 인기 검색 · 미국 시총 상위) 첫 탭.
 function setRankView(market, kind) {
+  if (market === 'mk') { // 지표 화면 — 탭이 없다
+    rankView = { market, kind: null, group: null };
+    document.getElementById('rankMsg').hidden = true;
+    renderRank();
+    return;
+  }
   const tabs = RANK_TABS[market];
   if (!tabs) return;
   const want = kind || rankView.kind;
@@ -1129,6 +1197,12 @@ const closeRank = () => closePanel(rankEl);
 // 순위 목록을 누름(목록은 다시 그려지므로 상자에 한 번 붙인다) — ← 는 묶음 목록으로, 업종 · 테마 줄은 그 안으로,
 // 종목 줄은 관심종목에 넣거나 그 종목으로(pickRank).
 function rankClick(target) {
+  const pick = target.closest('[data-sym]'); // 지표 화면의 시장 항목 — 지수 줄을 누를 때처럼 고른다
+  if (pick) {
+    closeRank();
+    select(pick.dataset.sym).catch(console.error);
+    return;
+  }
   if (target.closest('[data-back]')) {
     rankView = { ...rankView, group: null };
     renderRank();

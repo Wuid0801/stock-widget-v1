@@ -2481,8 +2481,10 @@ await test('index line dots show the page and jump to it; the turn waits a full 
 });
 
 // 선물 · 유가는 셋째 장, 원/달러 · 미국채 10년은 넷째 장. 선물 · 유가는 10분 늦다는 것을 툴팁에, 금리는 등락을 bp 로.
-await test('index line: futures and oil on the third page, the dollar and the 10-year yield (in bp) on the fourth', () => {
-  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage']);
+// 지수 줄은 대표 여섯 — 코스피 · 코스닥 → 나스닥 · S&P 500 → 나스닥 선물 · 원/달러(2026-10-27). WTI · 미국채 10년 · VIX · SOX 는
+// 줄에 없고 시장 지표 화면에서 고른다(고를 수 있는 항목으로는 남는다).
+await test('index line: six items on three pages; WTI · 10-year · VIX · SOX stay selectable but off the line', () => {
+  const { c, run } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage']);
   run(formatting);
   for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
   run(source.match(/^const FOLIO_MS = .*$/m)[0]);
@@ -2491,21 +2493,87 @@ await test('index line: futures and oil on the third page, the dollar and the 10
     { code: 'KOSPI', name: '코스피', value: 7003.74, change: 32.39, pct: 0.46 }, { code: 'KOSDAQ', name: '코스닥', value: 893.29, change: -1, pct: -0.11 },
     { code: 'NASDAQ', name: '나스닥', value: 26692.87, change: -511.51, pct: -1.88 }, { code: 'SPX', name: 'S&P 500', value: 6600.1, change: -80, pct: -1.2 },
     { code: 'NQ', name: '나스닥 선물', value: 29122.75, change: -19.25, pct: -0.07 }, { code: 'WTI', name: 'WTI', value: 100.36, change: 0.89, pct: 0.89 },
-    { code: 'USDKRW', name: '원/달러', value: 1351.4, change: 8.5, pct: 0.63 }, { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }];`);
+    { code: 'USDKRW', name: '원/달러', value: 1351.4, change: 8.5, pct: 0.63 }, { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 },
+    { code: 'VIX', name: 'VIX', value: 18.39, change: -1.06, pct: -5.45 }, { code: 'SOX', name: 'SOX', value: 11083.47, change: 304, pct: 2.82 }];`);
   const box = c.document.getElementById('indices');
   const shown = () => [...box.innerHTML.matchAll(/data-symbol="([^"]+)"/g)].map((m) => m[1]).join(' ');
   c.renderIndices();
-  assert.match(box.innerHTML, /data-page="2" title="나스닥 선물 · WTI"><\/button><button class="ixdot" data-page="3" title="원\/달러 · 미국채 10년"><\/button><\/span>$/,
-    '네 장');
-  c.flipIndexPage(2);
-  assert.equal(shown(), 'NQ=F CL=F');
+  assert.match(box.innerHTML, /<span class="ixdots"><button class="ixdot on" data-page="0" title="코스피 · 코스닥"><\/button><button class="ixdot" data-page="1" title="나스닥 · S&P 500"><\/button><button class="ixdot" data-page="2" title="나스닥 선물 · 원\/달러"><\/button><\/span>$/,
+    '세 장');
+  const pages = [];
+  for (const p of [0, 1, 2]) { c.flipIndexPage(p); pages.push(shown()); }
+  assert.deepEqual(pages, ['^KS11 ^KQ11', '^IXIC ^GSPC', 'NQ=F KRW=X']);
   assert.match(box.innerHTML, /title="나스닥 선물 \(10분 지연\) 차트 보기"><span class="ixn">나스닥 선물<\/span><span class="ixv">29,122\.75<\/span><span class="ixp" style="color:#185fa5">-0\.07%<\/span>/);
-  assert.match(box.innerHTML, /title="WTI \(10분 지연\) 차트 보기">/);
-  c.flipIndexPage(3);
-  assert.equal(shown(), 'KRW=X ^TNX');
-  assert.match(box.innerHTML, /title="미국채 10년 차트 보기"><span class="ixn">미국채 10년<\/span><span class="ixv">4\.970<\/span><span class="ixp" style="color:#e24b4a">\+1\.7bp<\/span>/,
-    '금리는 셋째 자리 · bp, 지연 표시 없음(실시간)');
-  assert.match(box.innerHTML, /<span class="ixv">1,351\.40<\/span><span class="ixp" style="color:#e24b4a">\+0\.63%<\/span>/, '원/달러는 그대로 %');
+  for (const s of ['CL=F', '^TNX', '^VIX', '^SOX']) {
+    assert.equal(run(`isIndex('${s}')`), true, `${s} 는 고를 수 있다`);
+    assert.equal(pages.join(' ').includes(s), false, `${s} 는 줄에 없다`);
+  }
+});
+
+// 시장 순위 패널의 지표 화면 — 시장 버튼 [국내] [미국] [지표]. 지표는 탭 줄 없이 묶음(국내 · 미국 · 위험 · 자금)마다 시장 항목
+// 줄을 그린다. 누르면 패널을 닫고 그 항목을 고른다(지수 줄을 누를 때와 같다). 2026-10-27.
+const MARKET_ITEMS = `indexItems = [
+  { code: 'KOSPI', name: '코스피', value: 5626.49, change: 157.02, pct: 2.87 }, { code: 'KOSDAQ', name: '코스닥', value: 742.97, change: 15.8, pct: 2.17 },
+  { code: 'NASDAQ', name: '나스닥', value: 26169.38, change: 215.3, pct: 0.83 }, { code: 'SPX', name: 'S&P 500', value: 7676.77, change: 53.4, pct: 0.7 },
+  { code: 'VIX', name: 'VIX', value: 18.39, change: -1.06, pct: -5.45 }, { code: 'SOX', name: 'SOX', value: 11083.47, change: 304, pct: 2.82 },
+  { code: 'NQ', name: '나스닥 선물', value: 29358.25, change: -79.5, pct: -0.27 }, { code: 'WTI', name: 'WTI', value: 101.04, change: -0.72, pct: -0.71 },
+  { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }, { code: 'USDKRW', name: '원/달러', value: 1323.23, change: -1.94, pct: -0.15 }];`;
+const marketHarness = () => {
+  const h = harness(['marketRow', 'marketHtml', 'renderRank', 'setRankView', 'rankClick', 'rankHtml']);
+  h.run(formatting);
+  h.run(source.match(/^let indexItems = .*$/m)[0]);
+  h.picked = [];
+  h.closed = 0;
+  Object.assign(h.c, { cssVar: () => '#888888', esc: String, loadRank: async () => {},
+    select: async (s) => { h.picked.push(s); }, closeRank: () => { h.closed++; } });
+  h.run(MARKET_ITEMS);
+  return h;
+};
+const rowOf = (html, sym) => (html.split(`data-sym="${sym}"`)[1] || '').split('</div>')[0];
+
+await test('market panel: 지표 lists every index item in three groups and picks one on click', async () => {
+  const h = marketHarness();
+  h.run("quotes['^TNX'] = { daily: { times: [1, 2, 3, 4, 5, 6], closes: [4.85, 4.9, 4.92, 4.95, 4.96, 4.97] } };");
+  h.c.setRankView('mk');
+  assert.match(h.elements.get('rankMarket').innerHTML, /<button data-market="kr">국내<\/button><button data-market="us">미국<\/button><button data-market="mk" class="on">지표<\/button>/);
+  assert.equal(h.elements.get('rankTabs').hidden, true, '지표 화면은 탭 줄이 없다');
+  const html = h.elements.get('rankList').innerHTML;
+  assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]), ['국내', '미국', '위험 · 자금']);
+  const order = [...html.matchAll(/data-sym="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ['^KS11', '^KQ11', '^IXIC', '^GSPC', 'NQ=F', '^SOX', '^VIX', '^TNX', 'KRW=X', 'CL=F'], '묶음 안 순서');
+  assert.match(rowOf(html, '^TNX'), /4\.970/);
+  assert.match(rowOf(html, '^TNX'), /\+1\.7bp/, '금리의 오늘 등락은 bp');
+  assert.match(rowOf(html, '^TNX'), /\+12\.0bp/, '금리의 5일 변화도 bp');
+  assert.match(rowOf(html, 'CL=F'), /10분 지연/);
+  h.c.rankClick({ closest: (sel) => (sel === '[data-sym]' ? { dataset: { sym: '^VIX' } } : null) });
+  assert.equal(h.closed, 1, '패널을 닫는다');
+  assert.deepEqual(h.picked, ['^VIX'], '그 항목을 고른다');
+  h.c.setRankView('kr');
+  assert.equal(h.elements.get('rankTabs').hidden, false, '국내로 돌아오면 탭 줄이 다시 보인다');
+});
+
+await test('market panel: 5-day change uses the close five bars back; fewer than six closes shows —', () => {
+  const h = marketHarness();
+  h.run("indexItems = [{ code: 'SOX', name: 'SOX', value: 110, change: 1, pct: 0.92 }]; quotes['^SOX'] = { daily: { closes: [100, 101, 102, 103, 104, 105] } };");
+  const row = h.c.marketRow('SOX');
+  assert.ok(Math.abs(row.d5 - 10) < 1e-9 && row.d5Unit === '%', JSON.stringify(row));
+  assert.match(rowOf(h.c.marketHtml(), '^SOX'), /<span class="md5"[^>]*>\+10\.00%<\/span>/);
+  h.run("quotes['^SOX'].daily.closes = [101, 102, 103, 104, 105];");
+  assert.equal(h.c.marketRow('SOX').d5, null);
+  assert.match(rowOf(h.c.marketHtml(), '^SOX'), /<span class="md5"[^>]*>—<\/span>/);
+  assert.equal(h.c.marketRow('HYOAS'), null, '아직 데이터가 없는 줄은 없다(2단계)');
+});
+
+await test('market panel: same content is not rewritten (scroll stays)', () => {
+  const h = marketHarness();
+  let writes = 0;
+  h.elements.set('rankList', { style: {}, scrollTop: 0, _h: '', get innerHTML() { return this._h; }, set innerHTML(v) { writes++; this._h = v; } });
+  h.c.setRankView('mk');
+  h.c.renderRank();
+  assert.equal(writes, 1, '30초 갱신으로 같은 내용을 다시 쓰지 않는다');
+  h.run("indexItems[0].value = 5630;");
+  h.c.renderRank();
+  assert.equal(writes, 2, '값이 바뀌면 다시 쓴다');
 });
 
 await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {

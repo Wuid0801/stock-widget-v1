@@ -554,7 +554,9 @@ async function domesticRealtime(symbols) {
 // 지수 줄 (실시간): 코스피 · 코스닥, 나스닥 · S&P 500(네이버 해외 지수), 나스닥 100 선물 · WTI(네이버 — 거래소가
 // 10분 늦게 준다), 미국채 10년(네이버 — 실시간), 원/달러(야후 — 차트와 보유 합계의 원화 환산이 같은 값을 쓴다).
 // 함께 받고, 하나가 실패해도 나머지는 보인다. 다종목 응답에는 *Raw 필드가 빠져 있어 문자열을 직접 파싱한다.
-const US_INDICES = { '.IXIC': { code: 'NASDAQ', name: '나스닥' }, '.INX': { code: 'SPX', name: 'S&P 500' } };
+// VIX · SOX 는 지수 줄이 아니라 시장 지표 화면에 쓴다 — 같은 요청에 붙여 요청이 늘지 않는다(2026-10-27 실측)
+const US_INDICES = { '.IXIC': { code: 'NASDAQ', name: '나스닥' }, '.INX': { code: 'SPX', name: 'S&P 500' },
+  '.VIX': { code: 'VIX', name: 'VIX' }, '.SOX': { code: 'SOX', name: 'SOX' } };
 ipcMain.handle('quote:indices', async () => {
   // 지수 헤더용 값. 빠진 값은 0 이 아니라 null — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
   const opt = (v) => {
@@ -580,7 +582,7 @@ ipcMain.handle('quote:indices', async () => {
   const parts = await Promise.allSettled([
     naver('https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ')
       .then((ds) => { noteKrxEnd(ds); return ds.map((d) => item(d, d.itemCode, d.stockName)); }),
-    naver('https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX')
+    naver('https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX,.VIX,.SOX')
       .then((ds) => ds.filter((d) => US_INDICES[d.reutersCode])
         .map((d) => item(d, US_INDICES[d.reutersCode].code, US_INDICES[d.reutersCode].name))),
     naver('https://polling.finance.naver.com/api/realtime/worldstock/futures/NQcv1')

@@ -133,6 +133,18 @@ check('S&P 500 이름', all.items?.find((i) => i.code === 'SPX')?.name === 'S&P 
 usIndexBody = { datas: [...usFixture.datas, { ...usFixture.datas[0], reutersCode: '.DJI', indexName: '다우' }] };
 check('모르는 해외 지수가 섞여도 나스닥 · S&P 500 은 보인다',
   same((await handlers['quote:indices']({})).items.map((i) => i.code), ['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX', 'USDKRW']));
+// 시장 지표 화면의 VIX · SOX 는 나스닥 · S&P 500 과 같은 해외 지수 요청에 붙는다(2026-10-27 실측 .VIX 18.39 · .SOX 11,083.47)
+usIndexBody = { datas: [...usFixture.datas,
+  { ...usFixture.datas[0], reutersCode: '.VIX', indexName: 'VIX', closePrice: '18.39', closePriceRaw: undefined, fluctuationsRatio: '-5.45',
+    fluctuationsRatioRaw: undefined, compareToPreviousClosePrice: '-1.06', compareToPreviousClosePriceRaw: undefined },
+  { ...usFixture.datas[0], reutersCode: '.SOX', indexName: '필라델피아 반도체', closePrice: '11,083.47', closePriceRaw: undefined,
+    fluctuationsRatio: '2.82', fluctuationsRatioRaw: undefined }] };
+fetched.length = 0;
+const withRisk = await handlers['quote:indices']({});
+check('VIX · SOX 는 나스닥 · S&P 500 과 한 요청으로', same(withRisk.items.map((i) => i.code).slice(0, 6), ['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX', 'VIX', 'SOX'])
+  && fetched.filter((u) => u.includes('/worldstock/index/.IXIC,.INX,.VIX,.SOX')).length === 1
+  && withRisk.items.find((i) => i.code === 'VIX')?.value === 18.39 && withRisk.items.find((i) => i.code === 'SOX')?.name === 'SOX',
+  `${JSON.stringify(withRisk.items.map((i) => [i.code, i.name, i.value]))} ${fetched.join(' ')}`);
 usIndexBody = usFixture;
 const fx = all.items?.find((i) => i.code === 'USDKRW');
 check('원/달러는 야후의 지금 값과 전일 종가로', fx && fx.value === 1349.46 && Math.abs(fx.change - 8.6) < 1e-9

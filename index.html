@@ -382,6 +382,13 @@
   }
   .rtabs button:hover { color: var(--text-3); }
   .rtabs button.on { background: var(--tf-on-bg); color: var(--tf-on-fg); font-weight: 700; }
+  .rtabs[hidden] { display: none; }
+  /* 지표 화면(시장 버튼 '지표') — 묶음 제목 줄과 시장 항목 줄(이름 · 값 · 오늘 등락 · 5일 변화 · 메모) */
+  .mgroup { padding-top: 6px; font-weight: 700; color: var(--text-3); }
+  .mrow .mval { flex: 0 0 auto; font-size: 11px; }
+  .mrow .md5 { flex: 0 0 52px; text-align: right; font-size: 10px; color: var(--mute); }
+  .mrow .mnote { flex: 0 0 44px; text-align: right; font-size: 9px; color: var(--mute); white-space: nowrap; }
+  .mrow.mfix { cursor: default; }
   #rankList { flex: 1 1 auto; overflow-y: auto; }
   #rankList::-webkit-scrollbar { width: 5px; }
   #rankList::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 3px; }
