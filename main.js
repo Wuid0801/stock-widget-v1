@@ -1270,6 +1270,66 @@ async function withExt(series, krExt, now, week) {
   return series;
 }
 
+// --- 지수 줄의 선물 · 미국채 1D(네이버) --------------------------------------------------
+// 야후는 선물(NQ=F · CL=F)의 하루를 미국 동부 자정(한국 13:00, 겨울 14:00)에 새로 시작하고 10분 늦어, 그 뒤 10분쯤은
+// 1D 가 비었다(2026-10-27 13:06 둘 다 0봉). 미국채(^TNX)는 미국 정규장(한국 21:20~04:00)에만 움직여 한국 낮에는 지난밤
+// 차트였다. 네이버 모바일 차트(front-api/chart/pricesByPeriod, scriptChartType=day)는 선물의 하루를 거래소 하루
+// (17:00 CT ~ 다음 날 16:00 CT — 1분 간격 · 누적 거래량)로, 미국채는 뉴욕 날짜 하루(약 10분 간격, 거래량 없음 — 자정이
+// 지나도 새 값이 오기 전까지는 전날 하루)로 준다. 공식 API 가 아니라 네이버 모바일 페이지가 쓰는 주소라 실패하거나 비면
+// 야후로 그린다. 1W · 일봉은 야후 그대로다(네이버 일별은 종가뿐이다).
+const NAVER_DAY = {
+  'NQ=F': { reutersCode: 'NQcv1', category: 'major', chartInfoType: 'futures' },
+  'CL=F': { reutersCode: 'CLcv1', category: 'energy', chartInfoType: 'futures' },
+  // 미국채의 뉴욕 자정은 거래와 상관없는 경계다 — 그 뒤 몇 시간은 점이 몇 개뿐이라 전날의 같은 시각 뒤(lastPriceInfos)를
+  // 앞에 이어 최근 24시간을 그린다(2026-10-27 13:18 오늘 1개 · 전날 128개).
+  '^TNX': { reutersCode: 'US10YT=RR', category: 'bond', chartInfoType: 'governmentBond', last24h: true },
+};
+const zoneFormats = new Map();
+
+// 그 지역의 벽시계 'YYYYMMDDHHMM…' → UTC ms. 서머타임은 Intl 이 안다(Electron · Node 는 ICU 를 다 싣는다).
+function zonedMs(local, zone) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(String(local ?? ''));
+  if (!m) return NaN;
+  if (!zoneFormats.has(zone)) {
+    zoneFormats.set(zone, new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23',
+      year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }));
+  }
+  const fmt = zoneFormats.get(zone);
+  const offset = (t) => {
+    const p = Object.fromEntries(fmt.formatToParts(t).map((x) => [x.type, x.value]));
+    return Date.UTC(+p.year, p.month - 1, +p.day, +p.hour, +p.minute) - t;
+  };
+  const wall = Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]);
+  return wall - offset(wall - offset(wall));
+}
+
+// 네이버 하루 차트 → 5분봉. 값(currentPrice)만 있어 시 · 고 · 저 · 종은 칸 안의 값들이다. 거래량은 하루 누적이라 앞 값과의
+// 차이다(2026-10-27 WTI 348개 모두 늘기만 했다). 거래량이 없으면(미국채) 0.
+function naverDayBars(list, zone) {
+  const rows = list.slice().sort((a, b) => String(a?.localDateTime).localeCompare(String(b?.localDateTime)));
+  const out = [];
+  let cum = null;
+  for (const p of rows) {
+    const c = Number(p?.currentPrice);
+    const t = zonedMs(p?.localDateTime, zone);
+    if (!(c > 0) || !Number.isFinite(t)) continue;
+    const acc = Number(p.accumulatedTradingVolume);
+    const v = Number.isFinite(acc) ? (cum != null && acc >= cum ? acc - cum : acc) : 0;
+    if (Number.isFinite(acc)) cum = acc;
+    const at = Math.floor(t / STEP_5M) * STEP_5M;
+    const last = out[out.length - 1];
+    if (last && last.time === at) {
+      last.close = c;
+      last.high = Math.max(last.high, c);
+      last.low = Math.min(last.low, c);
+      last.volume += v;
+    } else {
+      out.push({ time: at, open: c, high: c, low: c, close: c, volume: v, ext: null });
+    }
+  }
+  return out;
+}
+
 // 시간외는 거래가 드물어 칸(1D 5분 · 1W 30분)이 군데군데 빈다(SOXL 애프터 48칸 중 18칸, 2026-10-14). x축이 봉
 // 순서라 그대로 두면 네 시간이 한 시간 반처럼 눌린다 — 같은 세션 안의 빈 칸을 직전 종가로 채운다(거래량 0).
 // 세션이 바뀌는 곳(프리 → 정규장 → 애프터)과 하루를 넘는 빈 칸은 채우지 않는다 — 1W 에서 야후가 하루를
@@ -1299,6 +1359,22 @@ ipcMain.handle('yf:chart', async (_e, req) => {
   const ext = extended === true && ((range === '1d' && interval === '5m') || week);
   const usExt = ext && US_RE.test(symbol);
   const krExt = ext ? /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol) : null;
+  // 지수 줄의 선물 · 미국채 1D 는 네이버 하루 차트(NAVER_DAY). 실패하거나 비면 아래 야후로 그린다.
+  const nd = range === '1d' && interval === '5m' ? NAVER_DAY[symbol] : null;
+  if (nd) {
+    try {
+      const j = await naverJson('https://m.stock.naver.com/front-api/chart/pricesByPeriod'
+        + `?reutersCode=${encodeURIComponent(nd.reutersCode)}&category=${nd.category}&chartInfoType=${nd.chartInfoType}&scriptChartType=day`);
+      const res = j?.result || {};
+      const list = (a) => (Array.isArray(a) ? a : []);
+      const bars = naverDayBars([...(nd.last24h ? list(res.lastPriceInfos) : []), ...list(res.priceInfos)], res.zoneId);
+      if (bars.length) {
+        // realtime: 봉이 지금까지 있다(선물은 거래소가 10분 늦게 준다) — 렌더러가 장중 마지막 봉을 지수 줄 값으로 맞춘다
+        return { ok: true, symbol, price: bars.at(-1).close, currency: null, week52High: null, week52Low: null,
+          realtime: true, ...(await withExt(toSeries(bars), null, Date.now(), false)) };
+      }
+    } catch { /* 야후로 */ }
+  }
   // 국내 1D · 1W 정규장은 네이버 실시간 분봉(naverIntraday). 실패하거나 비면 아래 야후(20분 지연)로 그린다.
   const kr = (range === '1d' && interval === '5m') || week ? krPath(symbol) : null;
   if (kr) {

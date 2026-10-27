@@ -2304,6 +2304,10 @@ await test('empty intraday chart says when Yahoo bars start (open + delay, KST) 
   // 야후 지수 분봉도 국내 종목처럼 20분 늦다(2026-10-02 실측) — 지수 시세에는 openTime 이 없어 09:00 기준
   assert.equal(c.intradayWaitText({ symbol: '^KS11', name: '코스피' }, {}),
     '코스피 1D: 분봉이 늦어지고 있습니다 (보통 09:20쯤 들어옵니다 · 1M 이상은 정상)');
+  // 해외 지수 · 선물 · 금리 · 환율(지수 줄)은 한국 개장과 상관없다 — WTI 1D 가 비면 "09:20쯤" 이라고 했다(2026-10-27)
+  for (const [symbol, name] of [['CL=F', 'WTI'], ['NQ=F', '나스닥 선물'], ['^TNX', '미국채 10년'], ['^IXIC', '나스닥'], ['KRW=X', '원/달러']]) {
+    assert.equal(c.intradayWaitText({ symbol, name }, {}), `${name} 1D: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`, symbol);
+  }
 });
 
 await test('indices: selectedItem finds a watchlist row or an index; indexLive matches the stock live shape', () => {

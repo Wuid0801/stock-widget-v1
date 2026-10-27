@@ -66,6 +66,9 @@ let naverReply = () => [];
 const krxCalls = [];
 let krxReply = () => [];
 let pollingBody = { datas: [] }; // 지수 줄 응답(6번 — 그날 장 종료 시각)
+// 네이버 모바일 하루 차트(7번 — 지수 줄의 선물 · 미국채 1D). 기본은 빈 응답이라 야후로 그린다.
+const frontCalls = [];
+let frontReply = () => null;
 const fakeFetch = async (url) => {
   url = String(url);
   if (/\/chart\/domestic\/(item|index)\//.test(url)) {
@@ -75,6 +78,12 @@ const fakeFetch = async (url) => {
     return { ok: true, status: 200, json: async () => body };
   }
   if (url.includes('polling.finance.naver.com')) return { ok: true, status: 200, json: async () => pollingBody };
+  if (url.includes('m.stock.naver.com/front-api/')) {
+    frontCalls.push(url);
+    const body = frontReply(url);
+    if (body instanceof Error) throw body;
+    return { ok: true, status: 200, json: async () => body };
+  }
   if (url.includes('api.stock.naver.com')) {
     naverCalls.push(url);
     const body = naverReply(url);
@@ -406,6 +415,69 @@ const krxPathOf = (u) => u.replace('https://api.stock.naver.com/chart/domestic/'
   r = await oneDay('028260.KS', false);
   check('다음 요청에서 받으면 네이버로', r.realtime === true && r.closes.at(-1) === 1000, JSON.stringify(r).slice(0, 200));
   krxReply = () => [];
+}
+
+// --- 7. 지수 줄의 선물 · 미국채 1D: 네이버 하루 차트 -----------------------------------------------
+// 야후는 선물의 하루를 미국 동부 자정(한국 13:00)에 새로 시작하고 10분 늦어 그 뒤 10분쯤 1D 가 비었고(2026-10-27 13:06 둘 다
+// 0봉), 미국채는 미국 정규장에만 움직였다. 응답 모양은 2026-10-27 실측(front-api/chart/pricesByPeriod)에서 쓰는 필드만 옮겼다.
+// 선물은 거래소 하루(17:00 CT ~), 미국채는 최근 24시간(전날의 같은 시각 뒤 + 오늘)이다.
+const dayChart = (zoneId, priceInfos, lastPriceInfos = []) => ({ isSuccess: true, result: { zoneId, priceInfos, lastPriceInfos } });
+const pt = (t, c, v) => ({ localDateTime: `${t.replace(/\D/g, '')}00`, currentPrice: c, ...(v == null ? {} : { accumulatedTradingVolume: v }) });
+const FRONT = 'https://m.stock.naver.com/front-api/chart/pricesByPeriod?';
+{
+  NOW = kst('2026-10-27T13:06');
+  yahooCalls.length = 0; frontCalls.length = 0;
+  frontReply = (url) => (url.includes('NQcv1') ? dayChart('CST6CDT', [pt('2026-10-26T17:00', 29474.5, 49),
+    pt('2026-10-26T17:01', 29480, 100), pt('2026-10-26T17:04', 29470, 130), pt('2026-10-26T17:05', 29475, 140),
+    pt('2026-10-26T22:55', 29452.25, 52669)]) : null);
+  let r = await oneDay('NQ=F');
+  check('나스닥 선물 1D 는 네이버 하루 차트를 묻는다', same(frontCalls,
+    [`${FRONT}reutersCode=NQcv1&category=major&chartInfoType=futures&scriptChartType=day`]), frontCalls.join(' '));
+  check('야후는 묻지 않는다', yahooCalls.length === 0, yahooCalls.join(' '));
+  check('거래소 하루(17:00 CT = 한국 07:00)부터 5분봉, 지금까지 — realtime', r.ok && r.realtime === true && !('ext' in r)
+    && same(r.times.map(hm), ['07:00', '07:05', '12:55']), JSON.stringify(r).slice(0, 200));
+  check('5분 칸: 시가는 첫 값, 고 · 저는 칸 안, 종가는 끝 값 · 거래량은 누적의 차이', same([r.opens[0], r.highs[0], r.lows[0], r.closes[0]],
+    [29474.5, 29480, 29470, 29470]) && same(r.volumes, [130, 10, 52529]), JSON.stringify([r.opens[0], r.highs[0], r.lows[0], r.closes[0], r.volumes]));
+
+  // WTI 는 에너지, 겨울(CST)에는 17:00 CT 가 한국 08:00
+  frontCalls.length = 0;
+  NOW = kst('2026-12-02T09:00');
+  frontReply = (url) => (url.includes('CLcv1') ? dayChart('CST6CDT', [pt('2026-12-01T17:00', 101.27, 6), pt('2026-12-01T17:59', 101.4, 58)]) : null);
+  r = await oneDay('CL=F');
+  check('WTI: 에너지 · 선물, 겨울에는 17:00 CT = 한국 08:00', frontCalls[0]?.includes('reutersCode=CLcv1&category=energy&chartInfoType=futures')
+    && same(r.times.map(hm), ['08:00', '08:55']) && r.realtime === true, `${frontCalls.join(' ')} ${JSON.stringify(r.times?.map(hm))}`);
+
+  // 미국채: 뉴욕 날짜가 막 바뀌어 오늘 값이 하나뿐이어도 전날의 같은 시각 뒤를 이어 최근 24시간
+  frontCalls.length = 0;
+  NOW = kst('2026-10-27T13:18');
+  frontReply = (url) => (url.includes('US10YT%3DRR') ? dayChart('America/New_York', [pt('2026-10-27T00:09', 4.97)],
+    [pt('2026-10-26T00:19', 4.968), pt('2026-10-26T23:59', 4.965)]) : null);
+  r = await oneDay('^TNX');
+  check('미국채: 국채 차트를 묻는다', frontCalls[0] === `${FRONT}reutersCode=US10YT%3DRR&category=bond&chartInfoType=governmentBond&scriptChartType=day`,
+    frontCalls.join(' '));
+  check('미국채는 최근 24시간(전날 00:19 NY = 한국 13:19 부터), 거래량 없음', same(r.times.map(md), ['10-26 13:15', '10-27 12:55', '10-27 13:05'])
+    && same(r.volumes, [0, 0, 0]) && r.closes.at(-1) === 4.97 && r.realtime === true, weekRuns(r));
+
+  // 네이버가 실패하거나 비면 야후로 — 실패는 기억하지 않는다
+  yahooCalls.length = 0;
+  yahooBody = yahoo([['2026-10-27T13:00', 100], ['2026-10-27T13:05', 101]]);
+  frontReply = () => new TypeError('fetch failed');
+  r = await oneDay('CL=F');
+  check('네이버가 실패하면 야후로(realtime 없음)', r.ok && !('realtime' in r) && yahooCalls.length === 1 && same(r.closes, [100, 101]), JSON.stringify(r).slice(0, 160));
+  frontReply = () => dayChart('CST6CDT', []);
+  r = await oneDay('CL=F');
+  check('네이버가 비면 야후로', r.ok && !('realtime' in r) && yahooCalls.length === 2);
+  frontReply = () => ({ detailCode: 'invalid_value', message: '...' }); // 모양이 다른 응답(주소가 바뀌었을 때)
+  r = await oneDay('CL=F');
+  check('모양이 다른 응답도 야후로', r.ok && !('realtime' in r) && yahooCalls.length === 3);
+
+  // 1W · 일봉과 다른 종목은 묻지 않는다
+  frontCalls.length = 0;
+  await oneWeek('NQ=F');
+  await handlers['yf:chart']({}, { symbol: 'CL=F', range: '1mo', interval: '1d' });
+  await oneDay('^IXIC');
+  check('1W · 일봉 · 다른 지수는 네이버 하루 차트를 묻지 않는다', frontCalls.length === 0, frontCalls.join(' '));
+  frontReply = () => null;
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');

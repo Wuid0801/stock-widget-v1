@@ -2601,8 +2601,9 @@ function leftText(minutes) {
 // 국내만 시각을 댄다 — 해외는 야후가 늦지 않아 이 이유로 비지 않는다.
 function intradayWaitText(item, q) {
   const head = `${item.name} ${state.timeframe}`;
-  // 지수도 야후 분봉이 국내 종목처럼 20분 늦다. isDomestic 은 그대로 둔다 — 폴링 · 알림이 쓴다.
-  if (!isDomestic(item.symbol) && !isIndex(item.symbol)) return `${head}: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`;
+  // 국내 지수도 야후 분봉이 국내 종목처럼 20분 늦다. isDomestic 은 그대로 둔다 — 폴링 · 알림이 쓴다. 해외 지수 · 선물 ·
+  // 금리 · 환율(지수 줄)은 한국 개장과 상관없다 — 예전에는 WTI 1D 가 비면 "보통 09:20쯤" 이라고 했다(2026-10-27).
+  if (isOverseas(item.symbol)) return `${head}: 분봉이 아직 안 들어왔습니다 (1M 이상은 정상)`;
   const eta = intradayEta(Date.now(), q && q.openTime, YAHOO_KR_DELAY_MIN);
   return eta.minutes > 0
     ? `${head}: 분봉은 ${eta.at}쯤부터 들어옵니다 (${leftText(eta.minutes)} · 1M 이상은 정상)`
