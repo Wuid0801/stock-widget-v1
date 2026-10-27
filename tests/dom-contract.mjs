@@ -74,6 +74,17 @@ if (backtestTag >= 0 && indicatorsTag >= 0 && rendererTag >= 0) {
     indicatorsTag < backtestTag && backtestTag < rendererTag);
 }
 
+// market-check.js 는 화면과 무관한 판정 함수(전역 marketChecks)이고 renderer.js 의 시장 지표 화면이 부른다.
+const marketCheckTag = html.indexOf('src="./market-check.js"');
+check('index.html 이 market-check.js 를 싣는다', marketCheckTag >= 0);
+if (marketCheckTag >= 0 && backtestTag >= 0 && rendererTag >= 0) {
+  check('market-check.js 가 backtest.js 뒤, renderer.js 앞에 온다', backtestTag < marketCheckTag && marketCheckTag < rendererTag);
+}
+
+// 지표 화면의 누를 수 없는 줄(.mrow.mfix — 선물 · 수급 · HY OAS)도 가로 한 줄이어야 한다. 가로 배치(display: flex)가 누를 수 있는
+// 줄의 .hit 에만 있어서 이 줄들은 칸이 세로로 흩어지고 판정 점도 안 보였다(2026-10-27 실화면).
+check('지표 화면의 누를 수 없는 줄도 가로 한 줄(display: flex)', /\.mrow\.mfix\s*\{[^}]*display:\s*flex/.test(html));
+
 // --- 추세 점검 줄 ----------------------------------------------------------------
 // 52주 줄과 차트 사이. 차트 아래로 가면 관심종목 목록과 붙어 종목 정보로 읽히지 않는다.
 const w52Tag = html.indexOf('id="w52"');

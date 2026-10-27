@@ -205,6 +205,8 @@ const MARKET_GROUPS = [
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
   ['위험 · 자금', ['VIX', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']],
 ];
+// 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
+const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };
 // group: 업종 · 테마 안으로 들어가 있으면 그 묶음({ no, name, pct, count, up, down }), 아니면 null
 let rankView = { market: 'kr', kind: 'search', group: null };
 const rankCache = new Map(); // 'kr|up' · 'kr|industry|278' -> { at, d(naver:rank 응답) }
@@ -1102,6 +1104,7 @@ function marketRow(key) {
     d5: base > 0 ? (bp ? value - base : (value / base - 1) * 100) : null,
     d5Unit: bp ? 'bp' : '%',
     note: ix.delayMin ? `${ix.delayMin}분 지연` : '',
+    spark: closes ? closes.slice(-20) : null,
   };
 }
 
@@ -1119,7 +1122,8 @@ function marketExtraRow(key) {
     const days = x && x.futDays;
     const base = days && days.length >= 6 ? days[days.length - 6].close : null;
     return { key, name: '코스피200 선물', symbol: null, value: it.value, cur: 'pt', pct: it.pct, change: it.change,
-      d5: base > 0 ? (it.value / base - 1) * 100 : null, d5Unit: '%', note: '20분 지연' };
+      d5: base > 0 ? (it.value / base - 1) * 100 : null, d5Unit: '%', note: '20분 지연',
+      spark: days ? days.slice(-20).map((d) => d.close) : null };
   }
   if (key === 'SPOT' || key === 'FUTFLOW') {
     const flows = x && (key === 'SPOT' ? x.spotFlows : x.futFlows);
@@ -1133,7 +1137,8 @@ function marketExtraRow(key) {
       d5: null, d5Unit: '%', valueText: signed(last.foreign), dayText: '', dayTone: last.foreign,
       d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
       note: today ? `오늘 잠정 ${signed(today.foreign)}` : '',
-      title: `외국인 순매수 ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 — 네이버 표기 그대로(단위 없음), 18:00 전 오늘 값은 잠정` };
+      title: `외국인 순매수 ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 — 네이버 표기 그대로(단위 없음), 18:00 전 오늘 값은 잠정`,
+      spark: done.slice(-20).map((f) => f.foreign) };
   }
   if (key === 'HYOAS') {
     const rows = x && x.hyOas;
@@ -1144,14 +1149,47 @@ function marketExtraRow(key) {
     return { key, name: '미국 HY OAS', symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
       d5: base == null ? null : last.value - base, d5Unit: 'bp', valueText: `${last.value.toFixed(2)}%`,
       note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 기준`,
-      title: '미국 하이일드 회사채 가산금리(ICE BofA US High Yield OAS, FRED) — 1~2영업일 늦다' };
+      title: '미국 하이일드 회사채 가산금리(ICE BofA US High Yield OAS, FRED) — 1~2영업일 늦다',
+      spark: rows.slice(-20).map((r) => r.value) };
   }
   return null;
 }
 
-// 지표 화면 HTML — 묶음 제목 줄과 줄들(이름 · 값 · 오늘 등락 · 5일 변화 · 메모). 누를 수 있는 줄(고를 수 있는 항목)만 data-sym.
+// 데드캣 점검의 입력 — market:extras 의 다섯 부분과, SOX · 원/달러 · VIX · 미국채의 { now(지수 줄 실시간, 없으면 받은 시세),
+// closes(일봉 종가), dayPct(오늘 등락률) }. 없는 것은 null(그 판정은 판정 불가).
+function marketCheckInput() {
+  const x = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : {};
+  const series = (code) => {
+    const ix = INDICES.find((i) => i.code === code);
+    const it = indexItems.find((i) => i.code === code);
+    const q = ix && quotes[ix.symbol];
+    const now = it ? it.value : q && q.price;
+    const closes = q && q.daily && q.daily.closes;
+    return now > 0 && closes ? { now, closes, dayPct: it ? it.pct : q.pct != null ? q.pct : null } : null;
+  };
+  return {
+    spotFlows: x.spotFlows || null, futFlows: x.futFlows || null, kospiDays: x.kospiDays || null, futDays: x.futDays || null,
+    hyOas: x.hyOas || null, sox: series('SOX'), usdkrw: series('USDKRW'), vix: series('VIX'), us10y: series('US10Y'),
+  };
+}
+
+// 미니 선 — 값들을 44×14 칸에 왼쪽(오래된 것)부터 오른쪽(최근)으로 잇는다. 값이 둘 미만이면 그리지 않고, 모두 같으면 가운데 평평하게.
+function sparkSvg(values) {
+  const v = (values || []).filter((x) => Number.isFinite(x));
+  if (v.length < 2) return '';
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const pts = v.map((x, i) => `${r1(1 + (i * 42) / (v.length - 1))},${r1(hi === lo ? 7 : 13 - ((x - lo) / (hi - lo)) * 12)}`).join(' ');
+  return `<svg class="mspark" viewBox="0 0 44 14" width="44" height="14" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1"/></svg>`;
+}
+
+// 지표 화면 HTML — 맨 위 데드캣 점검 요약(개수만 — 결론을 내리지 않는다), 묶음 제목 줄과 줄들(판정 점 · 이름(메모) · 값 · 오늘 등락 ·
+// 5일 변화 · 20일 미니 선). 누를 수 있는 줄(고를 수 있는 항목)만 data-sym. 점검 대상이 아닌 줄은 점 자리만 비운다.
 function marketHtml() {
   const tone = (v) => (v > 0 ? UP : v < 0 ? DOWN : cssVar('--flat'));
+  const checks = marketChecks(marketCheckInput());
+  const checkOf = new Map(checks.map((c) => [MARKET_CHECK_ROW[c.key], c]));
   const out = [];
   for (const [title, keys] of MARKET_GROUPS) {
     const rows = keys.map(marketRow).filter(Boolean);
@@ -1163,12 +1201,20 @@ function marketHtml() {
       const d5 = r.d5Text != null ? r.d5Text : r.d5 == null ? '—' : bp ? fmtBp(r.d5) : fmtPct(r.d5);
       const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(r.name)} 차트 보기">`
         : `<div class="rrow mrow mfix" data-key="${r.key}"${r.title ? ` title="${esc(r.title)}"` : ''}>`;
-      out.push(`${open}<span class="hname">${esc(r.name)}</span><span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
+      const chk = checkOf.get(r.key);
+      const dot = chk ? `<span class="mdot ${chk.verdict || 'none'}" title="${esc(chk.detail)}"></span>` : '<span class="mdsp"></span>';
+      out.push(`${open}${dot}<span class="hname"><span class="mname">${esc(r.name)}</span>${r.note ? `<span class="mnote">${esc(r.note)}</span>` : ''}</span>`
+        + `<span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
         + `<span class="rpct" style="color:${tone(r.dayTone != null ? r.dayTone : bp ? r.change : r.pct)}">${day}</span>`
-        + `<span class="md5" title="5거래일 전 종가 대비">${d5}</span><span class="mnote">${esc(r.note || '')}</span></div>`);
+        + `<span class="md5" title="5거래일 전 종가 대비">${d5}</span>${sparkSvg(r.spark)}</div>`);
     }
   }
-  return out.length ? out.join('') : '<div class="qhint">시장 지표를 불러오는 중…</div>';
+  if (!out.length) return '<div class="qhint">시장 지표를 불러오는 중…</div>';
+  const count = (v) => checks.filter((c) => c.verdict === v).length;
+  const judged = checks.filter((c) => c.verdict).length;
+  return `<div class="qhint msum" title="경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다">데드캣 점검 · 긍정 ${count('good')}`
+    + ` · 중립 ${count('neutral')} · 위험 ${count('risk')} (참고용)${judged < checks.length ? ` · 판정 ${judged}/${checks.length}` : ''}</div>`
+    + out.join('');
 }
 
 // 시장 · 탭 버튼과 목록을 지금 보는 것으로 그린다. 같은 목록이면 다시 쓰지 않는다(30초마다 다시 쓰면

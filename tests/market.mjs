@@ -152,5 +152,51 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   check('묻지 않은 날의 값이 오면 그날을 뺀다', same(r.futFlows?.map((f) => f.date), ['20261030', '20261102']), JSON.stringify(r.futFlows));
 }
 
+// --- 6. 데드캣 점검 판정(market-check.js — 순수 함수) ---------------------------------------------------
+// 기준(설계 ③): 외국인 현물 2거래일 연속 · SOX 직전 20거래일 최고 돌파 / 최저의 3% 이내 · 원/달러 5일 +1% · VIX 5일 +15% 또는
+// 하루 +10% · HY OAS 5영업일 +0.25%p · 미국채 5일 ±10bp 안정 / +20bp 위험. 경계값은 부동소수 오차에도 같은 쪽으로 판정해야 한다.
+{
+  const { marketChecks, CHECK } = createRequire(import.meta.url)('../market-check.js');
+  const verdictOf = (input, key) => marketChecks(input).find((c) => c.key === key);
+  const v = (input, key) => verdictOf(input, key).verdict;
+  const series = (base, now) => ({ now, closes: [base, base, base, base, base, base], dayPct: 0 }); // 마지막 봉 앞 다섯 번째 = base
+  check('판정 키와 순서', same(marketChecks({}).map((c) => c.key), ['spot', 'futures', 'sox', 'usdkrw', 'vix', 'hyoas', 'us10y'])
+    && marketChecks({}).every((c) => c.verdict === null && c.detail === '데이터 부족'));
+  check('기준 숫자', CHECK.LOOKBACK === 5 && CHECK.USD_RISK === 0.01 && CHECK.VIX_RISK_5D === 0.15 && CHECK.VIX_RISK_DAY === 10
+    && CHECK.OAS_RISK === 0.25 && CHECK.TNX_CALM_BP === 10 && CHECK.TNX_RISK_BP === 20 && CHECK.SOX_DAYS === 20 && CHECK.SOX_NEAR_LOW === 0.03);
+
+  check('원/달러: 보합 good · +0.999% neutral · +1% risk', same(['1000', '1009.99', '1010'].map((n) => v({ usdkrw: series(1000, Number(n)) }, 'usdkrw')),
+    ['good', 'neutral', 'risk']));
+  check('원/달러 근거', /1,000\.00 → 지금 1,010\.00 \(\+1\.00%\)/.test(verdictOf({ usdkrw: series(1000, 1010) }, 'usdkrw').detail),
+    verdictOf({ usdkrw: series(1000, 1010) }, 'usdkrw').detail);
+  check('VIX: 하락 good · +14.95% neutral · +15% risk(23/20 은 부동소수로 0.1499…)', same([19.9, 22.99, 23].map((n) => v({ vix: series(20, n) }, 'vix')),
+    ['good', 'neutral', 'risk']));
+  check('VIX: 하루 +10% 면 5일 +2.5% 여도 risk', v({ vix: { ...series(20, 20.5), dayPct: 10 } }, 'vix') === 'risk');
+  const oas = (now) => ({ hyOas: [3.1, 3.2, 3.2, 3.3, 3.3, now].map((value, i) => ({ date: `2026102${i}`, value })) });
+  check('HY OAS: 3.10 → 3.10 neutral · 3.09 good · 3.35 risk(+0.25%p)', same([3.1, 3.09, 3.35].map((n) => v(oas(n), 'hyoas')),
+    ['neutral', 'good', 'risk']));
+  check('HY OAS: 다섯 개뿐이면 판정 불가', v({ hyOas: oas(3.2).hyOas.slice(1) }, 'hyoas') === null);
+  check('미국채: +10bp good · +19bp neutral · +20bp risk(5.10-4.90 은 0.1999…)', same([5.0, 5.09, 5.1].map((n) => v({ us10y: series(4.9, n) }, 'us10y')),
+    ['good', 'neutral', 'risk']));
+  check('미국채: 크게 내려도(-25bp) 위험은 아니다(상승만 위험) — 안정도 아니다', v({ us10y: series(4.9, 4.65) }, 'us10y') === 'neutral');
+  const sox = (now, n = 21) => ({ sox: { now, closes: [...Array.from({ length: 20 }, (_, i) => 100 + i), 119.5].slice(-n), dayPct: 0 } });
+  check('SOX: 직전 20거래일 최고 돌파 good · 최저의 3% 이내 risk · 그사이 neutral', same([120, 103, 110].map((n) => v(sox(n), 'sox')),
+    ['good', 'risk', 'neutral']));
+  check('SOX: 일봉 20개뿐이면 판정 불가', v(sox(120, 20), 'sox') === null);
+
+  const f = (date, foreign, final = true) => ({ date, foreign, final });
+  const kospi = [{ date: '20261022', close: 100 }, { date: '20261023', close: 101 }, { date: '20261026', close: 102 }, { date: '20261027', close: 101 }];
+  check('현물: 잠정치는 판정에 쓰지 않는다 — 마지막 두 확정(+1 · +2)이면 good',
+    v({ spotFlows: [f('20261022', -1), f('20261023', 1), f('20261026', 2), f('20261027', -5, false)], kospiDays: kospi }, 'spot') === 'good');
+  check('현물: 코스피가 오른 날(10/23) 외국인 순매도면 risk', v({ spotFlows: [f('20261022', 1), f('20261023', -3)], kospiDays: kospi }, 'spot') === 'risk');
+  check('현물: 코스피가 내린 날 순매도면 neutral', v({ spotFlows: [f('20261026', 1), f('20261027', -3)], kospiDays: kospi }, 'spot') === 'neutral');
+  check('현물: 확정일이 하나뿐이면 판정 불가', v({ spotFlows: [f('20261023', 5), f('20261026', 5, false)], kospiDays: kospi }, 'spot') === null);
+  const fut = [{ date: '20261022', close: 850 }, { date: '20261023', close: 860 }, { date: '20261026', close: 855 }];
+  check('선물: 선물이 오른 날(10/23) 외국인 선물 순매수면 good', v({ futFlows: [f('20261023', 6185)], futDays: fut, kospiDays: kospi }, 'futures') === 'good');
+  check('선물: 코스피가 오른 날(10/23) 외국인 선물 순매도면 risk', v({ futFlows: [f('20261023', -1200)], futDays: fut, kospiDays: kospi }, 'futures') === 'risk');
+  check('선물: 선물이 내린 날(10/26) 순매수면 neutral', v({ futFlows: [f('20261026', 300)], futDays: fut, kospiDays: kospi }, 'futures') === 'neutral');
+  check('선물: 그날 일봉이 없으면 판정 불가', v({ futFlows: [f('20261027', 300)], futDays: fut, kospiDays: kospi }, 'futures') === null);
+}
+
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');
 process.exit(fails ? 1 : 0);

@@ -88,8 +88,8 @@ check('packaged.mjs 가 낡은 빌드를 걸러낸다', pkg.includes(CFG_ENV),
 for (const f of fs.readdirSync(path.join(APP_DIR, 'tests')).filter((n) => n.endsWith('.mjs'))) {
   const src = fs.readFileSync(path.join(APP_DIR, 'tests', f), 'utf8');
   // 파일 이름을 변수로 넘겨도 잡는다 — alerts.mjs 가 renderer.js 경로를 RENDERER 변수로 넘겨 빠져나갔다(2026-10-21)
-  const writesSource = /writeFileSync\(\s*(MAIN|RENDERER|PRELOAD|INDEX(_HTML)?|INDICATORS|BACKTEST)\b/.test(src)
-    || /writeFileSync\([^)]*\b(main|renderer|index|preload|indicators|backtest)\.(js|html)/.test(src);
+  const writesSource = /writeFileSync\(\s*(MAIN|RENDERER|PRELOAD|INDEX(_HTML)?|INDICATORS|BACKTEST|MARKET_CHECK)\b/.test(src)
+    || /writeFileSync\([^)]*\b(main|renderer|index|preload|indicators|backtest|market-check)\.(js|html)/.test(src);
   check(`${f} 가 앱 소스를 고쳐 쓰지 않는다`, !writesSource,
     writesSource ? /writeFileSync\([^)]*\)/.exec(src)?.[0] : '');
 }

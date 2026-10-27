@@ -99,7 +99,7 @@ const run = (file) => new Promise((resolve) => {
 
 // 스위트가 앱 소스를 바꾸면 실패로 친다. 중간에 죽으면 바뀐 채로 남고, 도는 동안 편집한 내용을 옛 내용으로 덮을 수 있다
 // (alerts.mjs 가 renderer.js 에 훅을 붙였다 되돌렸다 — isolation.mjs 의 정규식 검사는 변수 이름에 빠져나갔다).
-const APP_SOURCES = ['main.js', 'preload.js', 'renderer.js', 'index.html', 'indicators.js', 'backtest.js', 'quote-session.cjs'];
+const APP_SOURCES = ['main.js', 'preload.js', 'renderer.js', 'index.html', 'indicators.js', 'backtest.js', 'market-check.js', 'quote-session.cjs'];
 const digest = () => APP_SOURCES.map((f) => crypto.createHash('sha1')
   .update(fs.readFileSync(path.join(HERE, '..', f))).digest('hex')).join();
 

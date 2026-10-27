@@ -385,10 +385,24 @@
   .rtabs[hidden] { display: none; }
   /* 지표 화면(시장 버튼 '지표') — 묶음 제목 줄과 시장 항목 줄(이름 · 값 · 오늘 등락 · 5일 변화 · 메모) */
   .mgroup { padding-top: 6px; font-weight: 700; color: var(--text-3); }
+  .mrow .hname { display: flex; flex-direction: column; min-width: 0; }
+  .mrow .mname { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mrow .mnote { font-size: 9px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mrow .mval { flex: 0 0 auto; font-size: 11px; }
-  .mrow .md5 { flex: 0 0 52px; text-align: right; font-size: 10px; color: var(--mute); }
-  .mrow .mnote { flex: 0 0 44px; text-align: right; font-size: 9px; color: var(--mute); white-space: nowrap; }
-  .mrow.mfix { cursor: default; }
+  .mrow .rpct { flex-basis: 46px; }
+  .mrow .md5 { flex: 0 0 50px; text-align: right; font-size: 10px; color: var(--mute); white-space: nowrap; }
+  /* 누를 수 없는 줄(선물 · 수급 · HY OAS)은 .hit 이 아니라 가로 배치를 따로 준다 — 없으면 칸이 세로로 흩어졌다 */
+  .mrow.mfix { display: flex; align-items: center; cursor: default; }
+  .mrow.mfix .hname { flex: 1 1 auto; overflow: hidden; }
+  /* 데드캣 점검 — 요약 줄, 줄 앞 판정 점(초록 긍정 · 회색 중립 · 주황 위험 — 헤더의 실시간 · 지연과 같은 색, 테두리만 = 판정 불가),
+     줄 끝 20일 미니 선 */
+  .msum { padding: 6px 11px 2px; font-size: 10px; color: var(--text-3); }
+  .mrow .mdot, .mrow .mdsp { flex: 0 0 6px; height: 6px; border-radius: 50%; align-self: center; }
+  .mrow .mdot.good { background: #2fa15a; }
+  .mrow .mdot.neutral { background: var(--mute); }
+  .mrow .mdot.risk { background: #e8862a; }
+  .mrow .mdot.none { box-shadow: inset 0 0 0 1px var(--mute); }
+  .mrow .mspark { flex: 0 0 44px; color: var(--mute); }
   #rankList { flex: 1 1 auto; overflow-y: auto; }
   #rankList::-webkit-scrollbar { width: 5px; }
   #rankList::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 3px; }
@@ -875,6 +889,8 @@
   <script src="./indicators.js"></script>
   <!-- 추세 점검 계산. indicators.js 의 sma 를 쓰고, renderer.js 가 trendCheck 를 부른다 -->
   <script src="./backtest.js"></script>
+  <!-- 시장 지표 화면의 데드캣 점검 판정(marketChecks) — 화면과 무관한 순수 함수 -->
+  <script src="./market-check.js"></script>
   <script src="./renderer.js"></script>
 </body>
 </html>

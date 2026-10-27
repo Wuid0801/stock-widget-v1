@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import * as indicators from '../indicators.js';
 import * as backtest from '../backtest.js';
+import * as marketCheck from '../market-check.js';
 
 const source = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
 // renderer.js 를 자르는 표식(주석 · 선언). 없거나 둘 이상이면 원인을 알 수 없는 전체 실패가 났다 — 주석 문구만 다듬어도
@@ -50,7 +51,7 @@ function harness(extra = []) {
   // ReferenceError 가 나고 목록을 손으로 늘려야 한다.
   // daysAgo 만 기본 인자를 하네스 시각으로 묶는다. 주입된 함수는 vm 밖에서
   // 만들어져 Date.now() 가 FixedDate 가 아니라 진짜 지금을 읽는다.
-  Object.assign(c, indicators, backtest, {
+  Object.assign(c, indicators, backtest, marketCheck, {
     daysAgo: (ms, now = NOW) => indicators.daysAgo(ms, now),
     // loadChart 는 다른 종목 · 기간으로 넘어갈 때 옛 차트를 지운다 — 차트가 없는 하네스에서는 할 일이 없다.
     // 진짜가 필요한 테스트는 extra 에 'clearChart' 를 넣는다(아래 선언이 이것을 덮는다).
@@ -2519,7 +2520,7 @@ const MARKET_ITEMS = `indexItems = [
   { code: 'NQ', name: '나스닥 선물', value: 29358.25, change: -79.5, pct: -0.27 }, { code: 'WTI', name: 'WTI', value: 101.04, change: -0.72, pct: -0.71 },
   { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }, { code: 'USDKRW', name: '원/달러', value: 1323.23, change: -1.94, pct: -0.15 }];`;
 const marketHarness = (extra = []) => {
-  const h = harness(['marketRow', 'marketExtraRow', 'marketHtml', 'renderRank', 'setRankView', 'rankClick', 'rankHtml', ...extra]);
+  const h = harness(['marketRow', 'marketExtraRow', 'marketHtml', 'marketCheckInput', 'sparkSvg', 'renderRank', 'setRankView', 'rankClick', 'rankHtml', ...extra]);
   if (!extra.includes('loadMarket')) h.c.loadMarket = async () => {}; // 지표 화면을 열면 market:extras 를 묻는다 — 따로 본다
   h.run(formatting);
   h.run(source.match(/^let indexItems = .*$/m)[0]);
@@ -2640,6 +2641,50 @@ await test('market panel: extras load once a minute while open, keep the last go
   assert.equal(calls, 2, '1분이 지나면 다시 묻는다');
   assert.match(h.elements.get('rankList').innerHTML, /data-key="SPOT"/, '실패하면 있던 값을 둔다');
   h.c.Date.now = realNow;
+});
+
+// 데드캣 점검(3단계) — 맨 위 요약 줄은 개수만(결론 문구 없음), 점검 대상 줄에 판정 점(근거는 툴팁), 줄마다 20일 미니 선.
+const CHECKS = (verdicts) => `marketChecks = () => ${JSON.stringify(['spot', 'futures', 'sox', 'usdkrw', 'vix', 'hyoas', 'us10y']
+  .map((key, i) => ({ key, verdict: verdicts[i], detail: verdicts[i] ? `${key} 근거 숫자` : '데이터 부족' })))};`;
+
+await test('market panel: summary counts verdicts and says how many could be judged', () => {
+  const h = marketHarness();
+  h.run(CHECKS(['good', 'good', 'neutral', 'risk', null, 'good', 'risk']));
+  const html = h.c.marketHtml();
+  assert.match(html, /^<div class="qhint msum" title="경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다">데드캣 점검 · 긍정 3 · 중립 1 · 위험 2 \(참고용\) · 판정 6\/7<\/div>/);
+  assert.doesNotMatch(html, /데드캣(이다|입니다|아님|가능성)/, '결론을 내리지 않는다');
+  h.run(CHECKS(['good', 'good', 'neutral', 'risk', 'good', 'good', 'risk']));
+  assert.match(h.c.marketHtml(), /긍정 4 · 중립 1 · 위험 2 \(참고용\)<\/div>/, '모두 판정했으면 판정 수를 붙이지 않는다');
+});
+
+await test('market panel: each checked row has a dot with its rule detail in the tooltip; others have none', () => {
+  const h = marketHarness();
+  h.run(CHECKS(['good', null, 'neutral', 'good', 'risk', null, 'neutral']));
+  const html = h.c.marketHtml();
+  assert.match(rowOf(html, '^VIX'), /<span class="mdot risk" title="vix 근거 숫자"><\/span>/);
+  assert.match(rowOf(html, '^SOX'), /<span class="mdot neutral" title="sox 근거 숫자"><\/span>/);
+  assert.match(rowOf(html, 'KRW=X'), /<span class="mdot good"/);
+  assert.doesNotMatch(rowOf(html, '^KS11'), /mdot/, '점검 대상이 아니면 점이 없다');
+  assert.doesNotMatch(rowOf(html, 'CL=F'), /mdot/);
+});
+
+await test('market panel: rows draw the last 20 daily values as a mini line', () => {
+  const h = marketHarness();
+  h.run("quotes['^SOX'] = { daily: { closes: Array.from({ length: 30 }, (_, i) => 100 + i) } };");
+  const sox = rowOf(h.c.marketHtml(), '^SOX');
+  const pts = (/<polyline points="([^"]+)"/.exec(sox) || [])[1];
+  assert.equal(pts && pts.split(' ').length, 20, '최근 20개');
+  assert.doesNotMatch(rowOf(h.c.marketHtml(), '^KS11'), /<svg/, '일봉이 없으면 선이 없다');
+});
+
+await test('sparkSvg draws values as a polyline and nothing below two', () => {
+  const h = marketHarness();
+  const svg = h.c.sparkSvg([1, 2, 3]);
+  assert.match(svg, /^<svg class="mspark" viewBox="0 0 44 14"/);
+  assert.deepEqual(/points="([^"]+)"/.exec(svg)[1].split(' '), ['1,13', '22,7', '43,1'], '왼쪽 아래에서 오른쪽 위로');
+  assert.equal(h.c.sparkSvg([1]), '');
+  assert.equal(h.c.sparkSvg([]), '');
+  assert.match(h.c.sparkSvg([5, 5]), /points="1,7 43,7"/, '모두 같으면 가운데 평평하게');
 });
 
 await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {
