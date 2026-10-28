@@ -152,6 +152,30 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   check('묻지 않은 날의 값이 오면 그날을 뺀다', same(r.futFlows?.map((f) => f.date), ['20261030', '20261102']), JSON.stringify(r.futFlows));
 }
 
+// --- 7. 셋 다 0 인 수급은 아직 없는 값이다 ---------------------------------------------------------------
+// 리뷰(2026-10-27): 확정된 날에 0 이 한 번 오면 그대로 기억해 앱을 다시 켤 때까지 연속 일수 · 판정이 틀렸다(네이버는 값이 없을 때도
+// 오류 대신 0 을 준다 — 휴장일 · 미래 날짜 실측). 외국인 · 기관 · 개인이 셋 다 0 이면 그날을 빼고 기억하지 않는다 — 다음에 다시 묻는다.
+{
+  NOW = kst('2026-11-03T19:00');
+  reply = base();
+  reply.kospiDay = [day('20261103', 5800)];
+  reply.futDay = [day('20261103', 900)];
+  reply.spot = (d) => ({ bizdate: d, personalValue: '0', foreignValue: '0', institutionalValue: '0' });
+  calls.length = 0;
+  let r = await extras();
+  check('셋 다 0 인 날은 뺀다', same(r.spotFlows, []), JSON.stringify(r.spotFlows));
+  reply.spot = (d) => trend(d, '+2,000');
+  calls.length = 0;
+  r = await extras();
+  check('0 이었던 날은 기억하지 않아 다시 묻는다', same(trendDates('KOSPI'), ['20261103']) && r.spotFlows?.[0]?.foreign === 2000,
+    `${trendDates('KOSPI').join(' ')} ${JSON.stringify(r.spotFlows)}`);
+  reply.spot = (d) => ({ bizdate: d, personalValue: '+120', foreignValue: '0', institutionalValue: '-120' });
+  NOW = kst('2026-11-04T19:00');
+  reply.kospiDay = [day('20261104', 5810)];
+  r = await extras();
+  check('외국인만 0 이면 진짜 0 이다(둔다)', r.spotFlows?.[0]?.foreign === 0, JSON.stringify(r.spotFlows));
+}
+
 // --- 6. 데드캣 점검 판정(market-check.js — 순수 함수) ---------------------------------------------------
 // 기준(설계 ③): 외국인 현물 2거래일 연속 · SOX 직전 20거래일 최고 돌파 / 최저의 3% 이내 · 원/달러 5일 +1% · VIX 5일 +15% 또는
 // 하루 +10% · HY OAS 5영업일 +0.25%p · 미국채 5일 ±10bp 안정 / +20bp 위험. 경계값은 부동소수 오차에도 같은 쪽으로 판정해야 한다.

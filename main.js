@@ -649,8 +649,12 @@ async function naverFlow(path, date, now) {
   const j = await naverJson(`https://m.stock.naver.com/api/index/${path}/trend?bizdate=${date}`);
   const foreign = j && j.bizdate === date ? parseFlowValue(j.foreignValue) : null;
   if (foreign == null) return null;
-  const row = { date, foreign, inst: parseFlowValue(j.institutionalValue), personal: parseFlowValue(j.personalValue),
-    final: date < kstDay(now) || kstClock(now) >= FLOW_FINAL };
+  const inst = parseFlowValue(j.institutionalValue);
+  const personal = parseFlowValue(j.personalValue);
+  // 셋 다 0 이면 아직 없는 값이다 — 네이버는 값이 없을 때도 오류 대신 0 을 준다. 확정된 날에 한 번 온 0 을 기억하면 앱을 다시
+  // 켤 때까지 연속 일수 · 판정이 틀렸다(리뷰 2026-10-27) — 빼고 기억하지 않아 다음에 다시 묻는다
+  if (foreign === 0 && !inst && !personal) return null;
+  const row = { date, foreign, inst, personal, final: date < kstDay(now) || kstClock(now) >= FLOW_FINAL };
   if (row.final) flowCache.set(key, row);
   return row;
 }

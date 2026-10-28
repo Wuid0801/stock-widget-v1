@@ -205,6 +205,8 @@ const MARKET_GROUPS = [
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
   ['위험 · 자금', ['VIX', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']],
 ];
+// 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
+const MARKET_EXTRA_NAMES = { FUT: '코스피200 선물', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS' };
 // 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
 const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };
 // group: 업종 · 테마 안으로 들어가 있으면 그 묶음({ no, name, pct, count, up, down }), 아니면 null
@@ -1121,7 +1123,7 @@ function marketExtraRow(key) {
     if (!it || !(it.value > 0)) return null;
     const days = x && x.futDays;
     const base = days && days.length >= 6 ? days[days.length - 6].close : null;
-    return { key, name: '코스피200 선물', symbol: null, value: it.value, cur: 'pt', pct: it.pct, change: it.change,
+    return { key, name: MARKET_EXTRA_NAMES.FUT, symbol: null, value: it.value, cur: 'pt', pct: it.pct, change: it.change,
       d5: base > 0 ? (it.value / base - 1) * 100 : null, d5Unit: '%', note: '20분 지연',
       spark: days ? days.slice(-20).map((d) => d.close) : null };
   }
@@ -1133,7 +1135,7 @@ function marketExtraRow(key) {
     let n = 0;
     for (let i = done.length - 1; i >= 0 && Math.sign(done[i].foreign) === Math.sign(last.foreign) && done[i].foreign !== 0; i--) n++;
     const today = flows[flows.length - 1].final ? null : flows[flows.length - 1];
-    return { key, name: key === 'SPOT' ? '외국인 현물' : '외국인 선물', symbol: null, value: last.foreign, pct: null, change: null,
+    return { key, name: MARKET_EXTRA_NAMES[key], symbol: null, value: last.foreign, pct: null, change: null,
       d5: null, d5Unit: '%', valueText: signed(last.foreign), dayText: '', dayTone: last.foreign,
       d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
       note: today ? `오늘 잠정 ${signed(today.foreign)}` : '',
@@ -1146,7 +1148,7 @@ function marketExtraRow(key) {
     const last = rows[rows.length - 1];
     const prev = rows.length >= 2 ? rows[rows.length - 2].value : null;
     const base = rows.length >= 6 ? rows[rows.length - 6].value : null;
-    return { key, name: '미국 HY OAS', symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
+    return { key, name: MARKET_EXTRA_NAMES.HYOAS, symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
       d5: base == null ? null : last.value - base, d5Unit: 'bp', valueText: `${last.value.toFixed(2)}%`,
       note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 기준`,
       title: '미국 하이일드 회사채 가산금리(ICE BofA US High Yield OAS, FRED) — 1~2영업일 늦다',
@@ -1192,8 +1194,9 @@ function marketHtml() {
   const checkOf = new Map(checks.map((c) => [MARKET_CHECK_ROW[c.key], c]));
   const out = [];
   for (const [title, keys] of MARKET_GROUPS) {
-    const rows = keys.map(marketRow).filter(Boolean);
-    if (!rows.length) continue;
+    // 데이터가 없으면(출처 실패 · 아직 못 받음) 줄을 빼지 않고 — 로 둔다(설계 ④) — 점검 대상이면 점은 테두리만(판정 불가)
+    const rows = keys.map((key) => marketRow(key) || { key, symbol: null, valueText: '—', dayText: '—', d5Text: '—', note: '',
+      name: (INDICES.find((i) => i.code === key) || {}).name || MARKET_EXTRA_NAMES[key] });
     out.push(`<div class="qhint rnote mgroup">${title}</div>`);
     for (const r of rows) {
       const bp = r.d5Unit === 'bp';
@@ -1209,7 +1212,6 @@ function marketHtml() {
         + `<span class="md5" title="5거래일 전 종가 대비">${d5}</span>${sparkSvg(r.spark)}</div>`);
     }
   }
-  if (!out.length) return '<div class="qhint">시장 지표를 불러오는 중…</div>';
   const count = (v) => checks.filter((c) => c.verdict === v).length;
   const judged = checks.filter((c) => c.verdict).length;
   return `<div class="qhint msum" title="경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다">데드캣 점검 · 긍정 ${count('good')}`
@@ -1246,6 +1248,8 @@ function renderRank() {
 }
 
 // 지표 화면의 market:extras — 받는 중이면 또 묻지 않고, 다시 받다 실패하면 있던 것을 둔다(loadRank 와 같다). 받으면 다시 그린다.
+// 실패는 부분마다다 — 응답이 ok 라도 한 부분만 실패(null)했으면 그 부분은 있던 값을 둔다(FRED 기억이 끝난 직후 500 이면
+// HY OAS 줄 · 판정이 1분 넘게 사라졌다, 리뷰 2026-10-27).
 async function loadMarket() {
   if (marketLoading) return;
   marketLoading = true;
@@ -1257,8 +1261,12 @@ async function loadMarket() {
   } finally {
     marketLoading = false;
   }
-  const keep = marketExtras && marketExtras.d && marketExtras.d.ok && !(d && d.ok);
-  marketExtras = { at: Date.now(), d: keep ? marketExtras.d : d || { ok: false, error: '응답 없음' } };
+  const prev = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
+  let next = d && d.ok ? { ...d } : prev || d || { ok: false, error: '응답 없음' };
+  if (d && d.ok && prev) {
+    for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
+  }
+  marketExtras = { at: Date.now(), d: next };
   renderRank();
 }
 

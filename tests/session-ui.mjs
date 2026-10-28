@@ -2687,6 +2687,42 @@ await test('sparkSvg draws values as a polyline and nothing below two', () => {
   assert.match(h.c.sparkSvg([5, 5]), /points="1,7 43,7"/, '모두 같으면 가운데 평평하게');
 });
 
+// 리뷰(2026-10-27): 한 부분만 실패해도(FRED 기억이 끝난 직후 500 등) 응답 전체가 ok 라 이전 값을 버렸고, 그 줄 · 판정이 1분 넘게
+// 사라졌다 — 부분마다 있던 값을 둔다.
+await test('market panel: a part that fails on refresh keeps its previous value', async () => {
+  const h = marketHarness(['loadMarket']);
+  let answer = { ok: true, spotFlows: null, futFlows: null, kospiDays: null, futDays: null, hyOas: [{ date: '20261023', value: 3.38 }] };
+  h.c.api.marketExtras = async () => answer;
+  h.c.setRankView('mk');
+  await new Promise((r) => setImmediate(r));
+  assert.match(keyRow(h.elements.get('rankList').innerHTML, 'HYOAS'), /3\.38%/);
+  answer = { ok: true, spotFlows: [{ date: '20261026', foreign: 3300, final: true }], futFlows: null, kospiDays: null, futDays: null, hyOas: null };
+  const realNow = h.c.Date.now;
+  h.c.Date.now = () => NOW + 61000;
+  h.c.renderRank();
+  await new Promise((r) => setImmediate(r));
+  h.c.Date.now = realNow;
+  const html = h.elements.get('rankList').innerHTML;
+  assert.match(keyRow(html, 'HYOAS'), /3\.38%/, 'HY OAS 만 실패 — 있던 값을 둔다');
+  assert.match(keyRow(html, 'SPOT'), /\+3,300/, '새로 온 부분은 새 값');
+});
+
+// 설계 ④: 출처가 실패했거나 아직 없으면 그 줄은 사라지지 않고 — 와 판정 불가(테두리 점)로 남는다. 예전에는 줄이 빠져
+// "판정 6/7" 인데 어느 것이 빠졌는지 보이지 않았다.
+await test('market panel: a row without data stays as — and a checked one gets a hollow dot', () => {
+  const h = marketHarness();
+  h.run("marketExtras = { at: Date.now(), d: { ok: true, spotFlows: null, futFlows: null, kospiDays: null, futDays: null, hyOas: null } };");
+  const html = h.c.marketHtml();
+  for (const key of ['SPOT', 'FUTFLOW', 'HYOAS']) {
+    const row = keyRow(html, key);
+    assert.match(row, /<span class="mdot none" title="데이터 부족"><\/span>/, key);
+    assert.match(row, /<span class="mval">—<\/span>/, key);
+  }
+  assert.match(keyRow(html, 'HYOAS'), /미국 HY OAS/);
+  assert.match(keyRow(html, 'FUT'), /코스피200 선물/, '점검 대상이 아닌 줄도 — 로 남는다');
+  assert.match(html, /<div class="rrow mrow mfix" data-key="SPOT"/, '누를 수 없다');
+});
+
 await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {
   const { c, run } = harness(['select', 'clearZooms']);
   let marks = 0;
