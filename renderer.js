@@ -926,6 +926,17 @@ function metricsHtml(item, d, q) {
     parts.push(sec('투자자별 순매수', '<p class="mxmute">투자자별 매매동향은 국내 종목만 있습니다</p>'));
   }
 
+  // 주주 구성(국내 주식) — 공시된 주요주주와 외국인 지분율 · 유동비율. 우선주는 회사(보통주) 값이다.
+  const h = d.holders;
+  if (h && h.rows && h.rows.length) {
+    const basis = [h.common ? '보통주 기준' : null, h.date ? (h.common ? mmdd(h.date) : `${mmdd(h.date)} 기준`) : null].filter(Boolean).join(', ');
+    const rows = h.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.pct.toFixed(2)}%</td></tr>`).join('');
+    const more = [h.foreign != null ? `외국인 ${h.foreign.toFixed(2)}%` : null, h.float != null ? `유동주식 ${h.float.toFixed(2)}%` : null].filter(Boolean);
+    parts.push(sec(`주주 구성${basis ? ` <span>(${basis})</span>` : ''}`, `<table class="mxt">${rows}</table>`
+      + (more.length ? `<p class="mxmute">${list(more)}</p>` : '')
+      + '<p class="mxmute">최대주주 · 5% 이상 주주 · 자사주만 공시됩니다 (기관 · 개인 지분율은 없음)</p>'));
+  }
+
   // 실적 — 발표 일정(국내)과 최근 4분기. 억원은 조 · 억으로, USD 백만은 B · M 으로 줄인다.
   const earn = [];
   if (d.ir && d.ir.date) {

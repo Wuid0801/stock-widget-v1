@@ -71,3 +71,14 @@ Each list keeps its first 50 rows (the app asks for 100) and only the fields `ma
   top gainers were preferred shares, leveraged ETNs and ETFs; `kr.value` includes 삼성전자우 (005935) with a large value.
 - `us.up` · `us.down` · `us.value` · `us.cap`: `https://api.stock.naver.com/stock/exchange/{NASDAQ|NYSE}/{up|down|priceTop|marketValue}`.
   These lists had no ETFs and no dotted tickers; `tests/rank.mjs` injects one of each to check the filter.
+
+## Shareholders (naver:detail holders)
+
+`wisereport-holders-20261028.json`: captured 2026-10-28 13:4x KST from the Naver Finance company page (WiseReport)
+`https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={code}`. The page is HTML; each entry keeps only the slice
+`main.js` reads (company header with the page's own code, the quote table with 외국인지분율 · 발행주식수/유동비율, the
+shareholder tables with the `[기준: 2026.10.27]` line, and the row template script that follows `#cTB13`).
+
+- `005930` (Samsung Electronics) · `017670` (SK Telecom, foreign limit: 소진율 72.17% on Naver vs 지분율 35.39% here).
+- `005935` (Samsung Electronics preferred): the site serves the company (common share 005930) page.
+- `069500` (KODEX 200 ETF): the site redirects to `/v2/ETF/Index.aspx`; only a slice of that page, with no shareholder table.

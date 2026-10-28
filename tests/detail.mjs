@@ -1,14 +1,18 @@
 // 지표 보기(naver:detail) — 앱을 띄우지 않고 가짜 electron 으로 main.js 의 핸들러를 부른다.
 //
 // 차트 대신 보는 지표 화면의 데이터다. 국내는 네이버 종목 상세(가치 지표 · 컨센서스 · 실적 일정 · 동종 업종) ·
-// 투자자별 매매동향 · 분기 실적 · KRX 실시간 거래량, 미국은 네이버 해외 종목 정보 · 컨센서스 · 분기 실적.
-// 응답은 2026-10-16 실측(tests/fixtures/naver-detail-20261016.json, 쓰는 필드만)이다.
+// 투자자별 매매동향 · 분기 실적 · KRX 실시간 거래량 · 주주 구성, 미국은 네이버 해외 종목 정보 · 컨센서스 · 분기 실적.
+// 응답은 2026-10-16 실측(tests/fixtures/naver-detail-20261016.json, 쓰는 필드만)이고, 주주 구성은 네이버 금융
+// 기업정보 페이지 2026-10-28 실측(tests/fixtures/wisereport-holders-20261028.json, 쓰는 부분만 잘라 둠)이다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const FX = JSON.parse(fs.readFileSync(new URL('fixtures/naver-detail-20261016.json', import.meta.url), 'utf8'));
+const HOLD = JSON.parse(fs.readFileSync(new URL('fixtures/wisereport-holders-20261028.json', import.meta.url), 'utf8'));
+// 삼성전자우 · SK텔레콤은 주주 구성만 본다 — 나머지 네이버 응답은 삼성전자 것을 빌린다
+const BORROW = { '005935': '005930', '017670': '005930' };
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -37,9 +41,11 @@ const calls = [];
 let blocked = [];
 const route = (url) => {
   let m = /m\.stock\.naver\.com\/api\/stock\/(\w+)\/(integration|trend|finance\/quarter)/.exec(url);
-  if (m) return FX[m[1]]?.[{ integration: 'integration', trend: 'trend', 'finance/quarter': 'quarter' }[m[2]]];
+  if (m) return FX[BORROW[m[1]] || m[1]]?.[{ integration: 'integration', trend: 'trend', 'finance/quarter': 'quarter' }[m[2]]];
   m = /polling\.finance\.naver\.com\/api\/realtime\/domestic\/stock\/(\w+)$/.exec(url);
-  if (m) return FX[m[1]]?.realtime;
+  if (m) return FX[BORROW[m[1]] || m[1]]?.realtime;
+  m = /navercomp\.wisereport\.co\.kr\/v2\/company\/c1010001\.aspx\?cmp_cd=(\w+)$/.exec(url);
+  if (m) return HOLD[m[1]]?.html; // 페이지(글자). ETF 는 실제로는 ETF 페이지로 넘어간다 — 넘어간 뒤의 페이지를 준다
   m = /autoComplete\?query=(\w+)/.exec(url);
   if (m) return Object.values(FX).find((f) => f.search?.result.items[0].code === m[1])?.search ?? { result: { items: [] } };
   m = /api\.stock\.naver\.com\/stock\/([\w.]+)\/(basic|integration|finance\/quarter)/.exec(url);
@@ -51,11 +57,19 @@ const fakeFetch = async (url, opt = {}) => {
   calls.push({ url, signal: !!opt.signal });
   if (blocked.some((b) => url.includes(b))) throw new Error('막힌 요청');
   const body = route(url);
-  if (body === undefined) return { ok: false, status: 404, json: async () => ({}) };
+  if (body === undefined) return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+  if (typeof body === 'string') return { ok: true, status: 200, text: async () => body };
   return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) };
 };
 
-new Function('require', 'process', 'fetch', src)(require, { env: {}, platform: 'test' }, fakeFetch);
+// 주주 구성은 6시간 기억한다 — 시계를 앞으로 돌려 본다
+let SHIFT = 0;
+const RealDate = Date;
+class ShiftDate extends RealDate {
+  constructor(...a) { super(...(a.length ? a : [RealDate.now() + SHIFT])); }
+  static now() { return RealDate.now() + SHIFT; }
+}
+new Function('require', 'process', 'fetch', 'Date', src)(require, { env: {}, platform: 'test' }, fakeFetch, ShiftDate);
 const detail = (symbol) => handlers['naver:detail']({}, symbol);
 
 // --- 1. 국내 주식(삼성전자) ------------------------------------------------------------
@@ -64,8 +78,8 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   const d = await detail('005930.KS');
   check('성공', d.ok === true, d.error);
   check('국내 · 주식', d.market === 'kr' && d.kind === 'stock');
-  check('네 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간), 모두 시간 제한을 건다',
-    calls.length === 4 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
+  check('다섯 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 · 기업정보), 모두 시간 제한을 건다',
+    calls.length === 5 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
   check('매매동향은 20일치를 묻는다', calls.some((c) => /\/trend\?pageSize=20$/.test(c.url)));
   // 거래량은 KRX 실시간(야후 일봉 거래량 · 매매동향의 날짜별 거래량과 같은 기준). 종목 상세의 거래량은 NXT 포함이라 따로 둔다.
   check('오늘 거래량은 KRX 실시간과 그 시각', d.today.volume === 11822115 && d.today.at === '2026-10-16T13:30:41.947981+09:00', JSON.stringify(d.today));
@@ -93,6 +107,12 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   check('동종 업종 — 이름과 등락률', same(d.peers.slice(0, 2), [{ name: 'SK하이닉스', pct: 3.25 }, { name: 'SK스퀘어', pct: 3.92 }])
     && d.peers.length === 6, JSON.stringify(d.peers));
   check('ETF 칸은 없다', d.etf === null);
+  // 주요주주는 페이지 순서 그대로(최대주주등 → 5% 이상 → 자사주). 외국인은 지분율(소진율 아님) · 유동비율 · 기준일은 같은 페이지
+  check('주주 구성 — 주요주주 이름 · 지분율, 외국인 지분율 · 유동비율, 기준일', same(d.holders, {
+    date: '2026-10-27', common: null, foreign: 46.1, float: 74.98,
+    rows: [{ name: '삼성생명보험 외 17인', pct: 19.69 }, { name: '국민연금공단', pct: 7.84 },
+      { name: 'BlackRock Fund Advisors 외 15인', pct: 5.14 }, { name: '자사주', pct: 2.34 }],
+  }), JSON.stringify(d.holders));
 }
 
 // --- 2. 국내 ETF(KODEX 200) -----------------------------------------------------------
@@ -107,6 +127,7 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   // 네이버가 "동종 업종" 자리에 주는 것은 인기 ETF(미국 S&P500 등)라 업종 비교로 읽히면 틀린 정보다
   check('ETF 는 동종 업종을 비운다', d.peers.length === 0, JSON.stringify(d.peers));
   check('매매동향은 ETF 도 있다', d.trend.length === 20);
+  check('ETF 는 주주 구성이 없다(기업정보가 ETF 페이지로 넘긴다)', d.holders === null, JSON.stringify(d.holders));
 }
 
 // --- 3. 미국 주식(AAPL) ---------------------------------------------------------------
@@ -156,6 +177,7 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   check('종목 상세가 실패해도 나머지는 쓴다', d.ok && d.valuation.length === 0 && d.trend.length === 20 && d.today.volume === 11822115);
   blocked = ['naver.com'];
   d = await detail('005930.KS');
+  // 기업정보(wisereport.co.kr)는 막히지 않았지만 주주 구성만으로는 지표 화면이 되지 않는다
   check('전부 실패하면 ok:false', d.ok === false && typeof d.error === 'string', JSON.stringify(d));
   d = await detail('NVDA'); // 고정 데이터에 없음 — 검색은 되지만 해외 응답이 막혔다
   check('미국도 전부 실패하면 ok:false', d.ok === false);
@@ -201,6 +223,52 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   e = await events('005930.KS');
   check('받지 못하면 ok:false(다음 갱신에 다시 묻게)', e.ok === false && typeof e.error === 'string');
   blocked = [];
+}
+
+// --- 8. 주주 구성(국내) — 네이버 금융 기업정보 페이지 ---------------------------------------
+// JSON 이 없어 페이지의 주요주주 표 · 외국인지분율 · 유동비율을 뽑는다. 주주 명부는 공시로만 바뀌어 종목마다 6시간
+// 기억한다 — 지표 화면은 열려 있는 동안 1분마다 다시 받는다.
+{
+  const asked = () => calls.filter((c) => c.url.includes('wisereport')).length;
+  calls.length = 0;
+  let d = await detail('005930.KS');
+  check('6시간 안에는 기업정보를 다시 묻지 않는다', d.holders?.rows.length === 4 && asked() === 0, calls.map((c) => c.url).join(' '));
+  d = await detail('069500.KS');
+  check('ETF 의 빈 주주 구성도 기억한다(1분마다 묻지 않게)', d.holders === null && asked() === 0);
+
+  // 받지 못하면 그 칸만 비고, 기억하지 않아 다음 갱신에 다시 묻는다
+  blocked = ['wisereport'];
+  d = await detail('017670.KS');
+  check('기업정보가 실패하면 주주 구성만 빈다', d.ok && d.holders === null && d.valuation.length === 7, JSON.stringify(d.holders));
+  blocked = [];
+  calls.length = 0;
+  d = await detail('017670.KS');
+  // 외국인 한도가 있는 종목은 소진율과 지분율이 다르다 — SK텔레콤 10/27 소진율 72.17%, 지분율 35.39%
+  check('실패는 기억하지 않아 다음에 다시 묻는다', asked() === 1);
+  check('SK텔레콤 — 외국인은 지분율, 유동비율 · 주요주주', same(d.holders, {
+    date: '2026-10-27', common: null, foreign: 35.39, float: 57.32,
+    rows: [{ name: 'SK 외 11인', pct: 30.6 }, { name: '국민연금공단', pct: 8.46 }, { name: '자사주', pct: 0.81 }],
+  }), JSON.stringify(d.holders));
+
+  // 우선주를 물으면 기업정보는 회사(보통주) 페이지를 준다 — 보통주 코드를 같이 돌려 화면이 '보통주 기준' 이라 적게
+  d = await detail('005935.KS');
+  check('삼성전자우 — 보통주(005930) 기준 값이다', d.holders?.common === '005930' && d.holders.foreign === 46.1
+    && d.holders.rows[0].name === '삼성생명보험 외 17인', JSON.stringify(d.holders));
+
+  // 6시간이 지나면 다시 묻는다. 그때 실패하면 있던 것을 둔다 — 공시로만 바뀌는 값이라 지난 것이 빈칸보다 낫다
+  SHIFT = 7 * 3600000;
+  blocked = ['wisereport'];
+  calls.length = 0;
+  d = await detail('005930.KS');
+  check('6시간이 지나면 다시 묻고, 실패하면 있던 것을 둔다', asked() === 1 && d.holders?.rows.length === 4, JSON.stringify(d.holders));
+  blocked = [];
+  calls.length = 0;
+  d = await detail('005930.KS');
+  check('실패한 뒤에는 다음 갱신에 다시 묻는다', asked() === 1 && d.holders?.rows.length === 4);
+  calls.length = 0;
+  await detail('005930.KS');
+  check('받으면 다시 6시간 기억한다', asked() === 0);
+  SHIFT = 0;
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');

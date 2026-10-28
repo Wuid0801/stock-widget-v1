@@ -797,7 +797,7 @@ ipcMain.handle('yf:sector', async (_e, symbol) => {
 
 // ---- 지표 보기(차트 대신 보는 화면) ------------------------------------------------
 // 국내: 네이버 종목 상세(가치 지표 · 컨센서스 · 실적 일정 · 동종 업종 · ETF 지표) · 투자자별 매매동향(20일) ·
-// 분기 실적 · KRX 실시간 거래량. 미국: 네이버 해외 종목 정보 · 상세(컨센서스 · 동종 업종) · 분기 실적.
+// 분기 실적 · KRX 실시간 거래량 · 주주 구성(기업정보). 미국: 네이버 해외 종목 정보 · 상세(컨센서스 · 동종 업종) · 분기 실적.
 // 요청은 따로 받아 하나가 실패하면 그 칸만 비운다(전부 실패하면 ok:false). 응답 모양은 2026-10-16 실측
 // (tests/fixtures/naver-detail-20261016.json). 렌더러가 지표 화면을 열었을 때만 부른다.
 //
@@ -844,7 +844,56 @@ async function settleAll(urls) {
   return got.map((g) => (g.status === 'fulfilled' ? g.value : null));
 }
 
+// 주주 구성(국내) — 네이버 금융 기업정보(WiseReport) 페이지의 주요주주 표 · 외국인지분율 · 유동비율. JSON 이 없어
+// HTML 에서 뽑는다(2026-10-28 실측, tests/fixtures/wisereport-holders-20261028.json). 외국인은 이 페이지의 지분율이다 —
+// 종목 상세의 외국인 값은 소진율이라 한도가 있는 종목에서 다르다(SK텔레콤 10/27 소진율 72.17% · 지분율 35.39%).
+// 우선주를 물으면 회사(보통주) 페이지를 주므로 보통주 코드(common)를 같이 돌려준다. ETF 는 ETF 페이지로 넘어가 null.
+// 주주 명부는 공시로만 바뀌어 종목마다 6시간 기억한다(지표 화면은 1분마다 다시 받는다). 받지 못하면 기억하지 않고
+// 있던 것을 둔다 — 지난 값이 빈칸보다 낫다.
+const HOLDERS_TTL = 6 * 3600000;
+const holdersCache = new Map(); // 종목 코드 → { at, v }
+const htmlText = (s) => String(s).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+function parseHolders(html, code) {
+  const at = html.indexOf('id="cTB13"');
+  if (at < 0) return null;
+  // 주요주주 줄: <td … title="이름"> · <td class="… num">주식수</td> · <td class="… num">지분율</td>
+  const rows = [...html.slice(at, html.indexOf('</table>', at)).matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(([, tr]) => {
+    const name = /title="([^"]*)"/.exec(tr);
+    const nums = [...tr.matchAll(/<td[^>]*\bnum\b[^>]*>([^<]*)<\/td>/g)].map((m) => detailNum(m[1].trim()));
+    return name && nums.length >= 2 && nums[1] != null ? { name: htmlText(name[1]), pct: nums[1] } : null;
+  }).filter(Boolean);
+  if (!rows.length) return null;
+  const date = [...html.slice(0, at).matchAll(/\[기준:\s*(\d{4})\.(\d{2})\.(\d{2})\]/g)].pop(); // 표 바로 위의 기준일
+  const page = /<span class="name">[\s\S]{0,1500}?<b class="num">(\w+)<\/b>/.exec(html);
+  const foreign = /외국인지분율<\/th>\s*<td[^>]*>\s*([\d.]+)%/.exec(html);
+  const float = /유동비율<\/th>\s*<td[^>]*>[^<]*?\/\s*([\d.]+)%/.exec(html);
+  return {
+    date: date ? `${date[1]}-${date[2]}-${date[3]}` : null,
+    common: page && page[1] !== code ? page[1] : null,
+    foreign: foreign ? Number(foreign[1]) : null,
+    float: float ? Number(float[1]) : null,
+    rows: rows.slice(0, 8),
+  };
+}
+async function krHolders(code) {
+  const hit = holdersCache.get(code);
+  if (hit && Date.now() - hit.at < HOLDERS_TTL) return hit.v;
+  try {
+    const res = await netFetch(`https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=${code}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const v = parseHolders(await res.text(), code);
+    holdersCache.set(code, { at: Date.now(), v });
+    return v;
+  } catch {
+    return hit ? hit.v : null;
+  }
+}
+
 async function krDetail(code) {
+  // 주주 구성은 따로 받는다 — 이것만으로는 지표 화면이 되지 않아 '전부 실패' 판정(settleAll)에 넣지 않는다
+  const holders = krHolders(code);
   const [I, trend, quarter, rt] = await settleAll([
     `https://m.stock.naver.com/api/stock/${code}/integration`,
     `https://m.stock.naver.com/api/stock/${code}/trend?pageSize=20`,
@@ -885,6 +934,7 @@ async function krDetail(code) {
       baseIndex: info.get('etfBaseIdx'),
       dividendYield: detailNum(etfKey.dividendYieldTtm),
     } : null,
+    holders: await holders,
   };
 }
 

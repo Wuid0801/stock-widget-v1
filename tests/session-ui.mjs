@@ -1103,6 +1103,30 @@ await test('metrics: US stock shows no investor table, consensus range in dollar
   assert.match(bad, /지표를 불러오지 못했습니다 \(&lt;x&gt;\)/, '실패 — 이유는 이스케이프');
 });
 
+await test('metrics: shareholders — major holders table, foreign stake and free float, common-share basis for a preferred stock, no section without data', () => {
+  const { c, run } = harness(['metricsHtml', 'metricsVolume', 'periodReturns']);
+  run(helpers());
+  run("quotes['005930.KS'] = { price: 219000, currency: 'KRW' };");
+  const H = { date: '2026-10-27', common: null, foreign: 46.1, float: 74.98,
+    rows: [{ name: '삼성생명보험 외 17인', pct: 19.69 }, { name: '국민연금공단', pct: 7.84 }, { name: '<i>x</i> 외 15인', pct: 5.14 }, { name: '자사주', pct: 2.34 }] };
+  const html = (symbol, holders) => { c.D = { ...KR_DETAIL, holders }; return run(`metricsHtml({ symbol: '${symbol}', name: '' }, D, quotes['005930.KS'])`); };
+
+  const h = html('005930.KS', H);
+  assert.match(h, /<h5>주주 구성 <span>\(10\/27 기준\)<\/span><\/h5>/, '제목에 기준일');
+  assert.match(h, /<tr><td>삼성생명보험 외 17인<\/td><td>19\.69%<\/td><\/tr><tr><td>국민연금공단<\/td><td>7\.84%<\/td><\/tr>/, '주요주주는 이름 · 지분율 표');
+  assert.ok(h.includes('&lt;i&gt;x&lt;/i&gt; 외 15인') && !h.includes('<i>x</i>'), '이름은 이스케이프한다');
+  assert.match(text(h), /외국인 46\.10% · 유동주식 74\.98%/, '외국인 지분율 · 유동비율');
+  assert.match(h, /최대주주 · 5% 이상 주주 · 자사주만 공시됩니다 \(기관 · 개인 지분율은 없음\)/, '표에 없는 것을 적는다');
+  assert.ok(h.indexOf('투자자별 순매수') < h.indexOf('주주 구성') && h.indexOf('주주 구성') < h.indexOf('<h5>실적'), '매매동향 다음, 실적 앞');
+
+  assert.match(html('005935.KS', { ...H, common: '005930' }), /<h5>주주 구성 <span>\(보통주 기준, 10\/27\)<\/span><\/h5>/,
+    '우선주는 회사(보통주) 값이라고 적는다');
+  const bare = html('005930.KS', { ...H, date: null, foreign: null, float: null });
+  assert.match(bare, /<h5>주주 구성<\/h5>/, '기준일이 없으면 제목만');
+  assert.doesNotMatch(text(bare), /유동주식|외국인 \d/, '없는 값은 적지 않는다');
+  assert.doesNotMatch(html('005930.KS', null), /주주 구성/, '주주 구성이 없으면(ETF · 실패) 단락이 없다');
+});
+
 await test('metrics: the button swaps the chart for the panel, hides for indices, fetches on open, reuses for a minute and drops a late reply for another symbol', async () => {
   const { c, run, elements } = harness(['renderMetrics', 'loadMetrics']);
   const asked = [];
