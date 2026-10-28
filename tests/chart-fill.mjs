@@ -141,8 +141,8 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   naverCalls.length = 0;
   naverReply = () => ({ ok: true, status: 200, body: [naverRow('20261012', 999)] });
   yahooBody = yahoo([['2026-10-08', 100], ['2026-10-12', null], ['2026-10-13', 110]]);
-  for (const s of ['AAPL', '^KS11', 'BRK-B']) await chart(s);
-  check('해외 종목 · 지수는 묻지 않는다', naverCalls.length === 0, naverCalls.map((c) => c.url).join(' '));
+  for (const s of ['AAPL', '^GSPC', 'BRK-B']) await chart(s);
+  check('해외 종목 · 해외 지수는 묻지 않는다(국내 지수는 6번)', naverCalls.length === 0, naverCalls.map((c) => c.url).join(' '));
   await chart('051910.KS', '30m');
   check('일봉이 아니면 묻지 않는다', naverCalls.length === 0);
 
@@ -199,6 +199,24 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
     naverRow('20261013', 6000)] });
   r = await chart('034730.KS');
   check('오늘 봉은 비율에 쓰지 않는다', r.ok && r.closes[1] === 9900, JSON.stringify(r.closes));
+}
+
+// --- 6. 코스피 · 코스닥 지수도 빈 날을 네이버 지수 일봉으로 채운다 --------------------------------
+// 야후는 지수 일봉도 하루를 비워 준다(2026-10-28 실측: ^KS11 · ^KQ11 의 10/27 이 null — 같은 날 삼성전자는 값이 있었다).
+// 네이버 지수 일봉은 종가 · 거래량이 야후와 같다(10/19~10/26 여섯 날 종가가 같고 거래량 비율 1.0).
+{
+  naverCalls.length = 0;
+  yahooBody = yahoo([['2026-10-08', 5550.3], ['2026-10-12', null], ['2026-10-13', 5600]]);
+  naverReply = () => ({ ok: true, status: 200, body: [naverRow('20261008', 5550.3), naverRow('20261012', 5638.34)] });
+  const r = await chart('^KS11');
+  check('코스피 지수의 빈 날을 네이버 지수 일봉으로 채운다', r.ok && same(r.closes, [5550.3, 5638.34, 5600]), JSON.stringify(r.closes));
+  check('네이버 지수 일봉(index/KOSPI)을 묻는다', naverCalls.length === 1
+    && naverCalls[0].url.startsWith('https://api.stock.naver.com/chart/domestic/index/KOSPI/day?'), naverCalls.map((c) => c.url).join(' '));
+  naverCalls.length = 0;
+  yahooBody = yahoo([['2026-10-08', 751.69], ['2026-10-12', null], ['2026-10-13', 760]]); // 위에서 채운 응답은 다시 쓰지 않는다
+  await chart('^KQ11');
+  check('코스닥 지수는 index/KOSDAQ', naverCalls.length === 1 && naverCalls[0].url.includes('/chart/domestic/index/KOSDAQ/day?'),
+    naverCalls.map((c) => c.url).join(' '));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

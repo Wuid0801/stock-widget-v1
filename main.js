@@ -1094,17 +1094,19 @@ const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}(?:=[XF])?$/;
 // 그대로 넣으면 그날만 움푹 꺼지므로 빈 날 앞뒤로 가까운 날 5일씩의 야후/네이버 종가 비율 중앙값을 곱한다.
 // 중앙값이라 빈 날 바로 앞날처럼 야후 값이 어긋난 하루에 끌리지 않는다. 1% 안쪽은 기준 차이가 아니라
 // 날마다 한두 틱 다른 잡음이라(같은 날 국내 60종목 0.995~1.008) 거래소 종가인 네이버 값을 그대로 둔다.
-// 지난 날은 바뀌지 않으므로 받은 봉(네이버에도 없던 빈 날은 null)을 '코드:YYYYMMDD' 로 기억해 다시 묻지 않는다.
+// 지난 날은 바뀌지 않으므로 받은 봉(네이버에도 없던 빈 날은 null)을 '경로:YYYYMMDD' 로 기억해 다시 묻지 않는다.
 // 오늘 칸은 채우지도 비율에 쓰지도 않는다 — 장중에 움직이고, renderer 가 실시간 값으로 맞춘다(loadQuote).
+// 코스피 · 코스닥 지수도 같다 — 야후가 지수 일봉의 하루를 비웠다(2026-10-28 실측: ^KS11 · ^KQ11 의 10/27 null, 같은 날
+// 삼성전자는 값이 있었다). 네이버 지수 일봉은 종가 · 거래량이 야후와 같아(10/19~10/26 거래량 비율 1.0) 그대로 채운다.
+// 경로(item/코드 · index/KOSPI · index/KOSDAQ)는 krPath 가 정한다.
 const naverDays = new Map();
 const NAVER_NEAR = 5;            // 비율을 볼 빈 날 앞뒤 날 수
 const NAVER_SCALE_MIN = 0.01;    // 이보다 작은 비율 차이는 잡음으로 본다
 const kstDay = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
 
 async function fillGaps(symbol, stamps, q) {
-  const m = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol);
-  if (!m || !Array.isArray(q.close)) return;
-  const code = m[1];
+  const code = krPath(symbol); // 'item/005930' · 'index/KOSPI'
+  if (!code || !Array.isArray(q.close)) return;
   const today = kstDay(Date.now());
   const days = stamps.map((t) => kstDay(t * 1000));
   const gaps = [];
@@ -1114,7 +1116,7 @@ async function fillGaps(symbol, stamps, q) {
     // 비율을 볼 앞뒤 날까지 한 번에 받는다
     const from = days[Math.max(0, ask[0] - 2 * NAVER_NEAR)];
     const to = days[Math.min(days.length - 1, ask[ask.length - 1] + 2 * NAVER_NEAR)];
-    const url = `https://api.stock.naver.com/chart/domestic/item/${code}/day`
+    const url = `https://api.stock.naver.com/chart/domestic/${code}/day`
       + `?startDateTime=${from}0000&endDateTime=${to}2359`;
     try {
       const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' } });
