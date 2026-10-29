@@ -5,14 +5,16 @@ import vm from 'node:vm';
 import * as indicators from '../indicators.js';
 import * as backtest from '../backtest.js';
 import * as marketCheck from '../market-check.js';
+import { rendererSource } from './_renderer.mjs';
 
-const source = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
-// renderer.js 를 자르는 표식(주석 · 선언). 없거나 둘 이상이면 원인을 알 수 없는 전체 실패가 났다 — 주석 문구만 다듬어도
+// 렌더러 소스 — renderer/*.js 를 index.html 의 태그 순서로 이은 글자(예전 renderer.js 한 파일과 같다, tests/_renderer.mjs)
+const source = rendererSource();
+// 렌더러를 자르는 표식(주석 · 선언). 없거나 둘 이상이면 원인을 알 수 없는 전체 실패가 났다 — 주석 문구만 다듬어도
 // prelude 가 파일 거의 전체가 되어 "document.addEventListener is not a function" 하나로 103개가 다 깨졌다. 바로 알린다.
 const mark = (text) => {
   const i = source.indexOf(text);
-  assert.ok(i >= 0, `renderer.js 표식 없음: ${text}`);
-  assert.equal(source.indexOf(text, i + 1), -1, `renderer.js 표식이 둘 이상: ${text}`);
+  assert.ok(i >= 0, `렌더러 표식 없음: ${text}`);
+  assert.equal(source.indexOf(text, i + 1), -1, `렌더러 표식이 둘 이상: ${text}`);
   return i;
 };
 const prelude = source.slice(0, mark('// 과열도 5단계'));
@@ -1182,7 +1184,7 @@ await test('indicators: loadChart fetches the matching index with the chart — 
 
 // 지표 보기(차트 대신): 오늘 거래량 배수 · 기간 수익률 · 투자자별 매매동향 · 실적 · 가치 지표 · 컨센서스 · 동종 업종.
 // 데이터는 main 의 naver:detail(tests/detail.mjs), 배수 · 수익률은 이미 받은 일봉으로 렌더러가 센다.
-// renderer.js 의 const 한 문장(끝 표시까지). 소스는 CRLF 라 줄 끝을 가리지 않는다.
+// 렌더러의 const 한 문장(끝 표시까지). 소스는 CRLF 라 줄 끝을 가리지 않는다.
 const block = (name, end = /\r?\n\};\r?\n/) => {
   const i = source.indexOf(`const ${name} = `);
   assert.notEqual(i, -1, name);

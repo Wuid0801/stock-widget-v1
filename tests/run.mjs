@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resetConfig, CFG_PATH, USER_DATA_DIR } from './_paths.mjs';
+import { RENDERER_FILES } from './_renderer.mjs';
 
 // 안전장치. 아래에서 매 스위트 전에 설정을 '{}' 로 밀기 때문에, 그 대상이 실제
 // 사용자 프로필이면 npm test 한 번에 관심종목·보유·알림이 날아간다. 실제로 그런
@@ -35,6 +36,7 @@ const ORDER = [
   'rsi.mjs',
   'techniques.mjs',
   'sources.mjs',
+  'renderer-load.mjs',
   'trend.mjs',
   'backtest.mjs',
   'cross.mjs',
@@ -102,7 +104,7 @@ const run = (file) => new Promise((resolve) => {
 
 // 스위트가 앱 소스를 바꾸면 실패로 친다. 중간에 죽으면 바뀐 채로 남고, 도는 동안 편집한 내용을 옛 내용으로 덮을 수 있다
 // (alerts.mjs 가 renderer.js 에 훅을 붙였다 되돌렸다 — isolation.mjs 의 정규식 검사는 변수 이름에 빠져나갔다).
-const APP_SOURCES = ['main.js', 'preload.js', 'renderer.js', 'index.html', 'indicators.js', 'backtest.js', 'market-check.js', 'quote-session.cjs'];
+const APP_SOURCES = ['main.js', 'preload.js', ...RENDERER_FILES, 'index.html', 'indicators.js', 'backtest.js', 'market-check.js', 'quote-session.cjs'];
 const digest = () => APP_SOURCES.map((f) => crypto.createHash('sha1')
   .update(fs.readFileSync(path.join(HERE, '..', f))).digest('hex')).join();
 

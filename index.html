@@ -206,7 +206,7 @@
   .status { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; padding-left: 8px; }
   .bar #refresh span { display: inline-block; }
   .bar #refresh.spin span { animation: spin .8s linear infinite; }
-  /* 갱신 직후 5초는 쉰다(renderer.js REFRESH_REST) — 눌러도 반응이 없는 이유가 보이게 흐리게 */
+  /* 갱신 직후 5초는 쉰다(renderer/start.js REFRESH_REST) — 눌러도 반응이 없는 이유가 보이게 흐리게 */
   .bar #refresh.rest:not(.spin) { opacity: .35; cursor: default; }
   .bar #refresh.rest:not(.spin):hover { background: transparent; color: var(--dim); }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -655,7 +655,7 @@
   /* 창을 세로로 늘리면 차트도 같이 커진다. 최소 150px(기본 창 높이일 때의 크기)는
      지키고, 300px 를 넘어 관심종목 목록을 다 밀어내지는 않게 한다. */
   .chartbox { height: clamp(150px, 26vh, 300px); margin-top: 7px; position: relative; }
-  /* RSI 를 켜 두면 차트 아래 RSI 칸(renderer.js RSI_PANE = 45px)만큼 키운다 — 가격 칸은 그대로 */
+  /* RSI 를 켜 두면 차트 아래 RSI 칸(renderer/state.js RSI_PANE = 45px)만큼 키운다 — 가격 칸은 그대로 */
   .chartbox.sub { height: clamp(195px, calc(26vh + 45px), 345px); }
   /* 다른 종목 · 기간의 차트를 받는 동안(옛 차트는 지웠다) */
   .chartbox.loading::after {
@@ -890,12 +890,29 @@
   </div>
 
   <script src="./node_modules/chart.js/dist/chart.umd.js"></script>
-  <!-- 순수 계산. renderer.js 가 전역으로 쓰므로 반드시 먼저 싣는다 -->
+  <!-- 순수 계산. 렌더러(renderer/)가 전역으로 쓰므로 반드시 먼저 싣는다 -->
   <script src="./indicators.js"></script>
-  <!-- 추세 점검 계산. indicators.js 의 sma 를 쓰고, renderer.js 가 trendCheck 를 부른다 -->
+  <!-- 추세 점검 계산. indicators.js 의 sma 를 쓰고, 렌더러가 trendCheck 를 부른다 -->
   <script src="./backtest.js"></script>
   <!-- 시장 지표 화면의 데드캣 점검 판정(marketChecks) — 화면과 무관한 순수 함수 -->
   <script src="./market-check.js"></script>
-  <script src="./renderer.js"></script>
+  <!-- 렌더러 — 한 덩어리를 단락별로 나눈 클래식 스크립트들. 최상위 선언이 전역이라 서로 이름으로 부르고, 이 순서대로 실어야
+       한다(맨 위에서 바로 도는 코드는 앞 파일의 것만 부를 수 있다 — tests/renderer-load.mjs). 테스트는 이 태그 순서로 이어 붙여 본다. -->
+  <script src="./renderer/state.js"></script>
+  <script src="./renderer/format.js"></script>
+  <script src="./renderer/watchlist.js"></script>
+  <script src="./renderer/indices.js"></script>
+  <script src="./renderer/holdings.js"></script>
+  <script src="./renderer/detail.js"></script>
+  <script src="./renderer/metrics.js"></script>
+  <script src="./renderer/rank.js"></script>
+  <script src="./renderer/info.js"></script>
+  <script src="./renderer/chart.js"></script>
+  <script src="./renderer/data.js"></script>
+  <script src="./renderer/actions.js"></script>
+  <script src="./renderer/search.js"></script>
+  <script src="./renderer/settings.js"></script>
+  <script src="./renderer/controls.js"></script>
+  <script src="./renderer/start.js"></script>
 </body>
 </html>

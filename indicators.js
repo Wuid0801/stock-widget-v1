@@ -1,7 +1,7 @@
 // indicators.js — 화면과 무관한 순수 계산.
 //
-// 브라우저에서는 클래식 스크립트다. index.html 이 renderer.js 보다 먼저 싣고,
-// 최상위 함수 선언이 전역이 되므로 renderer.js 는 그냥 이름으로 부른다.
+// 브라우저에서는 클래식 스크립트다. index.html 이 렌더러(renderer/*.js)보다 먼저 싣고,
+// 최상위 함수 선언이 전역이 되므로 렌더러는 그냥 이름으로 부른다.
 // Node(테스트)에서는 CommonJS 로 읽혀 아래 module.exports 가 쓰인다.
 //
 // 여기에는 DOM · quotes · state · cssVar 를 건드리는 것을 두지 않는다.
@@ -322,7 +322,7 @@ function dragToRange(a, b, px) {
 
 // 날짜로 기억해 둔 구간을 지금 데이터의 봉 번호로 바꾼다. 30초마다 다시 그리고 다음
 // 날엔 봉이 하나 늘어 번호가 밀리므로, 번호가 아니라 날짜로 기억한다.
-// 비교는 UTC 날짜로 한다(renderer.js maFor 와 같은 규칙) — 장중 마지막 봉의 시각은
+// 비교는 UTC 날짜로 한다(renderer/data.js maFor 와 같은 규칙) — 장중 마지막 봉의 시각은
 // 마지막 체결 시각이라 갱신마다 바뀌어, 시각으로 비교하면 그 봉이 구간 밖으로 밀려난다.
 function zoomRange(times, start, end) {
   const dayOf = (t) => Math.floor(t / 86400000);

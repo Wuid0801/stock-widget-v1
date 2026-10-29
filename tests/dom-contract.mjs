@@ -12,6 +12,7 @@
 // index.html 을 읽기만 하므로 의존성이 필요 없다. 덕분에 CI 가 node_modules 없이
 // 이 스위트를 돌린다(.github/workflows/test.yml).
 import fs from 'node:fs';
+import { RENDERER_FILES, rendererSource } from './_renderer.mjs';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -53,32 +54,45 @@ if (nameTag && sectorTag) {
 }
 
 // --- 스크립트 로드 순서 --------------------------------------------------------
-// indicators.js 의 최상위 함수 선언이 전역이 되어야 renderer.js 가 이름으로 부른다.
+// indicators.js 의 최상위 함수 선언이 전역이 되어야 렌더러(renderer/*.js)가 이름으로 부른다.
 // 태그가 빠지거나 순서가 뒤집히면 앱이 뜰 때만 드러나고, 그때는 화면이 통째로
 // 죽는다 — 어떤 스위트도 이걸 보지 않아서 여기에 둔다.
 const indicatorsTag = html.indexOf('src="./indicators.js"');
-const rendererTag = html.indexOf('src="./renderer.js"');
+const rendererTag = html.indexOf('src="./renderer/'); // 렌더러 첫 파일
 
 check('index.html 이 indicators.js 를 싣는다', indicatorsTag >= 0);
-check('index.html 이 renderer.js 를 싣는다', rendererTag >= 0);
+check('index.html 이 렌더러(renderer/)를 싣는다', rendererTag >= 0);
 if (indicatorsTag >= 0 && rendererTag >= 0) {
-  check('indicators.js 가 renderer.js 보다 먼저 온다', indicatorsTag < rendererTag,
+  check('indicators.js 가 렌더러보다 먼저 온다', indicatorsTag < rendererTag,
     `indicators ${indicatorsTag} vs renderer ${rendererTag}`);
 }
 
-// backtest.js 는 indicators.js 의 sma 를 전역으로 쓰고, renderer.js 가 trendCheck 를 부른다.
+// backtest.js 는 indicators.js 의 sma 를 전역으로 쓰고, 렌더러가 trendCheck 를 부른다.
 const backtestTag = html.indexOf('src="./backtest.js"');
 check('index.html 이 backtest.js 를 싣는다', backtestTag >= 0);
 if (backtestTag >= 0 && indicatorsTag >= 0 && rendererTag >= 0) {
-  check('backtest.js 가 indicators.js 뒤, renderer.js 앞에 온다',
+  check('backtest.js 가 indicators.js 뒤, 렌더러 앞에 온다',
     indicatorsTag < backtestTag && backtestTag < rendererTag);
 }
 
-// market-check.js 는 화면과 무관한 판정 함수(전역 marketChecks)이고 renderer.js 의 시장 지표 화면이 부른다.
+// market-check.js 는 화면과 무관한 판정 함수(전역 marketChecks)이고 렌더러의 시장 지표 화면이 부른다.
 const marketCheckTag = html.indexOf('src="./market-check.js"');
 check('index.html 이 market-check.js 를 싣는다', marketCheckTag >= 0);
 if (marketCheckTag >= 0 && backtestTag >= 0 && rendererTag >= 0) {
-  check('market-check.js 가 backtest.js 뒤, renderer.js 앞에 온다', backtestTag < marketCheckTag && marketCheckTag < rendererTag);
+  check('market-check.js 가 backtest.js 뒤, 렌더러 앞에 온다', backtestTag < marketCheckTag && marketCheckTag < rendererTag);
+}
+
+// 렌더러는 renderer/ 의 파일들이다. 태그마다 파일이 있고, 디렉터리의 파일은 모두 태그가 있어야 한다 — 새 파일을 만들고 태그를
+// 빠뜨리면 그 함수들이 없는 채로 뜨고, 지운 파일의 태그가 남으면 그 자리에서 404 다. 첫 파일은 상태 선언(state.js), 마지막은 시작(start.js).
+{
+  const tags = RENDERER_FILES;
+  const files = fs.readdirSync(new URL('../renderer/', import.meta.url)).filter((f) => f.endsWith('.js')).map((f) => `renderer/${f}`);
+  check('렌더러 태그마다 파일이 있다', tags.every((t) => files.includes(t)), tags.filter((t) => !files.includes(t)).join(', '));
+  check('renderer/ 의 파일은 모두 태그가 있다', files.every((f) => tags.includes(f)), files.filter((f) => !tags.includes(f)).join(', '));
+  check('렌더러는 state.js 로 시작해 start.js 로 끝난다', tags[0] === 'renderer/state.js' && tags.at(-1) === 'renderer/start.js', tags.join(' '));
+  check('렌더러 태그는 market-check.js 뒤에 이어서 있다', tags.length > 0
+    && html.indexOf(`src="./${tags.at(-1)}"`) > marketCheckTag && !/src="\.\/(?!renderer\/)[^"]+"/.test(html.slice(rendererTag)));
+  check('예전 renderer.js 를 싣지 않는다', !html.includes('src="./renderer.js"'));
 }
 
 // 지표 화면의 누를 수 없는 줄(.mrow.mfix — 선물 · 수급 · HY OAS)도 가로 한 줄이어야 한다. 가로 배치(display: flex)가 누를 수 있는
@@ -129,10 +143,10 @@ check('.qbar 의 버튼 규칙은 직계 자식(닫기)에만 건다', /\.qbar\s
 check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \+ section\s*\{[^}]*border-top:\s*1px dashed/.test(html));
 
 // --- RSI 칸 ------------------------------------------------------------------
-// RSI 를 켜 두면 차트 상자(.chartbox.sub)가 RSI 칸(renderer.js RSI_PANE)만큼 커져 가격 칸은 그대로다 — 세 값이 어긋나면
+// RSI 를 켜 두면 차트 상자(.chartbox.sub)가 RSI 칸(renderer/state.js RSI_PANE)만큼 커져 가격 칸은 그대로다 — 세 값이 어긋나면
 // 가격 칸이 줄거나 빈 띠가 남는다. 켜고 끄는 버튼(#rsiPane)은 차트 왼쪽 위 버튼 묶음 안에 있다.
 {
-  const pane = +/const RSI_PANE = (\d+);/.exec(fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8'))[1];
+  const pane = +/const RSI_PANE = (\d+);/.exec(rendererSource())[1];
   const base = /\.chartbox\s*\{\s*height:\s*clamp\((\d+)px,\s*26vh,\s*(\d+)px\)/.exec(html);
   const sub = /\.chartbox\.sub\s*\{\s*height:\s*clamp\((\d+)px,\s*calc\(26vh \+ (\d+)px\),\s*(\d+)px\)/.exec(html);
   check('.chartbox · .chartbox.sub 높이 규칙이 있다', !!base && !!sub);

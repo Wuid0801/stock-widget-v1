@@ -1,7 +1,7 @@
-// 저장 계약 가드 — 앱을 띄우지 않고 renderer.js 와 main.js 의 키 목록만 맞춰 본다.
+// 저장 계약 가드 — 앱을 띄우지 않고 렌더러(renderer/*.js)와 main.js 의 키 목록만 맞춰 본다.
 //
 // 세 경로를 검사한다.
-// 1) renderer.js 의 save() 가 보내는 키를 main.js 의 state:set 허용목록이 받아주지
+// 1) 렌더러의 save() 가 보내는 키를 main.js 의 state:set 허용목록이 받아주지
 //    않으면 store.set 이 호출되지 않는다. 예외도 로그도 없이 그 설정만 저장되지
 //    않고, 앱을 껐다 켜야만 드러난다.
 // 2) save() 가 보내는 키를 main.js 의 state:get 이 돌려주지 않으면, 저장은 되지만
@@ -9,11 +9,12 @@
 //    이긴다. 이것도 앱을 껐다 켜야만 드러난다.
 // 새 설정을 추가할 때 세 곳 중 한쪽만 고치기 쉬워서 여기서 막는다.
 // 3) 설정 백업(BACKUP_KEYS)이 저장되는 키와 같은지(아래).
-// 4) IPC 계약 — preload.js 가 내보내는 함수 · 채널, main.js 가 받는 채널, renderer.js 가 부르는 api 함수가 서로 맞는지.
+// 4) IPC 계약 — preload.js 가 내보내는 함수 · 채널, main.js 가 받는 채널, 렌더러가 부르는 api 함수가 서로 맞는지.
 //    한쪽 이름만 바꾸면 그 기능이 조용히 죽는다(invoke 는 "No handler registered", 렌더러는 undefined 호출).
 import fs from 'node:fs';
+import { rendererSource } from './_renderer.mjs';
 
-const renderer = fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8');
+const renderer = rendererSource(); // renderer/*.js 를 index.html 순서로 이은 것(예전 renderer.js)
 const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 
 let fails = 0;
@@ -22,7 +23,7 @@ const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : '
 // save() 가 api.setState 로 보내는 키
 const saveStart = renderer.indexOf('const save = () => api.setState({');
 const saveEnd = renderer.indexOf('});', saveStart);
-check('renderer.js 에서 save() 를 찾았다', saveStart >= 0 && saveEnd > saveStart);
+check('렌더러에서 save() 를 찾았다', saveStart >= 0 && saveEnd > saveStart);
 
 // main.js 의 허용목록 — [...].includes(k) 형태
 const allowList = /\[([^\]]*)\]\.includes\(k\)/.exec(main);

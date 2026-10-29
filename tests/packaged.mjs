@@ -1,6 +1,7 @@
 // ③ 패키징된(asar) 앱이 실제로 동작하는지 검증.
 // dist/ 가 없으면 건너뛴다 — 먼저 `npm run dist` 를 실행해야 의미가 있다.
 import { APP_DIR, CFG_PATH, SHOTS_DIR, USER_DATA_DIR, LAUNCH_ENV } from './_paths.mjs';
+import { RENDERER_FILES } from './_renderer.mjs';
 import { _electron as electron } from 'playwright-core';
 import path from 'node:path'; import fs from 'node:fs';
 
@@ -25,7 +26,7 @@ if (!fs.existsSync(ASAR) || !fs.readFileSync(ASAR).includes('KR_STOCK_WIDGET_CON
 }
 
 // 빌드 뒤로 앱 소스를 고쳤으면 낡은 산출물을 지금 코드처럼 검사하게 된다(2026-10-21: 10/8 빌드에 그 뒤 커밋 52개) — 건너뛴다
-const SOURCES = ['main.js', 'preload.js', 'renderer.js', 'index.html', 'indicators.js', 'backtest.js', 'market-check.js', 'quote-session.cjs', 'package.json'];
+const SOURCES = ['main.js', 'preload.js', ...RENDERER_FILES, 'index.html', 'indicators.js', 'backtest.js', 'market-check.js', 'quote-session.cjs', 'package.json'];
 if (fs.statSync(ASAR).mtimeMs < Math.max(...SOURCES.map((f) => fs.statSync(path.join(APP_DIR, f)).mtimeMs))) {
   console.log('SKIP: dist/ 빌드가 앱 소스보다 오래됐습니다. `npm run dist` 로 다시 빌드하세요.');
   console.log('\nPASS: 실패 0건');

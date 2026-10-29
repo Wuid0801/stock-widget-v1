@@ -89,7 +89,8 @@ for (const f of fs.readdirSync(path.join(APP_DIR, 'tests')).filter((n) => n.ends
   const src = fs.readFileSync(path.join(APP_DIR, 'tests', f), 'utf8');
   // 파일 이름을 변수로 넘겨도 잡는다 — alerts.mjs 가 renderer.js 경로를 RENDERER 변수로 넘겨 빠져나갔다(2026-10-21)
   const writesSource = /writeFileSync\(\s*(MAIN|RENDERER|PRELOAD|INDEX(_HTML)?|INDICATORS|BACKTEST|MARKET_CHECK)\b/.test(src)
-    || /writeFileSync\([^)]*\b(main|renderer|index|preload|indicators|backtest|market-check)\.(js|html)/.test(src);
+    || /writeFileSync\([^)]*\b(main|renderer|index|preload|indicators|backtest|market-check)\.(js|html)/.test(src)
+    || /writeFileSync\([^)]*\brenderer\/[\w-]+\.js/.test(src); // 렌더러는 renderer/ 의 파일들이다
   check(`${f} 가 앱 소스를 고쳐 쓰지 않는다`, !writesSource,
     writesSource ? /writeFileSync\([^)]*\)/.exec(src)?.[0] : '');
 }

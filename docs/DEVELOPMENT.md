@@ -58,7 +58,23 @@ indicators.js         화면과 무관한 순수 계산 — RSI · 이동평균 
 backtest.js           추세 점검 — 이평선 규칙을 지난 일봉에 대 보는 계산 (화면과 무관)
 preload.js            contextBridge로 안전한 IPC만 노출
 index.html            마크업 + CSS
-renderer.js           UI 렌더링, Chart.js, 30초 폴링
+renderer/             UI 렌더링, Chart.js, 30초 폴링 — 한 덩어리를 단락별로 나눈 클래식 스크립트(아래 "테스트")
+  state.js            상수 · 상태(state · quotes · 캐시) · 설정 표 · 과열도 단계
+  format.js           가격 · 등락률 · 거래량 글자와 색
+  watchlist.js        관심종목 목록 — 오늘 캔들 · 일정 칩 · 줄
+  indices.js          위쪽 지수 줄
+  holdings.js         보유 종목과 합계 줄
+  detail.js           상세 — 업종 · 장 상태 · 이름 · 가격 · 갱신 시각
+  metrics.js          지표 보기(차트 자리) — 기간 수익률 · 기법 점검 · 매매동향 · 실적 …
+  rank.js             시장 순위 패널과 시장 지표 화면(데드캣 점검 · 코스톨라니 달걀)
+  info.js             상세의 보유 입력 · 52주 · 추세 점검 줄
+  chart.js            차트 — 기간 배지 · 범례 · Chart.js 플러그인 · drawChart
+  data.js             데이터 로딩 — 시세 · 일봉 · 보조 지표 계산 · loadChart · refreshAll
+  actions.js          종목 고르기 · 추가 · 삭제 · 되돌리기 · 저장(save) · 키보드 · 접기
+  search.js           종목 검색
+  settings.js         테마 · 투명도 · 이동평균 · 보조 지표 칩 · 목표가 알림 · 설정 백업
+  controls.js         라인/캔들 · 확대 · 기간 탭 · 차트 왼쪽 위 버튼
+  start.js            갱신 주기(pollTick · refreshNow)와 시작(init)
 build/icon.svg        앱 아이콘 원본 (수정하면 다음 빌드에 자동 반영)
 build/make-icon.cjs   icon.svg → icon.ico (16~256px 멀티사이즈)
 build/after-pack.cjs  패키징 후 exe 아이콘·버전 정보 삽입
@@ -98,7 +114,7 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 | `indicators` | 보조 지표 켜짐 `{ bb, vwap, volAvg, prevHL, vp, rel, sar }` (기본 모두 꺼짐). 아는 키의 `true` 만 믿는다(`cleanIndicators`) |
 | `infoOpen` | 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지 (기본 펼침). 세 줄의 `hidden` 은 각자 그리는 함수가 정하므로, 접기는 손잡이 `#infoToggle` 의 `.off` 와 CSS 형제 선택자로만 숨긴다. 접혀 있으면 손잡이 툴팁이 보이던 줄의 내용을 글자로 미리 보인다(`infoTip`, 갱신마다 다시 씀) |
 
-저장 값을 추가할 때는 renderer.js 의 save() 와 main.js 의 state:set · state:get · 설정 백업의 `BACKUP_KEYS` 네 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다. 백업에서 불러올 때 그 값의 모양을 보는 검사도 `cleanBackup` 에 넣습니다 — 없으면 불러오기에서 그 값만 조용히 빠집니다.
+저장 값을 추가할 때는 렌더러(renderer/actions.js)의 save() 와 main.js 의 state:set · state:get · 설정 백업의 `BACKUP_KEYS` 네 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다. 백업에서 불러올 때 그 값의 모양을 보는 검사도 `cleanBackup` 에 넣습니다 — 없으면 불러오기에서 그 값만 조용히 빠집니다.
 
 읽어 온 값은 믿지 않습니다. 시작할 때 모르는 이동평균 기간 · 색 · 굵기는 버리고, 모르는 `chartMode` 는 캔들, 없는 선택 종목은 첫 종목, 이 빌드에 없는 `timeframe` 은 `1D` 로 바꿉니다(`validTimeframe`) — 그대로 쓰면 차트가 매 갱신 예외로 끝나 조용히 빕니다. 기간을 빼거나 이름을 바꾸는 빌드가 나와도 같은 설정 폴더를 쓰는 다른 빌드가 멈추지 않게 하려는 것입니다.
 
@@ -126,16 +142,21 @@ npm run check:sources # 데이터 출처 점검 (실제 네트워크, 아래)
 
 스위트는 두 갈래입니다.
 
-- **앱을 띄우지 않는 스위트**(아래 CI 의 스물네 개) — 저장된 응답(`tests/fixtures`)과 고정 시계, 가짜 electron 으로 main.js · renderer.js 의 함수를 직접 부릅니다. 네트워크를 쓰지 않습니다.
+- **앱을 띄우지 않는 스위트**(아래 CI 의 스물다섯 개) — 저장된 응답(`tests/fixtures`)과 고정 시계, 가짜 electron 으로 main.js · 렌더러의 함수를 직접 부릅니다. 네트워크를 쓰지 않습니다.
 - **앱을 띄우는 스위트**(나머지) — 실제 앱을 Electron 으로 띄우고 실제 API를 호출합니다. 테스트 전용 설정과 창을 공유하므로 순차 실행합니다. 장중/장마감처럼 외부 상태에 좌우되는 경로는 환경변수(`KR_STOCK_WIDGET_FORCE_SESSION` 등)로 강제합니다 — 앱 소스를 고쳐 쓰지 않습니다. `run.mjs` 는 스위트마다 앱 소스의 해시를 앞뒤로 견줘, 바뀌었으면 실패로 칩니다.
 
-session-ui 하네스 규칙 — renderer.js 를 `// 과열도 5단계` 앞(상태 선언, prelude)까지 통째로 넣고, 테스트하는 함수는 이름으로 꺼내 넣습니다. 그래서 테스트하는 함수가 쓰는 상태 선언은 그 표식 앞에 두고, 함수는 `function` 선언으로 쓰고(const 화살표 함수는 꺼내지 못합니다), `harness([...])` 나 기본 목록에 이름을 넣습니다. 표식 문구는 파일에 하나뿐이어야 합니다(하네스가 검사합니다).
+**렌더러는 `renderer/` 의 파일 16개입니다**(2026-10-29, 예전 renderer.js 4,400줄을 단락 표식에서 나눔 — 코드는 그대로 옮기고 파일 머리 주석만 붙였다). 모듈이 아니라 index.html 이 태그 순서대로 싣는 클래식 스크립트들이라, 최상위 `function` · `const` · `let` 이 한 전역에 있고 서로 이름으로 부릅니다. 지킬 것 둘:
+
+- **맨 위에서 바로 도는 코드는 앞 파일의 것만 쓸 수 있습니다.** 한 파일일 때는 함수 선언이 파일 전체로 끌어올려졌지만, 나눈 뒤에는 최상위 `const` 의 초기값 · 이벤트 등록 같은 코드가 뒤 파일의 함수 · 상수를 쓰면 그 파일이 실리기 전이라 화면이 통째로 죽습니다. 함수 안에서 부르는 것은 상관없습니다(불릴 때는 모두 실려 있다). 같은 이름을 두 파일에서 선언해도 죽습니다. `tests/renderer-load.mjs` 가 태그 순서대로 따로따로 실어 봅니다.
+- **파일을 더하면 index.html 에 태그를 넣습니다.** 테스트는 그 태그 순서로 파일을 이어 붙여 예전 한 파일처럼 봅니다(`tests/_renderer.mjs` 의 `rendererSource`) — 순서의 출처는 index.html 하나이고, `tests/dom-contract.mjs` 가 태그와 파일이 짝이 맞는지 봅니다.
+
+session-ui 하네스 규칙 — 이어 붙인 렌더러를 `// 과열도 5단계` 앞(상태 선언, prelude — renderer/state.js)까지 통째로 넣고, 테스트하는 함수는 이름으로 꺼내 넣습니다. 그래서 테스트하는 함수가 쓰는 상태 선언은 그 표식 앞에 두고, 함수는 `function` 선언으로 쓰고(const 화살표 함수는 꺼내지 못합니다), `harness([...])` 나 기본 목록에 이름을 넣습니다. 표식 문구는 렌더러 전체에 하나뿐이어야 합니다(하네스가 검사합니다).
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 스물네 개**가 GitHub Actions 에서 돕니다 — `rsi` · `techniques` · `sources` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup` · `search` · `market`.
+푸시와 PR 마다 **앱을 띄우지 않는 스물다섯 개**가 GitHub Actions 에서 돕니다 — `rsi` · `techniques` · `sources` · `renderer-load` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup` · `search` · `market`.
 
-이 스물네 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
+이 스물다섯 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer/*.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
 
