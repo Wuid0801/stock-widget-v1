@@ -583,9 +583,9 @@ await test('1D with extended bars: the regular end point sits before the after b
 await test('indicators: saved value is cleaned; chips toggle, save and redraw', () => {
   const { c, run, elements } = harness(['renderIndChips']);
   assert.equal(JSON.stringify(run("cleanIndicators({ bb: true, vwap: 'yes', bogus: true })")),
-    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false}', '아는 키만, true 일 때만');
+    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false,"rsi":false}', '아는 키만, true 일 때만');
   assert.equal(JSON.stringify(run('cleanIndicators(undefined)')),
-    '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false}');
+    '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false,"rsi":false}');
   const kids = [];
   let saves = 0;
   let loads = 0;
@@ -594,8 +594,8 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   Object.assign(c, { save: () => { saves++; }, loadChart: () => { loads++; }, cssVar: (n) => n });
   run("state.indicators = cleanIndicators({ bb: true });");
   run('renderIndChips()');
-  const shown = () => kids.slice(-7);
-  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR']);
+  const shown = () => kids.slice(-8);
+  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR', 'RSI']);
   assert.equal(shown()[0].className, 'on');
   assert.equal(shown()[0].style.color, '--bb-line', '켜진 칩은 그 선의 색');
   assert.equal(shown()[1].className, undefined);
@@ -895,6 +895,185 @@ await test('indicators: drawChart draws SAR as dots on the price axis, red below
   assert.ok(dots.pointRadius > 0 && dots.pointHitRadius === 0, '점은 보이되 마우스 대상은 아니다');
   run('arg_.sar = null; drawChart(arg_);');
   assert.equal(configs.at(-1).data.datasets.some((d) => d.showLine === false), false);
+});
+
+// RSI · 시그널(보조 지표). 일봉 기간은 5년치 일봉 종가로 계산해 날짜로 맞춘다(첫 봉부터 값). 1D 는 앞 거래일 5분봉을 앞에
+// 이어 장 초반부터 값이 있고 날을 넘어 이어진다. 교차는 확정된 것만(마지막 봉은 진행 중) — 골든 · 데드와 같은 규칙.
+await test('indicators: RSI continues from the daily history, 1D from the earlier bars, and marks only finished crosses', () => {
+  const { c, run } = harness(['rsiFor']);
+  const day = 86400000;
+  const t0 = Date.parse('2026-06-01T00:00:00Z');
+  const N = 80;
+  const T = Array.from({ length: N }, (_, i) => t0 + i * day);
+  const C = Array.from({ length: N }, (_, i) => 100 + 8 * Math.sin(i / 2.5) + (i % 3));
+  // 마지막 봉(진행 중)에서 RSI 가 시그널을 뚫게 만든다 — 표시하지 않아야 한다
+  {
+    const r = c.rsiSeries(C); const g = c.rsiSignal(r);
+    C[N - 1] = C[N - 2] * (r[N - 2] < g[N - 2] ? 1.5 : 0.5);
+  }
+  const full = c.rsiSeries(C);
+  const sig = c.rsiSignal(full);
+  run(`quotes.X = { daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} } }; state.timeframe = '1M';`);
+  const r = run(`rsiFor('X', ${JSON.stringify(T.slice(-20))}, ${JSON.stringify(C.slice(-20))}, null)`);
+  assert.equal(JSON.stringify(r.data), JSON.stringify(full.slice(-20)), '5년치 흐름을 이어 받은 값 — 첫 봉부터 있다');
+  assert.equal(JSON.stringify(r.signal), JSON.stringify(sig.slice(-20)));
+  const raw = c.crossings(full.slice(-20), sig.slice(-20));
+  assert.equal(raw.at(-1).i, 19, '마지막 봉에서 뚫었다');
+  const done = raw.filter((x) => x.i < 19);
+  assert.ok(done.length >= 2, '이 가짜 주가에는 확정된 교차가 있다');
+  assert.equal(JSON.stringify(r.crosses.map((x) => [x.i, x.golden])), JSON.stringify(done.map((x) => [x.i, x.golden])),
+    '마지막 봉의 교차는 빼고');
+  assert.equal(r.rising, done.at(-1).golden, '마지막 확정 교차의 방향');
+  assert.equal(r.since, 20 - done.at(-1).i, '교차한 봉부터 센 봉 수');
+  assert.equal(r.flipAt, T.slice(-20)[done.at(-1).i]);
+
+  // 1D: 앞 거래일 봉(warm)을 앞에 잇는다 — 첫 봉부터 RSI · 시그널, 교차도 이은 흐름에서
+  run("state.timeframe = '1D';");
+  const d = run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, ${JSON.stringify(C.slice(0, 60))})`);
+  assert.equal(JSON.stringify(d.data), JSON.stringify(full.slice(60)), '앞 거래일을 이은 값');
+  assert.equal(JSON.stringify(d.signal), JSON.stringify(sig.slice(60)));
+  assert.ok(d.data[0] != null && d.signal[0] != null, '장 초반(첫 봉)부터 있다');
+  const want = c.crossings(full, sig).filter((x) => x.i >= 60 && x.i < N - 1).map((x) => x.i - 60);
+  assert.equal(JSON.stringify(d.crosses.map((x) => x.i)), JSON.stringify(want));
+  // 앞 거래일 봉을 못 받으면 오늘 봉만으로 — 앞 14봉은 빈다
+  const bare = run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, null)`);
+  assert.ok(bare.data.slice(0, 14).every((v) => v === null) && bare.data[14] != null);
+  assert.equal(run(`rsiFor('X', [1, 2], [1, 2], null)`), null, '봉이 모자라면 없다');
+
+  run("state.timeframe = '1M'; delete quotes.X;");
+  assert.equal(run(`rsiFor('X', ${JSON.stringify(T.slice(-20))}, ${JSON.stringify(C.slice(-20))}, null)`), null, '일봉이 없으면 없다');
+});
+
+await test('indicators: 1D RSI warm-up asks 5 days of 5-minute bars once a day and keeps those before the chart', async () => {
+  const { c, run } = harness(['rsiWarmFor']);
+  const asked = [];
+  let reply;
+  c.api.fetchChart = async (req) => { asked.push(req); return reply; };
+  const t = (hhmm, d = '10') => Date.parse(`2026-09-${d}T${hhmm}:00+09:00`); // 하네스의 지금은 9/10 18:30
+  reply = { ok: true, times: [t('15:20', '09'), t('15:25', '09'), t('09:00'), t('09:05')], closes: [1, 2, 3, 4] };
+  assert.deepEqual([...await c.rsiWarmFor('X', t('09:00'))], [1, 2], '차트 첫 봉 앞의 종가만');
+  assert.deepEqual(asked.map((q) => ({ ...q })), [{ symbol: 'X', range: '5d', interval: '5m' }]);
+  assert.deepEqual([...await c.rsiWarmFor('X', t('09:00'))], [1, 2]);
+  assert.equal(asked.length, 1, '차트 첫 봉 뒤에 받은 것이면 다시 받지 않는다 — 지난 날 봉은 바뀌지 않는다');
+  await c.rsiWarmFor('X', t('09:00', '11'));
+  assert.equal(asked.length, 2, '다음 날 차트(첫 봉이 받은 시각보다 뒤)는 새로 받는다');
+  reply = { ok: false, error: 'HTTP 429' };
+  assert.equal(await c.rsiWarmFor('Y', t('09:00')), null, '실패하면 null — 오늘 봉만으로 계산한다');
+  assert.equal(await c.rsiWarmFor('Y', t('09:00')), null);
+  assert.equal(asked.length, 3, '실패한 뒤 잠시는 다시 묻지 않는다');
+  run(`rsiWarmCache.get('Y').at -= RSI_WARM_RETRY;`);
+  await c.rsiWarmFor('Y', t('09:00'));
+  assert.equal(asked.length, 4, '조금 지나면 다시 묻는다');
+});
+
+await test('indicators: loadChart passes RSI on 1D, 1W and the daily periods only, warming 1D up with the earlier bars', async () => {
+  const { c, run } = harness(['loadChart', 'rsiFor']);
+  const draws = [];
+  const warms = [];
+  let bars;
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
+    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+    rsiWarmFor: async (symbol, first) => { warms.push([symbol, first]); return Array.from({ length: 30 }, (_, i) => 100 + (i % 7)); },
+  });
+  const n = 20;
+  const T = Array.from({ length: n }, (_, i) => Date.parse('2026-08-20T00:00:00Z') + i * 86400000);
+  const C = Array.from({ length: n }, (_, i) => 100 + (i % 4));
+  const D = Array.from({ length: 60 }, (_, i) => Date.parse('2026-07-11T00:00:00Z') + i * 86400000);
+  run(`let lastDrawSig = null; quotes['005930.KS'] = { price: 104, prevClose: 100, change: 4,
+    daily: { times: ${JSON.stringify(D)}, closes: ${JSON.stringify(D.map((_, i) => 100 + (i % 5)))} } };`);
+  const show = async (tf, on) => {
+    bars = { ok: true, closes: C.slice(), times: T.slice(), volumes: new Array(n).fill(1), opens: C.slice(),
+      highs: C.map((v) => v + 1), lows: C.map((v) => v - 1) };
+    run(`lastDrawSig = null; state.timeframe = '${tf}'; state.indicators = cleanIndicators({ rsi: ${on} });`);
+    await c.loadChart();
+    return draws.at(-1).rsi;
+  };
+  for (const tf of ['1D', '1W', '1M', '3M', '1Y', '3Y']) assert.ok(await show(tf, true), `${tf} 에는 그린다`);
+  assert.deepEqual(warms, [['005930.KS', T[0]]], '앞 거래일 봉은 1D 에서만, 차트 첫 봉 시각으로 묻는다');
+  assert.ok((await show('1D', true)).data[0] != null, '1D 는 첫 봉부터');
+  assert.equal(await show('전체', true), null, '전체(월봉 · 분기봉)는 그리지 않는다');
+  warms.length = 0;
+  assert.equal(await show('1D', false), null, '칩을 끄면 없다');
+  assert.equal(warms.length, 0, '칩이 꺼져 있으면 앞 거래일 봉도 받지 않는다');
+});
+
+await test('indicators: RSI legend says which side of the signal RSI has stayed on since the last cross', () => {
+  const { c, run } = harness(['renderMaLegend', 'labelFor']);
+  run(formatting);
+  const box = c.document.getElementById('maLegend');
+  const items = [];
+  const node = () => ({ style: {}, kids: [], append(t) { this.text = t; }, appendChild(k) { this.kids.push(k); } });
+  c.document.createElement = () => node();
+  box.appendChild = (s) => items.push(s);
+  Object.assign(c, { cssVar: (n) => n, maColor: () => '#000' });
+  const flip = Date.parse('2026-10-09T00:00:00Z');
+  run(`lastProfile = null; state.timeframe = '1M';
+    lastChart = { cur: 'KRW', mas: [], trends: [], rsi: { data: [null, 40, 55, 60], signal: [null, 45, 50, 52],
+      crosses: [{ i: 2, golden: true }], rising: true, since: 2, flipAt: ${flip} } };`);
+  const read = () => items.map((s) => `${s.text}=${s.kids[0].textContent}`);
+  run('hoverIdx = null; renderMaLegend();');
+  assert.equal(box.hidden, false, 'RSI 만 켜져 있어도 범례가 보인다');
+  assert.deepEqual([...read()], ['RSI=상향 2일째']);
+  assert.equal(items[0].kids[1].style.background, '--rsi-line');
+  assert.equal(items[0].title, `RSI(14) · 시그널(RSI 9봉 평균) — ${run(`labelFor(${flip}, '1M')`)} 상향 교차. `
+    + '차트 아래 옅은 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점');
+  items.length = 0;
+  run('hoverIdx = 1; renderMaLegend();');
+  assert.deepEqual([...read()], ['RSI=상향 2일째'], '마우스를 올려도 그대로 — 그 봉의 값은 툴팁에 있다');
+  items.length = 0;
+  const at = Date.parse('2026-10-15T13:20:00+09:00');
+  run(`hoverIdx = null; state.timeframe = '1D'; lastChart.rsi.rising = false; lastChart.rsi.flipAt = ${at}; renderMaLegend();`);
+  assert.deepEqual([...read()], [`RSI=하향 · ${run(`labelFor(${at}, '1D')`)}부터`], '1D 는 교차 시각');
+  items.length = 0;
+  run('lastChart.rsi.rising = null; lastChart.rsi.since = null; lastChart.rsi.flipAt = null; renderMaLegend();');
+  assert.deepEqual([...read()], ['RSI=60 · 시그널 52'], '확정된 교차가 없으면 지금 값');
+});
+
+await test('indicators: drawChart puts RSI and its signal faintly in the volume strip, with dots on finished crosses', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
+  });
+  run(`state.timeframe = '1M';
+    var C_ = [100, 101, 102, 103];
+    var arg_ = { closes: C_, times: [1, 2, 3, 4], up: true, volumes: [1, 1, 1, 1], highs: C_, lows: C_,
+      rsi: { data: [null, 40, 55, 60], signal: [null, 45, 50, 52], crosses: [{ i: 2, y: 55, golden: true }],
+        rising: true, since: 2, flipAt: 3 } };`);
+  run('drawChart(arg_);');
+  const cfg = configs.at(-1);
+  const axis = cfg.options.scales.yRsi;
+  assert.equal(axis.display, false, '거래량 축처럼 눈금 없이');
+  assert.equal(axis.min, 0);
+  assert.equal(axis.max, 100 / run('RSI_BAND'), '0~100 이 차트 아래 RSI_BAND 만큼');
+  const on = cfg.data.datasets.filter((d) => d.yAxisID === 'yRsi');
+  assert.ok(on.every((d) => d.order < 0 && d.order > -1), '거래량 막대(0) 위 · 추세선(-1) 아래');
+  assert.ok(on.every((d) => !d.pointHitRadius), '마우스 대상은 주가선 하나다');
+  const line = on.find((d) => JSON.stringify(d.data) === '[null,40,55,60]' && d.showLine !== false);
+  assert.equal(line.borderColor, 'a0.7', 'RSI 는 옅은 실선');
+  assert.equal(line.borderDash, undefined);
+  const sig = on.find((d) => JSON.stringify(d.data) === '[null,45,50,52]');
+  assert.ok(sig.borderDash, '시그널은 점선');
+  assert.ok(on.some((d) => d.data.every((v) => v === 30)) && on.some((d) => d.data.every((v) => v === 70)), '30 · 70 기준선');
+  const dots = on.find((d) => d.showLine === false);
+  assert.equal(JSON.stringify(dots.data), '[null,null,55,null]', '확정된 교차 봉에만 점');
+  assert.equal(dots.pointBackgroundColor[2], run('UP'), '위로 뚫으면 빨강');
+  const footer = cfg.options.plugins.tooltip.callbacks.footer([{ datasetIndex: 0, dataIndex: 2, dataset: {} }]);
+  assert.ok(footer.includes('RSI 55.0 · 시그널 50.0'), '툴팁에 그 봉의 RSI · 시그널');
+  assert.equal(cfg.options.plugins.tooltip.callbacks.footer([{ datasetIndex: 0, dataIndex: 0, dataset: {} }])
+    .some((l) => l.startsWith('RSI')), false, '값이 없는 봉은 줄이 없다');
+  run('arg_.rsi = { ...arg_.rsi, crosses: [{ i: 1, y: 40, golden: false }] }; drawChart(arg_);');
+  assert.equal(configs.at(-1).data.datasets.find((d) => d.yAxisID === 'yRsi' && d.showLine === false).pointBackgroundColor[1],
+    run('DOWN'), '아래로 뚫으면 파랑');
+  run('arg_.rsi = null; drawChart(arg_);');
+  assert.equal(configs.at(-1).data.datasets.some((d) => d.yAxisID === 'yRsi'), false);
+  assert.equal(configs.at(-1).options.scales.yRsi, undefined, 'RSI 를 끄면 축도 없다');
 });
 
 // 지수 대비 수익률(보조 지표): 기간 배지에 종목 수익률 - 같은 기간 지수 수익률(%p).
@@ -1406,7 +1585,7 @@ await test('rank: the three panels (search, settings, rank) close each other, an
 // 차트만 보기: 버튼 하나로 덧그림(이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지)을 다 끈다.
 // 칩 설정은 그대로라 다시 누르면 돌아온다. 가격과 거래량 막대는 남는다.
 await test('plain chart: one switch hides every overlay and keeps price and volume; switching back restores them', async () => {
-  const { c, run, elements } = harness(['loadChart', 'alignByDay', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange', 'maFor']);
+  const { c, run, elements } = harness(['loadChart', 'alignByDay', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange', 'maFor', 'rsiFor']);
   const draws = [];
   const asked = [];
   const periods = [];
@@ -1418,7 +1597,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
     renderPeriod: (...a) => periods.push(a),
     renderCrossBadge: (x) => badges.push(`cross ${x.length}`), renderTrendBadges: (x) => badges.push(`trend ${x.length}`),
     trendLine: () => ({ from: 0, to: 1 }), breakoutOf: () => false, // 추세선이 늘 하나씩 나오게
-    drawChart: (data) => draws.push(data),
+    drawChart: (data) => draws.push(data), rsiWarmFor: async () => null,
   });
   const day = 86400000;
   const t0 = Date.parse('2026-07-28T00:00:00Z');
@@ -1431,7 +1610,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
     dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(V)} },
     recentBars: { times: [${Date.parse('2026-09-09T00:00:00Z')}, ${Date.parse('2026-09-10T00:00:00Z')}], highs: [110, 120], lows: [90, 95] } };
     state.maPeriods = [5]; state.holdings = { '005930.KS': { qty: 1, avg: 101 } };
-    state.indicators = cleanIndicators({ bb: true, vwap: true, volAvg: true, prevHL: true, vp: true, rel: true });`);
+    state.indicators = cleanIndicators({ bb: true, vwap: true, volAvg: true, prevHL: true, vp: true, rel: true, rsi: true });`);
   const daily = { ok: true, closes: C.slice(-22), times: T.slice(-22), volumes: V.slice(-22),
     opens: C.slice(-22), highs: C.slice(-22), lows: C.slice(-22) };
   const T1 = (s) => Date.parse(`2026-09-10T${s}:00+09:00`);
@@ -1446,7 +1625,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   };
 
   let d = await show('3M', false, daily);
-  assert.ok(d.mas.length && d.bands && d.volAvg && d.profile && d.trends.length && d.hLines.length, '켜 둔 덧그림이 다 있다');
+  assert.ok(d.mas.length && d.bands && d.volAvg && d.profile && d.rsi && d.trends.length && d.hLines.length, '켜 둔 덧그림이 다 있다');
   assert.deepEqual([...asked], ['005930.KS', '^KS11']);
   const drawn = draws.length;
   const shownPeriods = periods.length;
@@ -1459,6 +1638,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   assert.equal(d.volAvg, null);
   assert.equal(d.vwapLine, null);
   assert.equal(d.profile, false);
+  assert.equal(d.rsi, null);
   assert.deepEqual([...d.closes], C.slice(-22), '가격은 그대로');
   assert.deepEqual([...d.volumes], V.slice(-22), '거래량 막대는 남는다');
   assert.deepEqual([...asked], ['005930.KS'], '지수 대비를 안 보이므로 지수 차트도 받지 않는다');
@@ -1466,7 +1646,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   assert.equal(periods.length, shownPeriods);
   assert.deepEqual(badges.slice(-2), ['cross 0', 'trend 0'], '교차 · 추세 배지도 비운다');
   assert.equal(JSON.stringify(run('state.indicators')),
-    '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true,"sar":false}', '칩 설정은 지우지 않는다');
+    '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true,"sar":false,"rsi":true}', '칩 설정은 지우지 않는다');
   assert.equal(JSON.stringify(run('state.maPeriods')), '[5]');
 
   d = await show('1D', true, oneDay);

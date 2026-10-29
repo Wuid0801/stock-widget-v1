@@ -4,7 +4,7 @@
 // 널리 쓰이는 technicalindicators 라이브러리의 RSI 와 소수 2자리까지
 // 전부 일치함을 확인했다(Wilder 예제 + 실제 국내 5종목 일봉, 총 1166개 값).
 // 여기서는 외부 의존성 없이 그 결과를 고정해 두어 구현이 바뀌면 잡히게 한다.
-import { calcRSI, weekCloses } from '../indicators.js';
+import { calcRSI, weekCloses, rsiSeries, rsiSignal, sma } from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -57,6 +57,32 @@ check('빈 배열도 안전하게 null', calcRSI([]) === null);
   const w = weekCloses(t, c);
   check('주봉 RSI 는 주간 종가 RSI', w.length === 29 && calcRSI(w) === calcRSI(w.slice()) && calcRSI(w) > 0, `${w.length}주 ${calcRSI(w)}`);
   check('주간 종가가 15개 미만이면 null', calcRSI(weekCloses(t.slice(0, 90), c.slice(0, 90))) === null);
+}
+
+// 봉마다의 RSI(차트의 RSI 선) — 같은 와일더 계산이라 i 번째 값은 처음부터 i 번째 봉까지의 calcRSI 다. 앞 14봉은 빈 칸.
+{
+  const s = rsiSeries(CLOSES);
+  check('봉 수 그대로', s.length === CLOSES.length);
+  check('앞 14봉은 null', s.slice(0, 14).every((v) => v === null));
+  check('봉마다 calcRSI 와 같다', s.slice(14).every((v, k) => v === calcRSI(CLOSES.slice(0, 15 + k))));
+  check('15개 미만이면 전부 null', rsiSeries(CLOSES.slice(0, 14)).every((v) => v === null) && rsiSeries([]).length === 0);
+  check('변동이 없으면 50 · 상승만이면 100', rsiSeries(Array(20).fill(7))[19] === 50
+    && rsiSeries(Array.from({ length: 20 }, (_, i) => i))[19] === 100);
+  // 시간외 빈 칸을 채운 평평한 봉(직전 종가 그대로)은 평균 상승 · 하락을 같은 비율로 줄여 RSI 를 움직이지 않는다
+  const flat = rsiSeries([...CLOSES, ...Array(5).fill(CLOSES.at(-1))]);
+  check('평평한 봉은 RSI 를 바꾸지 않는다', flat.slice(-6).every((v) => Math.abs(v - s.at(-1)) < 1e-9));
+}
+
+// RSI 시그널 — RSI 의 단순 평균(기본 9봉). RSI 의 빈 칸은 건너뛰고 RSI 가 9개 모인 봉부터.
+{
+  const r = rsiSeries(CLOSES);
+  const g = rsiSignal(r);
+  check('봉 수 그대로', g.length === r.length);
+  check('RSI 가 9개 모이기 전(22봉)은 null', g.slice(0, 22).every((v) => v === null) && g[22] != null);
+  const want = sma(r.slice(14), 9);
+  check('RSI 의 9봉 평균', g.slice(14).every((v, k) => (v === null ? want[k] === null : Math.abs(v - want[k]) < 1e-9)));
+  check('기간을 바꿀 수 있다', rsiSignal(r, 6)[19] != null && rsiSignal(r, 6)[18] === null);
+  check('RSI 가 없으면 전부 null', rsiSignal([null, null]).every((v) => v === null));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

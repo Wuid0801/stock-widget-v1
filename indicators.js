@@ -29,6 +29,40 @@ function calcRSI(closes, period = 14) {
   return 100 - 100 / (1 + gain / loss);
 }
 
+// 봉마다의 RSI(차트의 RSI 선) — calcRSI 와 같은 계산이라 i 번째 값은 처음부터 i 번째 봉까지의 calcRSI 다.
+// 앞 period 봉은 null.
+function rsiSeries(closes, period = 14) {
+  const out = new Array(closes.length).fill(null);
+  if (closes.length < period + 1) return out;
+
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gain += d; else loss -= d;
+  }
+  gain /= period;
+  loss /= period;
+  const rsi = () => (loss === 0 ? (gain === 0 ? 50 : 100) : 100 - 100 / (1 + gain / loss));
+  out[period] = rsi();
+
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    gain = (gain * (period - 1) + Math.max(d, 0)) / period;
+    loss = (loss * (period - 1) + Math.max(-d, 0)) / period;
+    out[i] = rsi();
+  }
+  return out;
+}
+
+// RSI 시그널 — RSI 의 단순 평균. 앞쪽 빈 칸(null)은 건너뛰고 RSI 가 period 개 모인 봉부터.
+function rsiSignal(rsi, period = 9) {
+  const out = new Array(rsi.length).fill(null);
+  const start = rsi.findIndex((v) => v != null);
+  if (start < 0) return out;
+  sma(rsi.slice(start), period).forEach((v, k) => { out[start + k] = v; });
+  return out;
+}
+
 // 단순이동평균. 구간이 모자라는 앞부분은 null (Chart.js가 알아서 비워 둔다)
 function sma(closes, period) {
   const out = new Array(closes.length).fill(null);
@@ -472,7 +506,7 @@ function meetAt(a, b) {
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
-    calcRSI, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    calcRSI, rsiSeries, rsiSignal, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,

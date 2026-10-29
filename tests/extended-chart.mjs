@@ -414,6 +414,23 @@ const krxPathOf = (u) => u.replace('https://api.stock.naver.com/chart/domestic/'
   krxReply = (url) => (url.includes('/item/028260/minute?startDateTime=202610270000') ? [minute('2026-10-27T10:58', 1000)] : []);
   r = await oneDay('028260.KS', false);
   check('다음 요청에서 받으면 네이버로', r.realtime === true && r.closes.at(-1) === 1000, JSON.stringify(r).slice(0, 200));
+
+  // 1D RSI 의 앞 거래일 봉(5d · 5m, 렌더러 rsiWarmFor): 국내는 네이버 정규장 5분봉 — 야후 국내 5분봉은 15:00 뒤 봉이 없다
+  // (2026-10-29 실측 삼성전자 날마다 09:00~14:55). 1W 처럼 최근 다섯 거래일이되 30분으로 묶지 않는다.
+  krxCalls.length = 0; yahooCalls.length = 0;
+  NOW = kst('2026-10-27T10:00');
+  krxReply = (url) => {
+    if (url.includes('/item/009150/day?')) return ['20261020', '20261021', '20261022', '20261023', '20261026'].map((d) => ({ localDate: d }));
+    const m = /item\/009150\/minute\?startDateTime=(\d{4})(\d{2})(\d{2})0000/.exec(url);
+    if (!m) return [];
+    const d = `${m[1]}-${m[2]}-${m[3]}`;
+    return [minute(`${d}T09:00`, 90), minute(`${d}T15:12`, 94), minute(`${d}T15:30`, 95, 1000)];
+  };
+  r = await handlers['yf:chart']({}, { symbol: '009150.KS', range: '5d', interval: '5m' });
+  check('5d · 5m 도 국내는 네이버 — 최근 다섯 거래일(오늘 포함)의 정규장 5분봉, 15:00 뒤 봉까지', r.ok && r.realtime === true
+    && same(r.times.map(md), ['10-21', '10-22', '10-23', '10-26', '10-27'].flatMap((d) => [`${d} 09:00`, `${d} 15:10`, `${d} 15:30`])),
+    weekRuns(r));
+  check('5d · 5m 은 야후를 묻지 않는다', !yahooCalls.some((u) => u.includes('009150')), yahooCalls.join(' '));
   krxReply = () => [];
 }
 

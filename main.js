@@ -1382,11 +1382,10 @@ async function naverDaysBefore(path, now) {
   return days;
 }
 
-// 국내 1D(5분봉) · 1W(30분봉)의 정규장 봉. 보일 날이 없으면 빈 배열.
-async function naverIntraday(path, now, week) {
+// 국내 1D(5분봉) · 1W(30분봉)의 정규장 봉. 보일 날이 없으면 빈 배열. want 는 거래일 수 — 1D RSI 의 앞 거래일 봉은 5일치 5분봉.
+async function naverIntraday(path, now, week, want = week ? 5 : 1) {
   const today = kstDay(now);
   const todayBars = await naverRegular(path, today, now);
-  const want = week ? 5 : 1;
   let days = todayBars.length ? [today] : [];
   if (days.length < want) days = [...(await naverDaysBefore(path, now)).slice(-(want - days.length)), ...days];
   const bars = (await Promise.all(days.map((d) => (d === today ? todayBars : naverRegular(path, d, now))))).flat();
@@ -1509,11 +1508,14 @@ ipcMain.handle('yf:chart', async (_e, req) => {
     } catch { /* 야후로 */ }
   }
   // 국내 1D · 1W 정규장은 네이버 실시간 분봉(naverIntraday). 실패하거나 비면 아래 야후(20분 지연)로 그린다.
-  const kr = (range === '1d' && interval === '5m') || week ? krPath(symbol) : null;
+  // 5d · 5m 은 1D RSI 의 앞 거래일 봉(렌더러 rsiWarmFor)이다 — 야후 국내 5분봉은 15:00 뒤 봉이 없다(2026-10-29 실측 삼성전자
+  // 날마다 09:00~14:55). 1W 처럼 다섯 거래일이되 30분으로 묶지 않는다.
+  const warm = range === '5d' && interval === '5m';
+  const kr = (range === '1d' && interval === '5m') || week || warm ? krPath(symbol) : null;
   if (kr) {
     try {
       const now = Date.now();
-      const bars = await naverIntraday(kr, now, week);
+      const bars = await naverIntraday(kr, now, week, warm ? 5 : undefined);
       if (bars.length) {
         const series = await withExt(toSeries(bars), krExt, now, week);
         // realtime: 봉이 지금까지 있다 — 렌더러가 1D 끝에 현재가를 덧붙이지 않는다(intradayEnd)

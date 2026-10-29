@@ -67,6 +67,7 @@ const INDICATORS = [
   { key: 'vp', label: '매물대', varName: '--vp-poc', title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
   { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%p)과, 첫 봉을 종목 가격에 맞춘 지수 점선 — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
   { key: 'sar', label: 'SAR', varName: '--sar-up', title: '파라볼릭 SAR — 상승 추세면 봉 아래, 하락 추세면 봉 위에 점. 범례에 지금 방향과 전환 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
+  { key: 'rsi', label: 'RSI', varName: '--rsi-line', title: 'RSI(14)와 시그널(RSI 9봉 평균) — 차트 아래 거래량 칸에 옅은 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점. 범례에 지금 방향과 교차 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
 ];
 const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸 약 7px
 const BB_PERIOD = 20;
@@ -75,6 +76,12 @@ const VOL_AVG = 20;   // 거래량 평균 봉 수
 const VOL_SURGE = 2;  // 평균의 몇 배부터 막대를 진하게 칠하나
 const SAR_STEP = 0.02; // 파라볼릭 SAR 가속 — 흔한 기본값(와일더)
 const SAR_MAX = 0.2;
+const RSI_PERIOD = 14; // RSI(보조 지표) — 과열도 배지와 같은 RSI(14)
+const RSI_SIGNAL = 9;  // 시그널 = RSI 의 이 봉 수 평균(증권사에 따라 6 을 쓰기도 한다)
+const RSI_BAND = 0.3;  // RSI 0~100 을 차트 아래 이만큼(높이 비율)에 — 거래량 칸(아래 1/4)과 겹친다
+const RSI_TF = new Set(['1D', '1W', '1M', '3M', '1Y', '3Y']); // 전체(월봉 · 분기봉)는 SAR 처럼 뺀다
+const RSI_WARM_RETRY = 5 * 60000; // 1D 의 앞 거래일 봉을 못 받으면 이만큼 뒤에 다시 묻는다
+const rsiWarmCache = new Map(); // 종목 → { at, times, closes } — 1D RSI 의 앞 거래일 5분봉(closes null = 실패)
 // 저장된 값을 믿지 않는다 — 아는 키만, true 일 때만 켠다.
 const cleanIndicators = (raw) => Object.fromEntries(INDICATORS.map(({ key }) => [key, !!raw && raw[key] === true]));
 
@@ -1649,7 +1656,8 @@ function renderMaLegend() {
   const vp = lastChart ? lastProfile : null;
   const sr = (lastChart && lastChart.sar) || null;
   const bl = (lastChart && lastChart.benchLine) || null;
-  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr && !bl;
+  const rs = (lastChart && lastChart.rsi) || null;
+  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr && !bl && !rs;
   box.innerHTML = '';
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
@@ -1701,6 +1709,24 @@ function renderMaLegend() {
     add('SAR', hoverIdx != null ? sr.data[hoverIdx] : intraday ? `${dir} · ${when}부터` : `${dir} ${sr.since}일째`,
       cssVar(sr.rising ? '--sar-up' : '--sar-down'),
       `파라볼릭 SAR — ${when} ${dir} 전환 (가속 ${SAR_STEP} · 최대 ${SAR_MAX}). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위`);
+  }
+  // RSI 는 SAR 처럼 지금 상태 — 마지막 확정 교차 뒤 RSI 가 시그널 위(상향)인지 아래(하향)인지와 그 기간. 확정된 교차가
+  // 없으면 마지막 값. 마우스를 올려도 그대로다 — 그 봉의 값은 툴팁에 있다.
+  if (rs) {
+    const head = `RSI(${RSI_PERIOD}) · 시그널(RSI ${RSI_SIGNAL}봉 평균)`;
+    const dots = '차트 아래 옅은 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점';
+    if (rs.rising == null) {
+      const lastOf = (a) => a.filter((v) => v != null).pop();
+      const r = lastOf(rs.data); const g = lastOf(rs.signal);
+      add('RSI', `${r.toFixed(0)}${g != null ? ` · 시그널 ${g.toFixed(0)}` : ''}`, cssVar('--rsi-line'),
+        `${head} — 보이는 구간에 확정된 교차가 없습니다. ${dots}`);
+    } else {
+      const dir = rs.rising ? '상향' : '하향';
+      const intraday = state.timeframe === '1D' || state.timeframe === '1W';
+      const when = labelFor(rs.flipAt, intraday ? state.timeframe : '1M');
+      add('RSI', intraday ? `${dir} · ${when}부터` : `${dir} ${rs.since}일째`, cssVar('--rsi-line'),
+        `${head} — ${when} ${dir} 교차. ${dots}`);
+    }
   }
   // 매물대는 가장 많이 거래된 가격대(진하게 칠한 칸)를 늘 보여 준다
   if (vp) {
@@ -2099,7 +2125,7 @@ function drawChart(arg) {
   const {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
-    bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, benchLine = null, tipBases = null,
+    bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, rsi = null, benchLine = null, tipBases = null,
   } = arg;
   const color = up ? UP : DOWN;
   // 툴팁 가격 옆 등락률(%). 기준(tipBases, loadChart 가 만든다)이 없으면 null
@@ -2126,6 +2152,7 @@ function drawChart(arg) {
   // 확대 중에는 보이는 구간의 최댓값으로 — 전체 최댓값이면 막대가 납작해진다.
   const shownVol = zr ? volumes.slice(zr.from, zr.to + 1) : volumes;
   const maxVol = shownVol.length ? Math.max(...shownVol) : 0;
+  const rsiDot = new Map((rsi ? rsi.crosses : []).map((x) => [x.i, x.golden])); // RSI 교차 봉 → 위로 뚫었는지
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
@@ -2139,7 +2166,7 @@ function drawChart(arg) {
         data: closes,
         yAxisID: 'y',
         // Chart.js 는 order 가 큰 것부터 그린다(4.5.1: 오름차순 정렬 후 뒤에서부터) — 아래부터
-        // 이동평균(3) · 주가선(2) · 고저 밴드(1) · 거래량(0) · 추세선(-1). 밴드 · 막대는 옅어서
+        // 이동평균(3) · 주가선(2) · 고저 밴드(1) · 거래량(0) · RSI(-0.5) · 추세선(-1). 밴드 · 막대는 옅어서
         // 주가선을 가리지 않는다.
         order: 2,
         borderColor: candles ? 'transparent' : color,
@@ -2320,6 +2347,53 @@ function drawChart(arg) {
         fill: false,
         spanGaps: false,
       }] : []),
+      // RSI · 시그널(보조 지표) — 거래량처럼 숨긴 축(yRsi)으로 차트 아래 RSI_BAND 만 쓴다. RSI 는 옅은 실선, 시그널은 점선,
+      // 30 · 70 은 아주 옅은 점선. 시그널을 뚫은 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 막대(0) 위 ·
+      // 추세선(-1) 아래에 그린다. 그 봉의 값은 툴팁 footer, 지금 상태는 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
+      ...(rsi ? [...[30, 70].map((v) => ({
+        data: closes.map(() => v),
+        yAxisID: 'yRsi',
+        order: -0.5,
+        borderColor: cssVar('--grid'),
+        borderWidth: 1,
+        borderDash: [2, 3],
+        pointRadius: 0,
+        pointHitRadius: 0,
+        fill: false,
+      })), {
+        data: rsi.signal,
+        yAxisID: 'yRsi',
+        order: -0.5,
+        borderColor: cssVar('--mute'),
+        borderWidth: 1,
+        borderDash: [3, 2],
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.2,
+        fill: false,
+        spanGaps: false,
+      }, {
+        data: rsi.data,
+        yAxisID: 'yRsi',
+        order: -0.5,
+        borderColor: hexA(cssVar('--rsi-line'), 0.7),
+        borderWidth: 1.2,
+        pointRadius: 0,
+        pointHitRadius: 0,
+        tension: 0.2,
+        fill: false,
+        spanGaps: false,
+      }, {
+        data: closes.map((_, i) => (rsiDot.has(i) ? rsi.data[i] : null)),
+        yAxisID: 'yRsi',
+        order: -0.5,
+        showLine: false,
+        pointRadius: 2.2,
+        pointHoverRadius: 2.2,
+        pointHitRadius: 0,
+        pointBorderWidth: 0,
+        pointBackgroundColor: closes.map((_, i) => (rsiDot.get(i) ? UP : DOWN)),
+      }] : []),
       ],
     },
     options: {
@@ -2405,6 +2479,10 @@ function drawChart(arg) {
                 const avg = volAvg && volAvg[v.dataIndex];
                 lines.push(`거래량 ${fmtVol(v.parsed.y)}${avg > 0 ? ` · 평균의 ${(v.parsed.y / avg).toFixed(1)}배` : ''}`);
               }
+              // RSI(보조 지표) — 그 봉의 RSI · 시그널. 범례는 지금 상태만 말한다.
+              if (rsi && rsi.data[i] != null) {
+                lines.push(`RSI ${rsi.data[i].toFixed(1)}${rsi.signal[i] != null ? ` · 시그널 ${rsi.signal[i].toFixed(1)}` : ''}`);
+              }
               return lines;
             },
           },
@@ -2432,6 +2510,13 @@ function drawChart(arg) {
           max: maxVol * 4,
           grid: { display: false },
         },
+        // RSI 전용 축(보조 지표). 0~100 을 차트 아래 RSI_BAND 만큼에 — 거래량 칸과 겹치고, 옅은 선이라 막대가 비친다.
+        ...(rsi ? { yRsi: {
+          display: false,
+          min: 0,
+          max: 100 / RSI_BAND,
+          grid: { display: false },
+        } } : {}),
       },
     },
   });
@@ -2622,6 +2707,52 @@ function sarFor(symbol, times, highs, lows, ext) {
   const up = new Array(times.length).fill(null);
   idx.forEach((i, j) => { data[i] = r.sar[pre + j]; up[i] = r.up[pre + j]; });
   return { data, up, rising: r.up[last], since: last - k + 1, flipAt: ts[k] };
+}
+
+// RSI · 시그널(보조 지표). 일봉 기간은 이동평균처럼 5년치 일봉 종가(오늘 봉은 현재가)로 계산해 날짜로 맞춘다 — 첫 봉부터 값이
+// 있다. 1D 는 앞 거래일 5분봉(warm — 차트 첫 봉 앞의 종가들, rsiWarmFor)을 앞에 이어 장 초반부터 값이 있고 증권사 앱처럼 날을
+// 넘어 이어진다. 1W 와 warm 이 없는 1D 는 받은 봉만으로(앞 14봉이 빈다). 시간외 봉도 그대로 잇는다 — 빈 칸을 채운 평평한 봉은
+// RSI 를 움직이지 않는다. 교차는 확정된 것만(마지막 봉은 진행 중) — 골든 · 데드와 같은 규칙(confirmedCrosses).
+// 돌려주는 값: { data, signal, crosses, rising(마지막 확정 교차가 위로인지, 없으면 null), since(그 봉부터 센 봉 수), flipAt } | null
+function rsiFor(symbol, times, closes, warm) {
+  let data; let signal; let found;
+  if (TF[state.timeframe].interval === '1d') {
+    const d = quotes[symbol] && quotes[symbol].daily;
+    if (!d) return null;
+    const r = rsiSeries(d.closes, RSI_PERIOD);
+    data = alignByDay(d.times, r, times);
+    if (!data) return null;
+    signal = alignByDay(d.times, rsiSignal(r, RSI_SIGNAL), times) || times.map(() => null);
+    found = crossings(data, signal);
+  } else {
+    const pre = warm || [];
+    const r = rsiSeries([...pre, ...closes], RSI_PERIOD);
+    const g = rsiSignal(r, RSI_SIGNAL);
+    data = r.slice(pre.length);
+    signal = g.slice(pre.length);
+    // 첫 봉의 교차는 앞 거래일 마지막 봉과 견준다
+    found = crossings(r, g).filter((c) => c.i >= pre.length).map((c) => ({ ...c, i: c.i - pre.length }));
+  }
+  if (!data.some((v) => v != null)) return null;
+  const crosses = confirmedCrosses(found, times.length);
+  const last = crosses[crosses.length - 1];
+  return { data, signal, crosses, rising: last ? last.golden : null, since: last ? times.length - last.i : null,
+    flipAt: last ? times[last.i] : null };
+}
+
+// 1D RSI 의 앞 거래일 5분봉 — 차트 첫 봉(first) 앞의 종가들. 5일치 5분봉(정규장)을 받는다 — 국내는 main 이 네이버 KRX 분봉으로
+// 준다(야후 국내 5분봉은 15:00 뒤 봉이 없다). 지난 날 봉은 바뀌지 않아 차트 첫 봉 뒤에 받은 것이면 다시 받지 않는다(날이 바뀔 때
+// 한 번 꼴). 실패하면
+// null(오늘 봉만으로 계산한다 — 장 초반이 빈다)이고 RSI_WARM_RETRY 동안 다시 묻지 않는다.
+async function rsiWarmFor(symbol, first) {
+  let hit = rsiWarmCache.get(symbol);
+  const fresh = hit && (hit.closes ? hit.at >= first : Date.now() - hit.at < RSI_WARM_RETRY);
+  if (!fresh) {
+    const r = await api.fetchChart({ symbol, range: '5d', interval: '5m' }).catch(() => null);
+    hit = { at: Date.now(), times: r && r.ok ? r.times : null, closes: r && r.ok ? r.closes : null };
+    rsiWarmCache.set(symbol, hit);
+  }
+  return hit.closes ? hit.closes.filter((_, i) => hit.times[i] < first) : null;
 }
 
 // 거래량 평균. 일봉 기간은 5년치 일봉 거래량으로(첫 봉부터 평균이 있다).
@@ -2862,6 +2993,10 @@ async function loadChart() {
       : `${item.name} 차트: ${r.error}`);
     return;
   }
+  // RSI(보조 지표)의 1D 는 앞 거래일 5분봉을 앞에 잇는다 — 차트 첫 봉 앞의 종가들(하루 한 번 받는다, rsiWarmFor)
+  const rsiWarm = !plain && state.indicators && state.indicators.rsi && state.timeframe === '1D' && r.times.length
+    ? await rsiWarmFor(item.symbol, r.times[0]) : null;
+  if (seq !== chartSeq) return;
 
   err(quoteErrText());
   const q = quotes[item.symbol];
@@ -2994,6 +3129,7 @@ async function loadChart() {
   const sar = !ind.sar ? null
     : daily ? sarFor(item.symbol, times, highs, lows)
       : state.timeframe === '1D' || state.timeframe === '1W' ? sarFor(item.symbol, times, highs, lows, ext) : null;
+  const rsi = ind.rsi && RSI_TF.has(state.timeframe) ? rsiFor(item.symbol, times, closes, rsiWarm) : null;
   // 지수 비교선 — 배지 때문에 이미 받은 지수 차트로(새 요청 없음)
   const bline = benchLine(bench, benchGot, times, closes);
   const tips = tipBases(item.symbol, times, closes); // 툴팁 가격 옆 등락률의 기준
@@ -3044,6 +3180,8 @@ async function loadChart() {
     + `|${INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join('')}`
     // 지수 비교선의 끝(실시간 지수) — 종목은 그대로여도 지수가 움직이면 다시 그린다
     + `|${bline ? bline.data[bline.data.length - 1] : ''}`
+    // RSI — 앞 거래일 봉(1D)이 늦게 와도 봉은 그대로라, 첫 값의 자리와 마지막 값을 본다
+    + `|${rsi ? `${rsi.data.findIndex((v) => v != null)}:${rsi.data[rsi.data.length - 1]}` : ''}`
     // 차트만 보기 — 이동평균 · 가로선이 없던 화면이면 위 값이 같아도 추세선이 남는다
     + `|${plain}`
     // 정규장 / 전체 — NXT 에 없는 종목(ETF 등)은 두 응답이 똑같아, 서명에 없으면 다시 그리지 않아 버튼 글자도 그대로였다
@@ -3054,7 +3192,7 @@ async function loadChart() {
 
   drawChart({
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, benchLine: bline, tipBases: tips,
+    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, rsi, benchLine: bline, tipBases: tips,
     profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
   });
 }
