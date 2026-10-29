@@ -503,6 +503,118 @@ function meetAt(a, b) {
   return (by - ay) / (a.slope - b.slope);
 }
 
+// --- 기법 점검(지표 화면) --------------------------------------------------------
+// 일봉 종가(오늘 봉은 현재가) · 거래량으로 흔히 쓰는 기법의 지금 상태를 센다. 매매 신호가 아니라 참고용이다.
+// volumes 는 closes 와 같은 봉끼리 짝지은 배열이다(없는 날은 null). 마지막 봉은 진행 중일 수 있어 거래량에서는 뺀다.
+
+// 추세 추종 — 종가가 period 일선 위면 보유, 아래면 현금으로 보는 규칙. days 는 그 상태가 이어진 봉 수(오늘 포함).
+// 봉이 period 개보다 적으면 null.
+function trendFollow(closes, period = 200) {
+  if (!closes || closes.length < period) return null;
+  const ma = sma(closes, period);
+  const n = closes.length - 1;
+  const above = closes[n] > ma[n];
+  let days = 0;
+  for (let i = n; i >= 0 && ma[i] != null && (closes[i] > ma[i]) === above; i--) days++;
+  return { above, ma: ma[n], days };
+}
+
+// 모멘텀 12-1 — 최근 한 달(skip 거래일)을 뺀 12개월(long 거래일) 수익률(%). 마지막 한 달은 단기 되돌림이 섞여 빼는 것이
+// 흔한 정의다. 봉이 모자라면 null.
+function momentum(closes, long = 252, skip = 21) {
+  if (!closes || closes.length <= long) return null;
+  const n = closes.length - 1;
+  const from = closes[n - long];
+  const to = closes[n - skip];
+  return from > 0 && to > 0 ? (to / from - 1) * 100 : null;
+}
+
+// 적립식 — 최근 months 달(이번 달 포함) 매달 첫 거래일 종가에 같은 금액을 샀을 때의 평균 단가(같은 금액이라 조화평균)와
+// 마지막 종가 대비(%). 달은 봉 시각의 UTC 날짜로 가른다(국내 일봉 00:00 UTC = 09:00 KST, 미국 13:30 UTC — 그 시장 날짜).
+// 첫 달 앞의 봉이 없으면(그달 첫 거래일인지 모른다 — 최근 상장) null.
+function dcaCost(times, closes, months = 12) {
+  if (!times || times.length < 2) return null;
+  const mon = (t) => { const d = new Date(t); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+  const n = times.length - 1;
+  const first = mon(times[n]) - (months - 1);
+  if (mon(times[0]) >= first) return null;
+  let buys = 0;
+  let inv = 0;
+  for (let i = 1; i <= n; i++) {
+    const m = mon(times[i]);
+    if (m >= first && m !== mon(times[i - 1]) && closes[i] > 0) { buys++; inv += 1 / closes[i]; }
+  }
+  if (!buys) return null;
+  const avg = buys / inv;
+  return { avg, buys, pct: (closes[n] / avg - 1) * 100 };
+}
+
+// 반등 점검(데드캣) — 최근 lookback 봉의 최고 종가에서 drop(%) 넘게 빠진 뒤(그 뒤의 최저 종가) 반등 중일 때만.
+// 되돌림(%) = 저점에서 오른 폭 / 고점~저점 폭. 20일선 위아래 · RSI(14) · 반등 거래량(저점 뒤 확정된 봉의 평균 / 고점 뒤
+// 저점까지의 평균 — 하락만큼 힘이 실렸는지). 덜 빠졌거나 아직 저점이면(마지막 봉이 최저) null.
+function reboundCheck(closes, volumes, lookback = 60, drop = 15) {
+  if (!closes || closes.length < lookback) return null;
+  const n = closes.length - 1;
+  let hi = n - lookback + 1;
+  for (let i = hi; i <= n; i++) if (closes[i] > closes[hi]) hi = i;
+  let lo = hi;
+  for (let i = hi; i <= n; i++) if (closes[i] < closes[lo]) lo = i;
+  const dropPct = (closes[lo] / closes[hi] - 1) * 100;
+  if (dropPct > -drop || !(closes[n] > closes[lo])) return null;
+  const avg = (from, to) => {
+    const v = (volumes || []).slice(from, to).filter((x) => x > 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
+  const down = avg(hi + 1, lo + 1);
+  const up = avg(lo + 1, n);
+  const ma20 = closes.length >= 20 ? sma(closes, 20)[n] : null;
+  return {
+    high: closes[hi], low: closes[lo], dropPct,
+    retrace: ((closes[n] - closes[lo]) / (closes[hi] - closes[lo])) * 100,
+    ma20, aboveMa20: ma20 != null ? closes[n] > ma20 : null,
+    rsi: calcRSI(closes),
+    volRatio: down && up ? up / down : null,
+  };
+}
+
+// 코스톨라니 달걀(해석) — 가격 방향(20일선이 60일선 위면 상승)과 거래량 흐름(확정된 봉의 20일 평균 / 60일 평균:
+// 1 미만 감소, EGG_SURGE 미만 증가, 그 이상 급증)으로 여섯 국면. 원래 이론에는 숫자 기준이 없어 이 기준은 해석이다.
+// 상승: A1(감소 — 소수가 사 모으는 초기) · A2(증가 — 따라 오름) · A3(급증 — 과열)
+// 하락: B1(감소 — 꼭대기 뒤 이탈 시작) · B2(증가 — 따라 내림) · B3(급증 — 투매)
+// 거래량 0 인 날(휴장 · 빈 봉 · 거래량이 없는 지수)은 뺀다. 모자라면 null.
+const EGG_SURGE = 1.5;
+const EGG_ORDER = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3']; // 달걀을 도는 순서 — B3 다음은 다시 A1
+
+// 봉마다의 국면 { phase, up, ratio } — 그 봉까지의 일봉으로(그 봉의 거래량은 진행 중일 수 있어 뺀다). 모자라는 앞부분은 null.
+function eggSeries(closes, volumes) {
+  const out = new Array(closes ? closes.length : 0).fill(null);
+  if (!closes || !volumes) return out;
+  const ma20 = sma(closes, 20);
+  const ma60 = sma(closes, 60);
+  const sum = [0]; // 그 봉 앞까지 거래량이 있는 날들의 누적합
+  for (let i = 0; i < closes.length; i++) {
+    if (i > 0 && volumes[i - 1] > 0) sum.push(sum[sum.length - 1] + volumes[i - 1]);
+    const k = sum.length - 1;
+    if (ma60[i] == null || k < 60) continue;
+    const ratio = ((sum[k] - sum[k - 20]) / 20) / ((sum[k] - sum[k - 60]) / 60);
+    const up = ma20[i] > ma60[i];
+    out[i] = { phase: `${up ? 'A' : 'B'}${ratio < 1 ? 1 : ratio < EGG_SURGE ? 2 : 3}`, up, ratio };
+  }
+  return out;
+}
+
+// 지금 국면과 방향 — prev 는 마지막으로 바뀌기 전 국면(받은 일봉 안에서 바뀐 적이 없으면 null), days 는 지금 국면이
+// 이어진 봉 수(오늘 포함), next 는 달걀 순서의 다음 국면(이론상 — 실제로는 건너뛰거나 거꾸로 가기도 한다).
+function eggPhase(closes, volumes) {
+  const s = eggSeries(closes, volumes);
+  const n = s.length - 1;
+  if (n < 0 || !s[n]) return null;
+  let j = n;
+  while (j >= 0 && s[j] && s[j].phase === s[n].phase) j--;
+  return { ...s[n], prev: j >= 0 && s[j] ? s[j].phase : null, days: n - j,
+    next: EGG_ORDER[(EGG_ORDER.indexOf(s[n].phase) + 1) % EGG_ORDER.length] };
+}
+
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
@@ -511,5 +623,6 @@ if (typeof module !== 'undefined') {
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
     hull, trendLine, breakoutOf, meetAt,
+    trendFollow, momentum, dcaCost, reboundCheck, EGG_SURGE, EGG_ORDER, eggSeries, eggPhase,
   };
 }

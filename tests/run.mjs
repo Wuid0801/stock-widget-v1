@@ -33,6 +33,7 @@ const ORDER = [
   'quote-session.mjs',
   'session-ui.mjs',
   'rsi.mjs',
+  'techniques.mjs',
   'trend.mjs',
   'backtest.mjs',
   'cross.mjs',

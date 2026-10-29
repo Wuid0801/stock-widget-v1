@@ -1194,6 +1194,8 @@ const helpers = () => formatting + block('fmtVol') + block('esc', /\}\[c\]\)\);/
 const text = (h) => h.replace(/<[^>]+>/g, ''); // 태그를 뺀 글자 — 항목마다 줄바꿈을 막는 span 을 건너뛰고 읽는다
 const kst = (d) => Date.parse(`${d}T09:00:00+09:00`); // 국내 일봉 시각(00:00 UTC)
 const days = (from, n) => Array.from({ length: n }, (_, i) => kst(from) + i * 86400000);
+// 지표 화면 HTML 이 부르는 함수들 — 기법 점검(techHtml)까지
+const METRICS_FNS = ['metricsHtml', 'metricsVolume', 'periodReturns', 'techHtml', 'holdWeight', 'dailyVolumesOf'];
 
 await test('metrics: today volume against the 20 trading days before its own date (KRX), US by its own date', () => {
   const { run } = harness(['metricsVolume']);
@@ -1261,7 +1263,7 @@ const KR_DETAIL = {
 };
 
 await test('metrics: panel for a Korean stock — volume multiple, returns, investor table with 5/20-day sums, earnings, valuation, consensus, peers', () => {
-  const { c, run } = harness(['metricsHtml', 'metricsVolume', 'periodReturns']);
+  const { c, run } = harness(METRICS_FNS);
   run(helpers());
   const T = days('2026-09-15', 32);
   run(`quotes['005930.KS'] = { price: 219000, currency: 'KRW',
@@ -1292,7 +1294,7 @@ await test('metrics: panel for a Korean stock — volume multiple, returns, inve
 });
 
 await test('metrics: US stock shows no investor table, consensus range in dollars; ETF shows NAV instead of valuation; loading and failure states', () => {
-  const { c, run } = harness(['metricsHtml', 'metricsVolume', 'periodReturns']);
+  const { c, run } = harness(METRICS_FNS);
   run(helpers());
   run("quotes.AAPL = { price: 330, currency: 'USD' }; quotes['069500.KS'] = { price: 87025, currency: 'KRW' };");
   c.US = { ...KR_DETAIL, market: 'us', trend: null, ir: null,
@@ -1320,7 +1322,7 @@ await test('metrics: US stock shows no investor table, consensus range in dollar
 });
 
 await test('metrics: shareholders — major holders table, foreign stake and free float, common-share basis for a preferred stock, no section without data', () => {
-  const { c, run } = harness(['metricsHtml', 'metricsVolume', 'periodReturns']);
+  const { c, run } = harness(METRICS_FNS);
   run(helpers());
   run("quotes['005930.KS'] = { price: 219000, currency: 'KRW' };");
   const H = { date: '2026-10-27', common: null, foreign: 46.1, float: 74.98,
@@ -1341,6 +1343,61 @@ await test('metrics: shareholders — major holders table, foreign stake and fre
   assert.match(bare, /<h5>주주 구성<\/h5>/, '기준일이 없으면 제목만');
   assert.doesNotMatch(text(bare), /유동주식|외국인 \d/, '없는 값은 적지 않는다');
   assert.doesNotMatch(html('005930.KS', null), /주주 구성/, '주주 구성이 없으면(ETF · 실패) 단락이 없다');
+});
+
+// 기법 점검 — 받아 둔 일봉으로 추세 추종 · 모멘텀 · 적립식 · 보유 비중 · 반등 점검 · 코스톨라니 달걀(계산은 tests/techniques.mjs).
+// 셀 수 없는 줄은 빠지고, 줄마다 툴팁에 규칙이 있다. 2026-10-29 사용자 요청.
+await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its watchlist rank, DCA, holding weight, rebound and the egg', () => {
+  const { c, run } = harness(METRICS_FNS);
+  run(helpers());
+  const T = days('2025-05-01', 400);
+  // 380봉 동안 100 → 289.5 로 오르고, 10봉에 걸쳐 -20%, 다시 10봉 반등. 거래량은 하락 때 2배, 반등 때 1.5배
+  const C = [...Array.from({ length: 380 }, (_, i) => 100 + i * 0.5),
+    ...Array.from({ length: 10 }, (_, i) => 289.5 * (1 - 0.02 * (i + 1))), ...Array.from({ length: 10 }, (_, i) => 231.6 + (i + 1) * 3)];
+  const V = C.map((_, i) => (i < 380 ? 1000 : i < 390 ? 2000 : 1500));
+  const C2 = T.map((_, i) => 100 + i); // 하이닉스 — 더 많이 올랐다
+  run(`quotes['005930.KS'] = { price: ${C.at(-1)}, currency: 'KRW', daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} },
+      dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(V)} } };
+    quotes['000660.KS'] = { price: 499, currency: 'KRW', daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C2)} } };
+    state.holdings = { '005930.KS': { qty: 10, avg: 200 }, '000660.KS': { qty: 1, avg: 400 } };`);
+  c.D = { ok: true, market: 'kr', kind: 'stock' };
+  const html = run("metricsHtml({ symbol: '005930.KS', name: '삼성전자' }, D, quotes['005930.KS'])");
+  const won = (v) => run(`money(${v}, 'KRW')`);
+  const pct = (v) => run(`fmtPct(${v})`);
+  const tf = indicators.trendFollow(C, 200);
+  const mom = indicators.momentum(C);
+  const dca = indicators.dcaCost(T, C, 12);
+  const rb = indicators.reboundCheck(C, V, 60, 15);
+  const egg = indicators.eggPhase(C, V);
+  assert.match(html, /<h5>기법 점검 <span>\(참고용\)<\/span><\/h5>/);
+  const t = text(html);
+  assert.ok(t.includes(`추세 추종 200일선 ${won(tf.ma)} ${tf.above ? '위' : '아래'} · ${tf.above ? '보유' : '현금'} 구간 ${tf.days}일째`), t);
+  assert.ok(t.includes(`모멘텀 12-1개월 ${pct(mom)} · 관심종목 2/2위`), '하이닉스가 더 올라 2위');
+  assert.ok(t.includes(`적립식 12개월 매달 같은 금액(12회) · 평단 ${won(dca.avg)} · 지금 ${pct(dca.pct)}`));
+  assert.ok(t.includes('비중 보유 2종목 중 84.0% · 균등이면 50.0%'), '2,616 / (2,616 + 499)');
+  assert.ok(t.includes(`반등 점검 고점 ${won(289.5)} → 저점 ${won(rb.low)} (${pct(rb.dropPct)}) · ${rb.retrace.toFixed(0)}% 되돌림`));
+  assert.ok(t.includes(`20일선 ${rb.aboveMa20 ? '위' : '아래'} · RSI ${rb.rsi.toFixed(0)} · 반등 거래량 하락 때의 ${rb.volRatio.toFixed(1)}배`));
+  assert.equal(egg.phase, 'B2', '20일선이 60일선 아래 · 최근 거래량이 늘었다');
+  assert.ok(egg.prev && egg.prev !== 'B2' && egg.days > 0, JSON.stringify(egg));
+  assert.ok(t.includes(`코스톨라니 ${egg.prev} → B2 · ${egg.days}일째 · 하락 · 거래량 증가 · 다음 B3 (해석)`), '직전 → 지금 · 일수 · 다음');
+  assert.equal((html.match(/<p title="[^"]+"><span class="mxmute">/g) || []).length, 6, '여섯 줄 모두 툴팁에 규칙');
+  assert.match(html, /title="코스톨라니 달걀\(해석\) B2 — 20일선이 60일선 아래\(하락\)/);
+  assert.ok(html.includes(`로 바뀐 지 ${egg.days}거래일째(오늘 포함)`) && html.includes('달걀 순서로 다음은 B3(하락 · 거래량 급증)'), '툴팁에 방향');
+  // 기법 점검은 기간 수익률 다음
+  assert.ok(html.indexOf('기간 수익률') < html.indexOf('기법 점검'));
+
+  // 보유가 하나뿐이면 비중은 늘 100% 라 빼고, 관심종목에 모멘텀을 셀 수 있는 종목이 하나면 순위도 뺀다
+  run("delete state.holdings['000660.KS']; quotes['000660.KS'].daily.closes = [1, 2];");
+  const one = text(run("metricsHtml({ symbol: '005930.KS', name: '삼성전자' }, D, quotes['005930.KS'])"));
+  assert.ok(!one.includes('비중') && one.includes(`모멘텀 12-1개월 ${pct(mom)}`) && !one.includes('관심종목'), one);
+  // 달러 종목이 섞였는데 환율을 아직 못 받았으면 비중을 내지 않는다
+  run("state.holdings['000660.KS'] = { qty: 1, avg: 400 }; quotes['000660.KS'].currency = 'USD'; var fxRate = null;");
+  assert.equal(run("holdWeight('005930.KS')"), null);
+  run('fxRate = 1000;');
+  assert.ok(Math.abs(run("holdWeight('005930.KS')").pct - (2616 / (2616 + 499000)) * 100) < 1e-9, '달러는 환율로 원화 환산');
+  // 일봉이 짧으면(최근 상장) 단락이 없다
+  run(`quotes['005930.KS'].daily = { times: ${JSON.stringify(T.slice(-30))}, closes: ${JSON.stringify(C.slice(-30))} }; state.holdings = {};`);
+  assert.doesNotMatch(run("metricsHtml({ symbol: '005930.KS', name: '삼성전자' }, D, quotes['005930.KS'])"), /기법 점검/);
 });
 
 await test('metrics: the button swaps the chart for the panel, hides for indices, fetches on open, reuses for a minute and drops a late reply for another symbol', async () => {
@@ -2817,7 +2874,8 @@ const MARKET_ITEMS = `indexItems = [
   { code: 'NQ', name: '나스닥 선물', value: 29358.25, change: -79.5, pct: -0.27 }, { code: 'WTI', name: 'WTI', value: 101.04, change: -0.72, pct: -0.71 },
   { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }, { code: 'USDKRW', name: '원/달러', value: 1323.23, change: -1.94, pct: -0.15 }];`;
 const marketHarness = (extra = []) => {
-  const h = harness(['marketRow', 'marketExtraRow', 'marketHtml', 'marketCheckInput', 'sparkSvg', 'renderRank', 'setRankView', 'rankClick', 'rankHtml', ...extra]);
+  const h = harness(['marketRow', 'marketExtraRow', 'marketHtml', 'marketCheckInput', 'sparkSvg', 'renderRank', 'setRankView', 'rankClick', 'rankHtml',
+    'dailyVolumesOf', ...extra]);
   if (!extra.includes('loadMarket')) h.c.loadMarket = async () => {}; // 지표 화면을 열면 market:extras 를 묻는다 — 따로 본다
   h.run(formatting);
   h.run(source.match(/^let indexItems = .*$/m)[0]);
@@ -2849,6 +2907,38 @@ await test('market panel: 지표 lists every index item in three groups and pick
   assert.deepEqual(h.picked, ['^VIX'], '그 항목을 고른다');
   h.c.setRankView('kr');
   assert.equal(h.elements.get('rankTabs').hidden, false, '국내로 돌아오면 탭 줄이 다시 보인다');
+});
+
+// 코스톨라니 달걀(해석) — 거래량이 있는 주가지수(코스피 · 코스닥 · 나스닥 · S&P 500)만 메모에 국면, 툴팁에 근거. 2026-10-29.
+await test('market panel: stock indices note their Kostolany egg phase with the rule in a tooltip; others do not', () => {
+  const h = marketHarness();
+  const T = days('2026-07-01', 61);
+  const C = T.map((_, i) => 5000 + i * 10);
+  const V = [...Array(40).fill(100), ...Array(20).fill(130), 999]; // 마지막 봉(진행 중)은 뺀다
+  const q = (vols) => `{ daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} }, dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(vols)} } }`;
+  h.run(`quotes['^KS11'] = ${q(V)}; quotes['NQ=F'] = ${q(V)}; quotes['^SOX'] = ${q(T.map(() => 0))};`);
+  const row = h.c.marketRow('KOSPI');
+  assert.equal(row.note, '달걀 A2 · 다음 A3', '처음 셀 수 있는 봉이라 직전 국면이 없다');
+  assert.match(row.noteTitle, /^코스톨라니 달걀\(해석\) A2 — 20일선이 60일선 위\(상승\) · 거래량 20일 평균이 60일 평균의 1\.18배/);
+  assert.match(row.noteTitle, /달걀 순서로 다음은 A3\(상승 · 거래량 급증\)/);
+  assert.match(row.noteTitle, /순서 A1 → A2 → A3 → B1 → B2 → B3 → 다시 A1/);
+  assert.match(row.noteTitle, /B3 하락\+급증\(투매\)/, '여섯 국면을 함께 적는다');
+  assert.doesNotMatch(row.noteTitle, /바뀐 지/, '직전 국면이 없으면 바뀐 때도 없다');
+  assert.match(rowOf(h.c.marketHtml(), '^KS11'), /<span class="mnote" title="코스톨라니 달걀\(해석\) A2[^"]*">달걀 A2 · 다음 A3<\/span>/);
+  // 100봉 오르다 30봉 내린다(거래량 같음) — A2 에서 B2 로. 메모는 이름 칸(기본 폭 95px 남짓)에 맞게 일수 없이, 일수는 툴팁에
+  const T2 = days('2026-03-01', 130);
+  const C2 = [...Array.from({ length: 100 }, (_, i) => 700 + i), ...Array.from({ length: 30 }, (_, i) => 799 - (i + 1) * 3)];
+  h.run(`quotes['^KQ11'] = { daily: { times: ${JSON.stringify(T2)}, closes: ${JSON.stringify(C2)} },
+    dailyVolume: { times: ${JSON.stringify(T2)}, volumes: ${JSON.stringify(T2.map(() => 100))} } };`);
+  const kq = h.c.marketRow('KOSDAQ');
+  const e = indicators.eggPhase(C2, T2.map(() => 100));
+  assert.equal(kq.note, '달걀 A2→B2 · 다음 B3');
+  assert.ok(kq.noteTitle.includes(`A2(상승 · 거래량 증가)에서 B2(하락 · 거래량 증가)로 바뀐 지 ${e.days}거래일째(오늘 포함)`), kq.noteTitle);
+  assert.equal(h.c.marketRow('SOX').note, '', 'SOX 는 거래량이 없다(야후 0)');
+  assert.equal(h.c.marketRow('NQ').note, '10분 지연', '선물은 달걀을 달지 않는다');
+  assert.match(rowOf(h.c.marketHtml(), 'NQ=F'), /<span class="mnote">10분 지연<\/span>/, '툴팁 없는 메모는 그대로');
+  h.run("delete quotes['^KS11'].dailyVolume;");
+  assert.equal(h.c.marketRow('KOSPI').note, '', '거래량을 못 받았으면 메모 없음');
 });
 
 await test('market panel: 5-day change uses the close five bars back; fewer than six closes shows —', () => {

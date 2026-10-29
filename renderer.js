@@ -85,6 +85,10 @@ const rsiWarmCache = new Map(); // 종목 → { at, times, closes } — 1D RSI �
 // 차트 상자의 class. RSI 를 켜 두면 그 칸만큼 키운다(sub) — 기간 · 차트만 보기와 상관없이 켜 둔 동안은 같은 높이라 기간을
 // 바꿀 때마다 아래 관심종목 목록이 들썩이지 않는다. RSI 를 그리지 않는 화면(전체 · 차트만 보기)은 가격이 그 칸까지 쓴다.
 const chartBoxClass = (loading) => `chartbox${state.indicators && state.indicators.rsi ? ' sub' : ''}${loading ? ' loading' : ''}`;
+const FOLLOW_MA = 200;    // 기법 점검(지표 화면) — 추세 추종의 장기 이동평균
+const DCA_MONTHS = 12;    //   적립식 기간(달, 이번 달 포함)
+const REBOUND_DAYS = 60;  //   반등 점검 — 이 거래일 안의 최고 종가에서
+const REBOUND_DROP = 15;  //   이만큼(%) 넘게 빠진 뒤 반등 중일 때만
 // 저장된 값을 믿지 않는다 — 아는 키만, true 일 때만 켠다.
 const cleanIndicators = (raw) => Object.fromEntries(INDICATORS.map(({ key }) => [key, !!raw && raw[key] === true]));
 
@@ -219,6 +223,23 @@ const MARKET_GROUPS = [
 const MARKET_EXTRA_NAMES = { FUT: '코스피200 선물', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS' };
 // 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
 const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };
+// 코스톨라니 달걀(해석, indicators.js eggPhase)을 메모에 다는 지표 화면 줄 — 거래량이 있는 주가지수만. SOX · 환율 · VIX · 금리는
+// 거래량이 없고(야후 0), 나스닥 선물 · WTI 는 만기 때 거래량이 튀고 주식시장 이론이 맞지 않아 뺀다.
+const EGG_INDEX = new Set(['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX']);
+const EGG_NOTE = { A1: '상승 · 거래량 감소', A2: '상승 · 거래량 증가', A3: '상승 · 거래량 급증',
+  B1: '하락 · 거래량 감소', B2: '하락 · 거래량 증가', B3: '하락 · 거래량 급증' };
+// 시장 지표 줄 메모의 달걀 국면과 방향 — 직전 국면→지금 국면 · 달걀 순서의 다음 국면(eggPhase). 이름 칸이 기본 폭(340px)에서
+// 95px 남짓이라(2026-10-29 측정 — '달걀 A2→B1 · 6일째 · 다음 B2' 는 122px 로 잘렸다) 이어진 일수는 툴팁에만 둔다.
+const eggDir = (e) => `${e.prev ? `${e.prev}→` : ''}${e.phase} · 다음 ${e.next}`;
+// 달걀 국면의 근거 · 방향과 여섯 국면 — 지표 화면 툴팁(종목 기법 점검 · 시장 지표 줄)
+const eggTip = (e) => `코스톨라니 달걀(해석) ${e.phase} — 20일선이 60일선 ${e.up ? '위(상승)' : '아래(하락)'}`
+  + ` · 거래량 20일 평균이 60일 평균의 ${e.ratio.toFixed(2)}배 (1배 미만 감소 · ${EGG_SURGE}배 미만 증가 · 그 이상 급증)\n`
+  + (e.prev ? `${e.prev}(${EGG_NOTE[e.prev]})에서 ${e.phase}(${EGG_NOTE[e.phase]})로 바뀐 지 ${e.days}거래일째(오늘 포함)\n` : '')
+  + `달걀 순서로 다음은 ${e.next}(${EGG_NOTE[e.next]}) — 실제로는 건너뛰거나 거꾸로 가기도 합니다\n`
+  + `순서 ${EGG_ORDER.join(' → ')} → 다시 ${EGG_ORDER[0]}\n`
+  + 'A1 상승+감소(소수가 사 모으는 초기) · A2 상승+증가(따라 오름) · A3 상승+급증(과열)\n'
+  + 'B1 하락+감소(꼭대기 뒤 이탈 시작) · B2 하락+증가(따라 내림) · B3 하락+급증(투매)\n'
+  + '원래 이론에는 숫자 기준이 없어 이 기준은 해석입니다 — 참고용';
 // group: 업종 · 테마 안으로 들어가 있으면 그 묶음({ no, name, pct, count, up, down }), 아니면 null
 let rankView = { market: 'kr', kind: 'search', group: null };
 const rankCache = new Map(); // 'kr|up' · 'kr|industry|278' -> { at, d(naver:rank 응답) }
@@ -906,6 +927,78 @@ function periodReturns(symbol) {
   }));
 }
 
+// 일봉 종가(quotes.daily)와 봉끼리 짝지은 거래량. 오늘 봉을 덧붙였으면(loadQuote — 일봉이 아직 어제까지일 때) 그 봉은 null.
+function dailyVolumesOf(symbol) {
+  const q = quotes[symbol];
+  const v = q && q.dailyVolume;
+  return v && q.daily && q.daily.times ? alignByDay(v.times, v.volumes, q.daily.times) : null;
+}
+
+// 보유 종목 평가금액 합계에서 이 종목의 몫(%) — 합계 줄(renderFolio)처럼 수량 · 평단 · 현재가가 있는 종목만 세고, 달러는 받아 둔
+// 환율(fxRate — 달러가 섞여 있으면 합계 줄이 받는다)로. 보유가 아니거나 보유가 하나뿐이면(늘 100%), 환율이 아직 없으면 null.
+function holdWeight(symbol) {
+  const held = state.watchlist.map((i) => ({ i, h: state.holdings[i.symbol], q: quotes[i.symbol] }))
+    .filter((x) => x.h && x.h.qty > 0 && x.h.avg > 0 && x.q && x.q.price != null);
+  const me = held.find((x) => x.i.symbol === symbol);
+  if (!me || held.length < 2) return null;
+  if (held.some((x) => curOf(x.i.symbol) !== 'KRW') && !fxRate) return null;
+  const value = (x) => x.q.price * x.h.qty * (curOf(x.i.symbol) === 'KRW' ? 1 : fxRate);
+  return { pct: (value(me) / held.reduce((s, x) => s + value(x), 0)) * 100, count: held.length };
+}
+
+// 기법 점검(지표 화면) — 추세 추종 · 모멘텀 · 적립식 · 보유 비중 · 반등 점검 · 코스톨라니 달걀. 받아 둔 5년치 일봉(오늘 봉은
+// 현재가) · 거래량으로 센다(요청 없음, 계산은 indicators.js). 셀 수 없는 줄은 빼고, 하나도 없으면 빈 문자열.
+// 줄마다 툴팁에 규칙을 적는다. 매매 판단이 아니라 참고용이다.
+function techHtml(item) {
+  const q = quotes[item.symbol];
+  const d = q && q.daily;
+  if (!d || !d.closes.length) return '';
+  const cur = curOf(item.symbol);
+  const pct = (v) => (v ? `<b style="color:${v > 0 ? UP : DOWN}">${fmtPct(v)}</b>` : `<b>${fmtPct(v)}</b>`);
+  const line = (label, body, tip) => `<p title="${esc(tip)}"><span class="mxmute">${label}</span> ${body}</p>`;
+  const out = [];
+  const tf = trendFollow(d.closes, FOLLOW_MA);
+  if (tf) {
+    out.push(line('추세 추종', `${FOLLOW_MA}일선 ${money(tf.ma, cur)} ${tf.above ? '위' : '아래'} · <b>${tf.above ? '보유' : '현금'} 구간 ${tf.days}일째</b>`,
+      `종가가 ${FOLLOW_MA}일선 위면 보유, 아래면 현금으로 보는 규칙 — 큰 하락을 피하는 데 강점이 있고 횡보장에서는 자주 바뀝니다. `
+      + '일수는 그 상태가 이어진 거래일(오늘 포함)'));
+  }
+  const mom = momentum(d.closes);
+  if (mom != null) {
+    const all = state.watchlist.map((w) => { const x = quotes[w.symbol]; return x && x.daily ? momentum(x.daily.closes) : null; })
+      .filter((m) => m != null);
+    out.push(line('모멘텀', `12-1개월 ${pct(mom)}${all.length > 1 ? ` · 관심종목 <b>${all.filter((m) => m > mom).length + 1}/${all.length}위</b>` : ''}`,
+      '최근 1개월(21거래일)을 뺀 12개월(252거래일) 수익률 — 많이 오른 종목이 한동안 더 오르는 경향을 봅니다. 급반전할 때 크게 잃습니다. '
+      + '순위는 관심종목 중 이 값이 있는 종목끼리'));
+  }
+  const dca = dcaCost(d.times, d.closes, DCA_MONTHS);
+  if (dca) {
+    out.push(line('적립식', `${DCA_MONTHS}개월 매달 같은 금액(${dca.buys}회) · 평단 ${money(dca.avg, cur)} · 지금 ${pct(dca.pct)}`,
+      `최근 ${DCA_MONTHS}달(이번 달 포함) 매달 첫 거래일 종가에 같은 금액을 샀다면의 평균 단가와 지금 가격 대비 — 시점을 맞히지 않는 방식`));
+  }
+  const w = holdWeight(item.symbol);
+  if (w) {
+    out.push(line('비중', `보유 ${w.count}종목 중 <b>${w.pct.toFixed(1)}%</b> · 균등이면 ${(100 / w.count).toFixed(1)}%`,
+      '보유 종목 평가금액 합계에서 이 종목의 몫 — 목표 비중 대신 균등 비중과 견줍니다(리밸런싱 참고). 미국 주식은 합계 줄과 같은 환율로 원화 환산'));
+  }
+  const vols = dailyVolumesOf(item.symbol);
+  const rb = reboundCheck(d.closes, vols, REBOUND_DAYS, REBOUND_DROP);
+  if (rb) {
+    const more = [rb.aboveMa20 == null ? null : `20일선 ${rb.aboveMa20 ? '위' : '아래'}`, rb.rsi == null ? null : `RSI ${rb.rsi.toFixed(0)}`,
+      rb.volRatio == null ? null : `반등 거래량 하락 때의 ${rb.volRatio.toFixed(1)}배`].filter(Boolean);
+    out.push(line('반등 점검', `고점 ${money(rb.high, cur)} → 저점 ${money(rb.low, cur)} (${pct(rb.dropPct)}) · <b>${rb.retrace.toFixed(0)}%</b> 되돌림`
+      + (more.length ? `<br><span class="mxmute">${more.join(' · ')}</span>` : ''),
+      `최근 ${REBOUND_DAYS}거래일 고점에서 ${REBOUND_DROP}% 넘게 빠진 뒤 반등 중일 때만 — 진짜 반등인지(데드캣) 볼 때 흔히 보는 조건입니다. `
+      + '20일선 위 · RSI 50 위 · 하락 때만큼 거래량이 실린 반등일수록 힘이 있다고 봅니다. 결론은 내리지 않습니다'));
+  }
+  const egg = eggPhase(d.closes, vols);
+  if (egg) {
+    out.push(line('코스톨라니', `<b>${egg.prev ? `${egg.prev} → ` : ''}${egg.phase}</b> · ${egg.days}일째 · ${EGG_NOTE[egg.phase]}`
+      + ` · 다음 ${egg.next} (해석)`, eggTip(egg)));
+  }
+  return out.join('');
+}
+
 // 지표 화면의 HTML. d 는 naver:detail 응답(없으면 불러오는 중). 네트워크에서 온 글자는 모두 esc 한다.
 function metricsHtml(item, d, q) {
   if (!d) return '<p class="mxnote">지표를 불러오는 중…</p>';
@@ -939,6 +1032,8 @@ function metricsHtml(item, d, q) {
 
   const rets = periodReturns(item.symbol).filter((r) => r.pct != null);
   if (rets.length) parts.push(sec('기간 수익률', `<p>${list(rets.map((r) => `${r.label} ${colored(fmtPct(r.pct), r.pct)}`))}</p>`));
+  const tech = techHtml(item);
+  if (tech) parts.push(sec('기법 점검 <span>(참고용)</span>', tech));
 
   // 투자자별 순매수 — 5일 · 20일 합과 최근 10일(최근이 위)
   if (d.trend && d.trend.length) {
@@ -1125,7 +1220,7 @@ function rankKey(v) {
 
 // 지표 화면의 줄 하나. 고를 수 있는 시장 항목(INDICES)은 값이 지수 줄 값(없으면 받은 시세)이고, 5일 변화는 일봉의 5거래일 전
 // 종가 대비다(일봉이 6개 미만이면 null). 금리는 오늘 등락 · 5일 변화를 bp 로 쓴다(d5 는 %p 차이). 데이터가 없으면 null —
-// 그 줄을 그리지 않는다.
+// 그 줄을 그리지 않는다. 주가지수(EGG_INDEX)는 메모에 코스톨라니 달걀 국면을 달고 툴팁(noteTitle)에 근거를 적는다.
 function marketRow(key) {
   const ix = INDICES.find((i) => i.code === key);
   if (!ix) return marketExtraRow(key);
@@ -1137,13 +1232,15 @@ function marketRow(key) {
   const closes = q && q.daily && q.daily.closes;
   const base = closes && closes.length >= 6 ? closes[closes.length - 6] : null;
   const bp = cur === '%';
+  const egg = EGG_INDEX.has(key) && closes ? eggPhase(closes, dailyVolumesOf(ix.symbol)) : null;
   return {
     key, name: ix.name, symbol: ix.symbol, value, cur,
     pct: it ? it.pct : q && q.pct != null ? q.pct : null,
     change: it ? it.change : q && q.change != null ? q.change : null,
     d5: base > 0 ? (bp ? value - base : (value / base - 1) * 100) : null,
     d5Unit: bp ? 'bp' : '%',
-    note: ix.delayMin ? `${ix.delayMin}분 지연` : '',
+    note: ix.delayMin ? `${ix.delayMin}분 지연` : egg ? `달걀 ${eggDir(egg)}` : '',
+    noteTitle: egg ? eggTip(egg) : '',
     spark: closes ? closes.slice(-20) : null,
   };
 }
@@ -1244,7 +1341,7 @@ function marketHtml() {
         : `<div class="rrow mrow mfix" data-key="${r.key}"${r.title ? ` title="${esc(r.title)}"` : ''}>`;
       const chk = checkOf.get(r.key);
       const dot = chk ? `<span class="mdot ${chk.verdict || 'none'}" title="${esc(chk.detail)}"></span>` : '<span class="mdsp"></span>';
-      out.push(`${open}${dot}<span class="hname"><span class="mname">${esc(r.name)}</span>${r.note ? `<span class="mnote">${esc(r.note)}</span>` : ''}</span>`
+      out.push(`${open}${dot}<span class="hname"><span class="mname">${esc(r.name)}</span>${r.note ? `<span class="mnote"${r.noteTitle ? ` title="${esc(r.noteTitle)}"` : ''}>${esc(r.note)}</span>` : ''}</span>`
         + `<span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
         + `<span class="rpct" style="color:${tone(r.dayTone != null ? r.dayTone : bp ? r.change : r.pct)}">${day}</span>`
         + `<span class="md5" title="5거래일 전 종가 대비">${d5}</span>${sparkSvg(r.spark)}</div>`);
