@@ -381,67 +381,84 @@ async function loadEvents() {
 // --- 리스트 -------------------------------------------------------------------
 // 관심종목은 store에서 오므로, 추가/삭제 UI를 붙일 때는
 // state.watchlist를 수정하고 save() + renderList()만 호출하면 된다.
+// 줄은 종목이나 순서가 바뀔 때만 새로 만들고, 시세 · 일정 · 보유 · 선택이 바뀌면 있는 줄의 내용만 고친다. 예전에는 부를
+// 때마다 줄을 통째로 새로 만들어, 마우스를 올려 둔 줄의 hover(배경 · ✕)가 꺼졌다 켜지며 깜빡였다 — 시작할 때는 종목마다
+// 그려 몇 초 동안 여러 번, 그 뒤로도 30초 갱신마다 한 번(2026-10-29).
 function renderList() {
   const list = document.getElementById('list');
-  list.innerHTML = '';
 
   if (!state.watchlist.length) {
     list.innerHTML = '<div class="empty">관심종목이 없습니다.<br>상단 ＋ 로 종목을 추가하세요.</div>';
     return;
   }
 
-  state.watchlist.forEach((item, idx) => {
-    const q = quotes[item.symbol];
-    const row = document.createElement('div');
-    row.className = 'row' + (item.symbol === state.selected ? ' on' : '');
+  let rows = [...list.querySelectorAll('.row')];
+  if (rows.length !== state.watchlist.length || rows.some((r, i) => r.dataset.symbol !== state.watchlist[i].symbol)) {
+    list.innerHTML = '';
+    rows = state.watchlist.map((item, idx) => list.appendChild(listRow(item, idx)));
+  }
 
+  state.watchlist.forEach((item, i) => {
+    const row = rows[i];
+    const q = quotes[item.symbol];
     const lv = levelOf(q && q.rsi);
     const up = q && q.change > 0;
     const flat = !q || !q.change;
     const color = flat ? cssVar('--flat') : (up ? UP : DOWN);
 
-    row.innerHTML = `
-      <span class="dot" style="background:${lv.color}"></span>
-      <span class="nm"><span class="nrow"><span class="name">${esc(item.name)}</span>${eventChip(item.symbol)}</span>${holdSub(item.symbol)}</span>
-      <span class="px" style="color:${color}">${q && q.price != null ? money(q.price, curOf(item.symbol)) : '—'}</span>
-      <span class="chg" style="color:${color}">${
-        q && q.pct != null ? fmtPct(q.pct) : (q && q.error ? '오류' : '')
-      }</span>
-      <button class="del" title="삭제">✕</button>`;
-
-    row.onclick = () => select(item.symbol);
-    row.querySelector('.del').onclick = (e) => {
-      e.stopPropagation(); // 삭제 클릭이 종목 선택으로 이어지지 않게
-      removeSymbol(item.symbol);
-    };
-
-    // 드래그로 순서 변경
-    row.draggable = true;
-    row.ondragstart = (e) => {
-      dragFrom = idx;
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(idx)); // 일부 환경에서 데이터가 없으면 드래그가 시작되지 않는다
-      row.classList.add('dragging');
-    };
-    row.ondragover = (e) => {
-      if (dragFrom === null || dragFrom === idx) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      row.classList.add('dropto');
-    };
-    row.ondragleave = () => row.classList.remove('dropto');
-    row.ondrop = (e) => {
-      e.preventDefault();
-      row.classList.remove('dropto');
-      moveSymbol(dragFrom, idx);
-    };
-    row.ondragend = () => {
-      dragFrom = null;
-      for (const r of document.querySelectorAll('#list .row')) r.classList.remove('dragging', 'dropto');
-    };
-
-    list.appendChild(row);
+    row.classList.toggle('on', item.symbol === state.selected); // className 을 덮지 않는다 — 끌기 중 표시가 남게
+    row.querySelector('.dot').style.background = lv.color;
+    // 이름 칸은 바뀔 때만 새로 넣는다 — 일정 칩에 마우스를 올려 둔 채 갱신되면 칩의 툴팁이 닫힌다
+    const nm = `<span class="nrow"><span class="name">${esc(item.name)}</span>${eventChip(item.symbol)}</span>${holdSub(item.symbol)}`;
+    if (row.nmHtml !== nm) { row.querySelector('.nm').innerHTML = nm; row.nmHtml = nm; }
+    const px = row.querySelector('.px');
+    px.textContent = q && q.price != null ? money(q.price, curOf(item.symbol)) : '—';
+    px.style.color = color;
+    const chg = row.querySelector('.chg');
+    chg.textContent = q && q.pct != null ? fmtPct(q.pct) : (q && q.error ? '오류' : '');
+    chg.style.color = color;
   });
+}
+
+// 목록 한 줄의 틀과 동작(누르기 · 지우기 · 끌어서 순서 바꾸기). 내용은 renderList 가 채운다.
+function listRow(item, idx) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.symbol = item.symbol;
+  row.innerHTML = '<span class="dot"></span><span class="nm"></span><span class="px"></span><span class="chg"></span>'
+    + '<button class="del" title="삭제">✕</button>';
+
+  row.onclick = () => select(item.symbol);
+  row.querySelector('.del').onclick = (e) => {
+    e.stopPropagation(); // 삭제 클릭이 종목 선택으로 이어지지 않게
+    removeSymbol(item.symbol);
+  };
+
+  // 드래그로 순서 변경
+  row.draggable = true;
+  row.ondragstart = (e) => {
+    dragFrom = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx)); // 일부 환경에서 데이터가 없으면 드래그가 시작되지 않는다
+    row.classList.add('dragging');
+  };
+  row.ondragover = (e) => {
+    if (dragFrom === null || dragFrom === idx) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    row.classList.add('dropto');
+  };
+  row.ondragleave = () => row.classList.remove('dropto');
+  row.ondrop = (e) => {
+    e.preventDefault();
+    row.classList.remove('dropto');
+    moveSymbol(dragFrom, idx);
+  };
+  row.ondragend = () => {
+    dragFrom = null;
+    for (const r of document.querySelectorAll('#list .row')) r.classList.remove('dragging', 'dropto');
+  };
+  return row;
 }
 
 // 드래그로 관심종목 순서 변경

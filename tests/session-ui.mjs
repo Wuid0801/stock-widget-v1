@@ -3888,6 +3888,82 @@ await test('events: list chip counts days by the Korean date, shows the nearest 
   assert.match(realFunction('renderList'), /<span class="nrow"><span class="name">\$\{esc\(item\.name\)\}<\/span>\$\{eventChip\(item\.symbol\)\}<\/span>/);
 });
 
+// 관심종목 목록: 줄은 종목 · 순서가 바뀔 때만 새로 만들고, 시세 · 일정 · 선택이 바뀌면 있는 줄의 내용만 고친다. 줄을 통째로
+// 새로 만들면 마우스를 올려 둔 줄의 hover(배경 · ✕)가 꺼졌다 켜지며 깜빡였다 — 시작할 때 종목 수만큼, 그 뒤로도 30초마다.
+await test('watchlist: rows are rebuilt only when the stocks or their order change; quotes update the rows in place', () => {
+  const { c, run, elements } = harness(['renderList', 'listRow']);
+  run(formatting);
+  const node = () => {
+    const parts = {};
+    const cls = new Set();
+    return {
+      dataset: {}, style: {}, parts,
+      get className() { return [...cls].join(' '); },
+      set className(v) { cls.clear(); String(v).split(/\s+/).filter(Boolean).forEach((k) => cls.add(k)); },
+      classList: { toggle: (k, on) => (on ? cls.add(k) : cls.delete(k)), add: (...k) => k.forEach((x) => cls.add(x)),
+        remove: (...k) => k.forEach((x) => cls.delete(x)), contains: (k) => cls.has(k) },
+      set innerHTML(v) {
+        this.html = v;
+        for (const k of ['dot', 'nm', 'px', 'chg', 'del']) if (v.includes(`class="${k}"`)) parts[k] = { style: {}, textContent: '', innerHTML: '' };
+      },
+      get innerHTML() { return this.html; },
+      querySelector: (sel) => parts[sel.slice(1)],
+    };
+  };
+  const list = { kids: [], html: '',
+    set innerHTML(v) { this.kids = []; this.html = v; }, get innerHTML() { return this.html; },
+    appendChild(k) { this.kids.push(k); return k; },
+    querySelectorAll(sel) { return sel === '.row' ? this.kids.filter((k) => k.classList.contains('row')) : []; } };
+  elements.set('list', list);
+  const picked = [];
+  const removed = [];
+  c.document.createElement = () => node();
+  Object.assign(c, { esc: String, cssVar: (n) => n, levelOf: (rsi) => ({ color: rsi == null ? '--dot-off' : '--dot' }),
+    eventChip: () => '', holdSub: () => '', select: (s) => picked.push(s), removeSymbol: (s) => removed.push(s) });
+  run(`for (const k of Object.keys(quotes)) delete quotes[k]; state.selected = '005930.KS';`);
+
+  run('renderList()');
+  const first = [...list.kids];
+  assert.deepEqual(first.map((r) => r.dataset.symbol), ['005930.KS', '000660.KS']);
+  assert.deepEqual(first.map((r) => r.className), ['row on', 'row'], '고른 종목은 강조');
+  assert.equal(first[0].parts.px.textContent, '—', '시세 전');
+
+  // 시세가 들어온다(시작할 때는 종목마다 한 번씩) — 같은 줄의 글자 · 색만 바뀐다
+  run(`quotes['005930.KS'] = { price: 230500, change: -11500, pct: -4.75, rsi: 51 };
+    quotes['000660.KS'] = { price: 1507000, change: 20000, pct: 1.34, rsi: 60 }; renderList();`);
+  assert.ok(list.kids.every((r, i) => r === first[i]), '줄 요소는 그대로 — 마우스를 올려 둔 줄의 hover 가 끊기지 않는다');
+  assert.deepEqual(list.kids.map((r) => [r.parts.px.textContent, r.parts.chg.textContent]),
+    [['230,500', '-4.75%'], ['1,507,000', '+1.34%']]);
+  assert.deepEqual(list.kids.map((r) => r.parts.px.style.color), [run('DOWN'), run('UP')]);
+  assert.equal(list.kids[0].parts.dot.style.background, '--dot', '과열도 점');
+  run(`quotes['000660.KS'] = { error: 'HTTP 429' }; renderList();`);
+  assert.equal(list.kids[1].parts.chg.textContent, '오류');
+  assert.equal(list.kids[1].parts.px.style.color, '--flat');
+
+  // 일정 칩 · 보유 줄 · 선택이 바뀌어도 줄은 그대로. 끌기 중인 표시(dragging)는 지우지 않는다
+  c.eventChip = (s) => (s === '000660.KS' ? '<chip>' : '');
+  first[1].classList.add('dragging');
+  run(`state.selected = '000660.KS'; renderList();`);
+  assert.ok(list.kids.every((r, i) => r === first[i]));
+  assert.deepEqual(list.kids.map((r) => r.className), ['row', 'row dragging on']);
+  assert.equal(list.kids[1].parts.nm.innerHTML, '<span class="nrow"><span class="name">SK하이닉스</span><chip></span>');
+
+  first[0].onclick();
+  first[1].parts.del.onclick({ stopPropagation() {} });
+  assert.deepEqual([picked, removed], [['005930.KS'], ['000660.KS']]);
+
+  // 순서가 바뀌거나 종목이 늘고 줄면 새로 만든다
+  run('state.watchlist.reverse(); renderList();');
+  assert.deepEqual(list.kids.map((r) => r.dataset.symbol), ['000660.KS', '005930.KS']);
+  assert.ok(list.kids[0] !== first[1], '순서가 바뀌면 새 줄(끌기 순번이 줄마다 묶여 있다)');
+  run(`state.watchlist.push({ symbol: 'AAPL', name: '애플' }); renderList();`);
+  assert.deepEqual(list.kids.map((r) => r.dataset.symbol), ['000660.KS', '005930.KS', 'AAPL']);
+  run('state.watchlist = []; renderList();');
+  assert.match(list.innerHTML, /관심종목이 없습니다/);
+  run(`state.watchlist = [{ symbol: '005930.KS', name: '삼성전자' }]; renderList();`);
+  assert.deepEqual(list.kids.map((r) => r.dataset.symbol), ['005930.KS'], '빈 안내 뒤에도 줄을 만든다');
+});
+
 await test('events: the watchlist schedule is fetched one stock at a time, kept for six hours, retried after a failure, and redraws the list once', async () => {
   const { c, run } = harness(['loadEvents']);
   const asked = [];
