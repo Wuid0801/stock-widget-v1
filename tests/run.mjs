@@ -34,6 +34,7 @@ const ORDER = [
   'session-ui.mjs',
   'rsi.mjs',
   'techniques.mjs',
+  'sources.mjs',
   'trend.mjs',
   'backtest.mjs',
   'cross.mjs',
@@ -72,7 +73,8 @@ const ORDER = [
 ];
 
 const filters = process.argv.slice(2);
-const all = fs.readdirSync(HERE).filter((f) => f.endsWith('.mjs') && !f.startsWith('_') && f !== 'run.mjs');
+// sources-live 는 앱 테스트가 아니라 바깥 출처 점검이다 — `npm run check:sources` 와 매주 도는 sources.yml 이 돌린다
+const all = fs.readdirSync(HERE).filter((f) => f.endsWith('.mjs') && !f.startsWith('_') && f !== 'run.mjs' && f !== 'sources-live.mjs');
 const ordered = [...ORDER.filter((f) => all.includes(f)), ...all.filter((f) => !ORDER.includes(f))];
 const suites = filters.length
   ? ordered.filter((f) => filters.some((q) => f.includes(q)))

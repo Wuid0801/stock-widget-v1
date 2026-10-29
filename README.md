@@ -209,6 +209,7 @@ npm install
 npm start       # 실행
 npm run dist    # 설치 파일 만들기 → dist/KRStockWidget-Setup.exe
 npm test        # 테스트
+npm run check:sources  # 시세 출처(네이버 · 야후 등)가 지금도 쓸 수 있는지 점검 — 매주 GitHub Actions 에서도 돈다
 ```
 
 코드 구조, 동작 원리, 설계 이유와 실측 기록은 [개발 문서](docs/DEVELOPMENT.md)에 있습니다.

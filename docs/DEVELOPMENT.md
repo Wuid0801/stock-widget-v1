@@ -121,22 +121,35 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 ```bash
 npm test              # 전체 (약 6분)
 npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
+npm run check:sources # 데이터 출처 점검 (실제 네트워크, 아래)
 ```
 
 스위트는 두 갈래입니다.
 
-- **앱을 띄우지 않는 스위트**(아래 CI 의 스물두 개) — 저장된 응답(`tests/fixtures`)과 고정 시계, 가짜 electron 으로 main.js · renderer.js 의 함수를 직접 부릅니다. 네트워크를 쓰지 않습니다.
+- **앱을 띄우지 않는 스위트**(아래 CI 의 스물네 개) — 저장된 응답(`tests/fixtures`)과 고정 시계, 가짜 electron 으로 main.js · renderer.js 의 함수를 직접 부릅니다. 네트워크를 쓰지 않습니다.
 - **앱을 띄우는 스위트**(나머지) — 실제 앱을 Electron 으로 띄우고 실제 API를 호출합니다. 테스트 전용 설정과 창을 공유하므로 순차 실행합니다. 장중/장마감처럼 외부 상태에 좌우되는 경로는 환경변수(`KR_STOCK_WIDGET_FORCE_SESSION` 등)로 강제합니다 — 앱 소스를 고쳐 쓰지 않습니다. `run.mjs` 는 스위트마다 앱 소스의 해시를 앞뒤로 견줘, 바뀌었으면 실패로 칩니다.
 
 session-ui 하네스 규칙 — renderer.js 를 `// 과열도 5단계` 앞(상태 선언, prelude)까지 통째로 넣고, 테스트하는 함수는 이름으로 꺼내 넣습니다. 그래서 테스트하는 함수가 쓰는 상태 선언은 그 표식 앞에 두고, 함수는 `function` 선언으로 쓰고(const 화살표 함수는 꺼내지 못합니다), `harness([...])` 나 기본 목록에 이름을 넣습니다. 표식 문구는 파일에 하나뿐이어야 합니다(하네스가 검사합니다).
 
 ### CI
 
-푸시와 PR 마다 **앱을 띄우지 않는 스물두 개**가 GitHub Actions 에서 돕니다 — `rsi` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup` · `search` · `market`.
+푸시와 PR 마다 **앱을 띄우지 않는 스물네 개**가 GitHub Actions 에서 돕니다 — `rsi` · `techniques` · `sources` · `cross` · `candle` · `overlay` · `zoom` · `trend` · `backtest` · `quote-session` · `session-ui` · `dom-contract` · `state-contract` · `net-timeout` · `single-instance` · `index-main` · `chart-fill` · `extended-chart` · `sector` · `detail` · `rank` · `backup` · `search` · `market`.
 
-이 스물두 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
+이 스물네 개는 Node 내장 모듈과 앱 파일(`indicators.js` · `backtest.js` · `quote-session.cjs` · `renderer.js` · `index.html` · `main.js`)만 씁니다. **`node_modules` 가 필요 없어 설치 단계가 없고 10초 안에 끝납니다.** 계산 로직을 옮기거나 고칠 때 회귀를 바로 잡으라고 둔 것입니다. 가장 오래 걸리는 것은 `backtest` 입니다(2~5초, 2026-10-12 실측) — 판정이 우연을 "나음"으로 말하지 않는지 무작위 주가 수백 개로 확인합니다.
 
 Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다. 창을 열고 실제 시세 API를 호출하므로 느리고, 장 상태와 상류 응답에 따라 결과가 흔들립니다. 그쪽은 로컬 `npm test` 몫입니다.
+
+### 데이터 출처 점검
+
+시세는 모두 비공식 주소(네이버 모바일 · 폴링 API, 야후 차트 · 검색, FRED CSV, WiseReport 기업정보 HTML)에서 받습니다. 바깥이 응답 모양을 바꾸거나 막으면 앱은 그 부분만 조용히 비우거나 대체 경로로 그려, 화면을 쓰다가 이상해야 알게 됩니다. 그래서 **매주 화요일 10:00 KST** 에 실제로 불러 봅니다(`.github/workflows/sources.yml`, 손으로는 Actions 탭의 Run workflow 나 `npm run check:sources`). 실패하면 작업이 빨갛게 끝나 GitHub 이 메일을 보냅니다.
+
+- **앱 코드를 그대로 돌립니다**(`tests/sources-live.mjs`) — 가짜 electron 으로 main.js 를 읽고(`extended-chart` 처럼) fetch 만 진짜를 끼워 IPC 처리기를 부릅니다. 주소뿐 아니라 해석 코드까지 함께 봅니다. node_modules 는 필요 없습니다.
+- 항목 17개 — 국내 · 미국 실시간 시세, 지수 줄 11개, 시장 지표(수급 · 선물 · HY OAS), 환율, 5년 일봉(국내 · 미국 · 지수 거래량), 국내 1D · 1W(NXT 애프터) · RSI 앞 거래일 5분봉, 미국 1D 프리 · 애프터, 선물 · 미국채 1D, 종목 지표(국내 · 미국 · ETF), 일정, 시장 순위(인기 · 급등 · 미국 · 업종 · 테마 안), 검색, 업종. 시세는 늘 달라 **모양만** 봅니다 — 있는지, 숫자인지, 그럴듯한 범위인지, 마지막 날짜가 최근인지.
+- **대체 경로로 넘어간 것도 실패입니다.** 항목마다 그동안 나간 요청을 기록해 하나라도 HTTP 오류 · 네트워크 오류면 FAIL 이고, 네이버로 그려야 하는 항목(국내 분봉 · 선물 · 미국채 1D)에서 야후가 불렸으면 FAIL 입니다 — 결과는 멀쩡해 보여도 네이버 응답을 못 쓴 것입니다.
+- 항목을 차례로 부릅니다(동시에 몰아 묻지 않는다). 국내 장중이어야 분봉 · 실시간이 비지 않아 화요일 아침에 돕니다 — 주말에 손으로 돌리면 1D 같은 항목이 실패할 수 있습니다. 첫 실행(2026-10-29 16:04 KST, 로컬)은 17개 모두 통과였습니다.
+- `1D RSI 앞 거래일 5분봉` 은 요청이 0개로 나올 수 있습니다 — 앞의 1W 항목이 같은 KRX 분봉을 받았고 main.js 가 지난 날을 기억해 두기 때문입니다. 주소는 1W 가 이미 봤고, 이 항목은 5분봉으로 묶는 해석을 봅니다.
+- 판정 자체는 `tests/sources.mjs` 가 네트워크 없이 봅니다(CI): main.js 의 네트워크 IPC 처리기가 모두 점검에 들어 있는지(처리기를 새로 만들고 점검을 빠뜨리면 실패), 정상 모양은 통과하고 깨진 모양 · 실패한 요청 · HTTP 503 은 실패인지, 출처가 모두 막혀도 점검이 죽지 않는지.
+- GitHub 러너는 미국에 있습니다. 네이버가 해외 접속을 막으면 네이버 항목이 늘 실패하므로, 처음 한 번 Run workflow 로 돌려 확인합니다.
 
 > 워크플로는 `TZ: Asia/Seoul` 로 돕니다. `daysAgo` 가 **로컬 자정** 기준으로 달력 일수를 세는데, 러너 기본값인 UTC 로 두면 `cross` 의 "다음 날 00:01 에는 1일" 이 깨집니다. 앱은 보는 사람의 시간대를 쓰는 게 맞으므로 동작은 그대로 두고 CI 쪽을 고정했습니다.
 
