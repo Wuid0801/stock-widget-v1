@@ -2927,6 +2927,9 @@ await test('market panel: stock indices note their Kostolany egg phase with the 
   assert.match(row.noteTitle, /다음은 B1\(꼭대기 뒤 하락 초기\) — 20일선이 60일선 아래로 내려가면/);
   assert.match(row.noteTitle, /순서 A1 → A2 → A3 → B1 → B2 → B3 → 다시 A1\. 한 칸씩 나아가고 되돌아가지 않습니다/);
   assert.match(row.noteTitle, /과열 없이 20거래일 넘게 내리면 B1, 투매 없이 그만큼 오르면 A1/, '건너뛰는 규칙도 적는다');
+  // 과거 검증 결과(일반) — 이론을 그대로 믿지 않게. 해석이라는 줄보다 앞, 근거 줄 뒤
+  assert.match(row.noteTitle, /\n과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): .*B3 \+1\.4%p\(29곳 중 22곳 나음\) · B2 −1\.0%p.*A3 \+0\.4%p\(팔 신호가 아니었다\).*종목 하나로는 우연과 구분되지 않는다\n원래 이론에는/,
+    '과거 검증 한 줄');
   assert.doesNotMatch(row.noteTitle, /바뀐 지/, '직전 국면이 없으면 바뀐 때도 없다');
   assert.match(rowOf(h.c.marketHtml(), '^KS11'), /<span class="mnote" title="코스톨라니 달걀\(해석\) A3[^"]*">달걀 A3 · 다음 B1<\/span>/);
   // 100봉 오르다 30봉 내린다(거래량 같음) — A3 에서 20일선이 꺾여 B1, 이어진 급락(RSI 30 아래)으로 B3.

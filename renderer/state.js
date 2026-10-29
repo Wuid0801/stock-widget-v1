@@ -247,7 +247,13 @@ const eggTip = (e) => `코스톨라니 달걀(해석) ${e.phase}(${EGG_NOTE[e.ph
   + `다음은 ${e.next}(${EGG_NOTE[e.next]}) — ${EGG_WHEN[e.phase]}\n`
   + `순서 ${EGG_ORDER.join(' → ')} → 다시 ${EGG_ORDER[0]}. 한 칸씩 나아가고 되돌아가지 않습니다. `
   + `과열 · 투매는 바로 건너뛰고(A1 → A3, B1 → B3), 과열 없이 ${EGG_CONFIRM}거래일 넘게 내리면 B1, 투매 없이 그만큼 오르면 A1\n`
+  + EGG_EVIDENCE + '\n'
   + '원래 이론에는 숫자 기준이 없어 이 기준은 해석입니다 — 참고용';
+// 과거 검증(docs/DEVELOPMENT.md "코스톨라니 과거 검증") — 이론을 그대로 믿지 않게 툴팁에 함께 적는다. 종목마다의 통계는 대부분
+// 우연과 구분되지 않아 넣지 않았다(2026-10-29 사용자와 정함).
+const EGG_EVIDENCE = '과거 검증(국내 · 미국 대형주 25개 · 지수 4개, 10년): 그 국면 날 뒤 20거래일이 평소보다 — '
+  + 'B3 +1.4%p(29곳 중 22곳 나음) · B2 −1.0%p(5곳만 나음) · A3 +0.4%p(팔 신호가 아니었다) · A1 −0.7%p(살 신호도 아니었다). '
+  + '흔들림(20일 ±8~10%)에 비해 작고 종목 하나로는 우연과 구분되지 않는다';
 // group: 업종 · 테마 안으로 들어가 있으면 그 묶음({ no, name, pct, count, up, down }), 아니면 null
 let rankView = { market: 'kr', kind: 'search', group: null };
 const rankCache = new Map(); // 'kr|up' · 'kr|industry|278' -> { at, d(naver:rank 응답) }
