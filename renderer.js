@@ -67,7 +67,7 @@ const INDICATORS = [
   { key: 'vp', label: '매물대', varName: '--vp-poc', title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
   { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%p)과, 첫 봉을 종목 가격에 맞춘 지수 점선 — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
   { key: 'sar', label: 'SAR', varName: '--sar-up', title: '파라볼릭 SAR — 상승 추세면 봉 아래, 하락 추세면 봉 위에 점. 범례에 지금 방향과 전환 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
-  { key: 'rsi', label: 'RSI', varName: '--rsi-line', title: 'RSI(14)와 시그널(RSI 9봉 평균) — 차트 아래 거래량 칸에 옅은 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점. 범례에 지금 방향과 교차 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
+  { key: 'rsi', label: 'RSI', varName: '--rsi-line', title: 'RSI(14)와 시그널(RSI 9봉 평균) — 차트 아래 따로 둔 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점. 범례에 지금 방향과 교차 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
 ];
 const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸 약 7px
 const BB_PERIOD = 20;
@@ -78,10 +78,13 @@ const SAR_STEP = 0.02; // 파라볼릭 SAR 가속 — 흔한 기본값(와일더
 const SAR_MAX = 0.2;
 const RSI_PERIOD = 14; // RSI(보조 지표) — 과열도 배지와 같은 RSI(14)
 const RSI_SIGNAL = 9;  // 시그널 = RSI 의 이 봉 수 평균(증권사에 따라 6 을 쓰기도 한다)
-const RSI_BAND = 0.3;  // RSI 0~100 을 차트 아래 이만큼(높이 비율)에 — 거래량 칸(아래 1/4)과 겹친다
+const RSI_PANE = 45;   // RSI 칸 높이(px) — 가격 칸 아래 따로 둔다. 켜 두면 차트 상자도 이만큼 커진다(index.html .chartbox.sub)
 const RSI_TF = new Set(['1D', '1W', '1M', '3M', '1Y', '3Y']); // 전체(월봉 · 분기봉)는 SAR 처럼 뺀다
 const RSI_WARM_RETRY = 5 * 60000; // 1D 의 앞 거래일 봉을 못 받으면 이만큼 뒤에 다시 묻는다
 const rsiWarmCache = new Map(); // 종목 → { at, times, closes } — 1D RSI 의 앞 거래일 5분봉(closes null = 실패)
+// 차트 상자의 class. RSI 를 켜 두면 그 칸만큼 키운다(sub) — 기간 · 차트만 보기와 상관없이 켜 둔 동안은 같은 높이라 기간을
+// 바꿀 때마다 아래 관심종목 목록이 들썩이지 않는다. RSI 를 그리지 않는 화면(전체 · 차트만 보기)은 가격이 그 칸까지 쓴다.
+const chartBoxClass = (loading) => `chartbox${state.indicators && state.indicators.rsi ? ' sub' : ''}${loading ? ' loading' : ''}`;
 // 저장된 값을 믿지 않는다 — 아는 키만, true 일 때만 켠다.
 const cleanIndicators = (raw) => Object.fromEntries(INDICATORS.map(({ key }) => [key, !!raw && raw[key] === true]));
 
@@ -1731,7 +1734,7 @@ function renderMaLegend() {
   // 없으면 마지막 값. 마우스를 올려도 그대로다 — 그 봉의 값은 툴팁에 있다.
   if (rs) {
     const head = `RSI(${RSI_PERIOD}) · 시그널(RSI ${RSI_SIGNAL}봉 평균)`;
-    const dots = '차트 아래 옅은 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점';
+    const dots = '차트 아래 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점';
     if (rs.rising == null) {
       const lastOf = (a) => a.filter((v) => v != null).pop();
       const r = lastOf(rs.data); const g = lastOf(rs.signal);
@@ -1799,7 +1802,8 @@ const hLinePlugin = {
   afterDatasetsDraw(c, _args, opts) {
     const lines = opts.lines || [];
     if (!lines.length) return;
-    const area = c.chartArea;
+    // 위아래 경계는 가격 칸 — RSI 칸을 켜면 그림 아래쪽이 RSI 칸이라, 가격 밖의 선이 그 칸에 그어지지 않게 한다
+    const area = { ...c.chartArea, top: c.scales.y.top, bottom: c.scales.y.bottom };
     const ctx = c.ctx;
     const inside = [];
     const above = [];
@@ -2057,8 +2061,8 @@ const crossMarkPlugin = {
     const ctx = c.ctx;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(area.left, area.top, area.width, area.height);
-    ctx.clip(); // 축 눈금 위로 삐져나가지 않게
+    ctx.rect(area.left, c.scales.y.top, area.width, c.scales.y.bottom - c.scales.y.top);
+    ctx.clip(); // 축 눈금 위로 · RSI 칸으로 삐져나가지 않게
 
     for (const k of list) {
       const x = c.scales.x.getPixelForValue(k.i);
@@ -2126,7 +2130,7 @@ function clearChart() {
   lastChart = null;
   lastDrawSig = null;
   drawnKey = null;
-  document.getElementById('chartBox').className = 'chartbox'; // 불러오던 요청도 위에서 무효가 됐다
+  document.getElementById('chartBox').className = chartBoxClass(); // 불러오던 요청도 위에서 무효가 됐다
   hoverIdx = null;
   renderMaLegend();
   renderCrossBadge([], []);
@@ -2134,6 +2138,7 @@ function clearChart() {
   document.getElementById('chartMode').hidden = true; // 차트가 없으면 전환할 것도 없다
   document.getElementById('plainChart').hidden = true;
   document.getElementById('extHours').hidden = true;
+  document.getElementById('rsiPane').hidden = true;
   document.getElementById('zoomReset').hidden = true; // 차트가 없으면 풀 확대도 없다
 }
 
@@ -2173,6 +2178,9 @@ function drawChart(arg) {
   const rsiDot = new Map(rsi ? [...rsi.crosses.map((x) => [x.i, { golden: x.golden, open: false }]),
     ...(rsi.pending ? [[rsi.pending.i, { golden: rsi.pending.golden, open: true }]] : [])] : []);
   const rsiDotColor = (i) => (rsiDot.has(i) && rsiDot.get(i).golden ? UP : DOWN);
+  // RSI 칸을 둘 때 가격 칸의 stack 비중(RSI 칸은 RSI_PANE). 그림 높이는 캔버스에서 아래 날짜 줄 · 위 여백(약 22px)을 뺀
+  // 만큼이라 RSI 칸이 약 RSI_PANE px 가 된다. 축 옵션은 다시 배치할 때마다 새로 읽혀 창 높이를 바꿔도 칸 높이가 그대로다.
+  const priceWeight = ({ chart: c }) => Math.max(c.height - 22 - RSI_PANE, RSI_PANE);
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
@@ -2200,8 +2208,9 @@ function drawChart(arg) {
           const area = ctx.chart.chartArea;
           if (!area) return 'transparent';
           // 채움이 진하면 그 안에 들어간 이동평균선이 묻힌다.
-          // 위쪽만 옅게 남기고 아래 절반은 빠르게 비워 이평선이 지나갈 자리를 만든다.
-          const g = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+          // 위쪽만 옅게 남기고 아래 절반은 빠르게 비워 이평선이 지나갈 자리를 만든다. 가격 칸(y) 바닥에서 다 비운다 — RSI 칸 위
+          const sy = ctx.chart.scales.y;
+          const g = ctx.chart.ctx.createLinearGradient(0, sy.top, 0, sy.bottom);
           g.addColorStop(0, hexA(color, 0.38));
           g.addColorStop(0.55, hexA(color, 0.12));
           g.addColorStop(1, hexA(color, 0));
@@ -2367,7 +2376,7 @@ function drawChart(arg) {
         fill: false,
         spanGaps: false,
       }] : []),
-      // RSI · 시그널(보조 지표) — 거래량처럼 숨긴 축(yRsi)으로 차트 아래 RSI_BAND 만 쓴다. RSI 는 옅은 실선, 시그널은 점선,
+      // RSI · 시그널(보조 지표) — 가격 칸 아래 따로 둔 칸(숨긴 축 yRsi, RSI_PANE)에 그린다. RSI 는 옅은 실선, 시그널은 점선,
       // 30 · 70 은 아주 옅은 점선. 시그널을 뚫은 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 막대(0) 위 ·
       // 추세선(-1) 아래에 그린다. 그 봉의 값은 툴팁 footer, 지금 상태는 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
       ...(rsi ? [...[30, 70].map((v) => ({
@@ -2521,21 +2530,28 @@ function drawChart(arg) {
         },
         y: {
           position: 'right',
+          // RSI 를 그리면 yRsi 와 위아래로 쌓는다(Chart.js stack) — 위가 가격 칸, 아래 RSI_PANE 만큼이 RSI 칸
+          ...(rsi ? { stack: 'pane', stackWeight: priceWeight } : {}),
           grid: { color: cssVar('--grid') },
           ticks: { color: cssVar('--mute'), font: { size: 9 }, maxTicksLimit: 4, callback: (v) => money(v, cur) },
         },
-        // 거래량 전용 축. 최댓값의 4배를 천장으로 잡아 막대가 아래 1/4 만 차지한다.
+        // 거래량 전용 축. 최댓값의 4배를 천장으로 잡아 막대가 아래 1/4 만 차지한다. 쌓지 않아 그림 전체 높이라,
+        // RSI 칸이 있으면 바닥을 그 칸만큼 음수로 내려 0 이 가격 칸 바닥에 오게 한다(막대는 가격 칸 아래 1/4).
         yVol: {
           display: false,
           beginAtZero: true,
+          ...(rsi ? { min: (ctx) => (-maxVol * 4 * RSI_PANE) / priceWeight(ctx) } : {}),
           max: maxVol * 4,
           grid: { display: false },
         },
-        // RSI 전용 축(보조 지표). 0~100 을 차트 아래 RSI_BAND 만큼에 — 거래량 칸과 겹치고, 옅은 선이라 막대가 비친다.
+        // RSI 전용 축(보조 지표). y 와 같은 오른쪽 stack 의 아래 칸.
         ...(rsi ? { yRsi: {
           display: false,
+          position: 'right',
+          stack: 'pane',
+          stackWeight: RSI_PANE,
           min: 0,
-          max: 100 / RSI_BAND,
+          max: 100,
           grid: { display: false },
         } } : {}),
       },
@@ -2983,7 +2999,7 @@ async function loadChart() {
   if (key !== drawnKey) {
     if (drawnKey) clearChart();
     document.getElementById('period').hidden = true;
-    document.getElementById('chartBox').className = 'chartbox loading';
+    document.getElementById('chartBox').className = chartBoxClass(true);
   }
   const seq = ++chartSeq;
   const tf = chartTf(state.timeframe);
@@ -2998,7 +3014,7 @@ async function loadChart() {
   const [got, benchGot] = await Promise.all([fetchChartCached(item.symbol, tf),
     bench ? fetchChartCached(bench.symbol, tf).catch(() => null) : null]);
   if (seq !== chartSeq) return; // 더 새 요청이 있다 — 불러오는 중은 그 요청이 내린다
-  document.getElementById('chartBox').className = 'chartbox';
+  document.getElementById('chartBox').className = chartBoxClass(); // RSI 를 켜고 끈 것도 여기서 높이에 든다
   const r = got.ok && tf.years ? lastYears(got, tf.years) : got; // 3Y: 5년치에서 3년만
 
   if (!r.ok) {
@@ -4019,26 +4035,41 @@ function renderChartMode(bars, daily) {
   b.hidden = !candleMode(bars, daily, 'candle'); // 캔들로 그릴 수 있는 화면에서만
   b.innerHTML = MODE_ICON[candle ? 'candle' : 'line'];
   b.title = candle ? '라인으로 보기' : '캔들로 보기';
-  // 옆의 차트만 보기 버튼 — 켜져 있으면 강조
+  // 옆의 차트만 보기 버튼 — 덧그림(이동평균 · 보조 지표 · 기준선)이 보이면 또렷하게, 차트만 보기로 껐으면 흐리게.
+  // RSI 칸 · 정규장/전체 버튼처럼 켜져 있으면 또렷하다.
   const p = document.getElementById('plainChart');
   p.hidden = false;
-  p.className = state.plainChart ? 'on' : '';
+  p.className = state.plainChart ? '' : 'on';
   p.title = state.plainChart ? '덧그림 다시 보기' : '차트만 보기 — 이동평균 · 보조 지표 · 기준선 끄기';
   // 정규장 / 전체(장전 · 장후 포함) — 시간외를 받을 수 있는 기간(1D · 1W)의 종목만. 지수 · 환율은 시간외가 없다.
-  // 글자는 지금 보는 것이고, 정규장만 보고 있으면 차트만 보기처럼 또렷하게 — 빠진 구간이 있다.
+  // 글자는 지금 보는 것이고, 전체(시간외를 켠 것)면 RSI 칸 버튼처럼 또렷하게 — 켜져 있으면 또렷, 꺼져 있으면 흐리게.
   const e = document.getElementById('extHours');
   const item = selectedItem();
   const full = state.extHours !== false;
   e.hidden = !TF[state.timeframe].extended || !item || isIndex(item.symbol);
   e.textContent = full ? '전체' : '정규장';
-  e.className = full ? '' : 'on';
+  e.className = full ? 'on' : '';
   e.title = full ? '전체(장전 · 장후 포함) — 누르면 정규장만' : '정규장만 — 누르면 장전 · 장후까지';
+  // RSI 칸 켜고 끄기 — RSI 를 그릴 수 있는 기간(RSI_TF)에서만. 차트만 보기는 보조 지표를 다 끄므로 숨긴다. 켜져 있으면 또렷하게.
+  const s = document.getElementById('rsiPane');
+  const rsiOn = !!(state.indicators && state.indicators.rsi);
+  s.hidden = state.plainChart === true || !RSI_TF.has(state.timeframe);
+  s.className = rsiOn ? 'on' : '';
+  s.title = rsiOn ? 'RSI 칸 끄기' : 'RSI 칸 켜기 — 차트 아래에 RSI · 시그널';
 }
 
 // 정규장 / 전체 버튼. 응답이 달라 다시 받는다(캐시는 둘을 따로 둔다 — fetchChartCached).
 async function toggleExtHours() {
   state.extHours = state.extHours === false;
   save();
+  await loadChart();
+}
+
+// RSI 칸 버튼 — 설정의 RSI 칩과 같은 값을 바꾼다(칩도 다시 그린다). 차트 상자 높이는 loadChart 가 chartBoxClass 로 맞춘다.
+async function toggleRsiPane() {
+  state.indicators = { ...state.indicators, rsi: !state.indicators.rsi };
+  save();
+  renderIndChips();
   await loadChart();
 }
 
@@ -4253,6 +4284,7 @@ async function refreshNow() {
     await loadChart(); // 서명에 plainChart 가 있어 다시 그려지고, drawChart 가 버튼 강조도 바꾼다
   };
   document.getElementById('extHours').onclick = () => toggleExtHours().catch(console.error);
+  document.getElementById('rsiPane').onclick = () => toggleRsiPane().catch(console.error);
   document.getElementById('zoomReset').onclick = resetZoom;
   bindZoom();
   renderTabs();

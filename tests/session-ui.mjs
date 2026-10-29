@@ -1028,7 +1028,7 @@ await test('indicators: RSI legend says which side of the signal RSI has stayed 
   assert.deepEqual([...read()], ['RSI=상향 2일째']);
   assert.equal(items[0].kids[1].style.background, '--rsi-line');
   assert.equal(items[0].title, `RSI(14) · 시그널(RSI 9봉 평균) — ${run(`labelFor(${flip}, '1M')`)} 상향 교차. `
-    + '차트 아래 옅은 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점');
+    + '차트 아래 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점');
   items.length = 0;
   run('hoverIdx = 1; renderMaLegend();');
   assert.deepEqual([...read()], ['RSI=상향 2일째'], '마우스를 올려도 그대로 — 그 봉의 값은 툴팁에 있다');
@@ -1041,7 +1041,7 @@ await test('indicators: RSI legend says which side of the signal RSI has stayed 
   assert.deepEqual([...read()], ['RSI=60 · 시그널 52'], '확정된 교차가 없으면 지금 값');
 });
 
-await test('indicators: drawChart puts RSI and its signal faintly in the volume strip, with dots on finished crosses', () => {
+await test('indicators: drawChart puts RSI and its signal in their own pane under the price, with dots on finished crosses', () => {
   const { c, run } = harness(['drawChart', 'labelFor']);
   run(formatting);
   const configs = [];
@@ -1059,9 +1059,24 @@ await test('indicators: drawChart puts RSI and its signal faintly in the volume 
   run('drawChart(arg_);');
   const cfg = configs.at(-1);
   const axis = cfg.options.scales.yRsi;
+  const { y, yVol } = cfg.options.scales;
   assert.equal(axis.display, false, '거래량 축처럼 눈금 없이');
   assert.equal(axis.min, 0);
-  assert.equal(axis.max, 100 / run('RSI_BAND'), '0~100 이 차트 아래 RSI_BAND 만큼');
+  assert.equal(axis.max, 100, 'RSI 칸 전체가 0~100');
+  // 가격 축(y)과 같은 오른쪽 stack 에 쌓는다 — 위가 가격 칸, 아래가 RSI 칸(RSI_PANE 만큼)
+  assert.equal(axis.position, 'right');
+  assert.ok(axis.stack && axis.stack === y.stack, 'y 와 같은 stack');
+  assert.equal(axis.stackWeight, run('RSI_PANE'));
+  const ctx = { chart: { height: 195 } }; // 기본 창 높이에서 RSI 를 켰을 때의 차트 상자
+  const pw = y.stackWeight(ctx);
+  assert.equal(pw, 195 - 22 - run('RSI_PANE'), '그림 높이(날짜 줄 · 여백 약 22px 제외)에서 RSI 칸을 뺀 나머지가 가격 칸');
+  assert.ok(Math.abs(axis.stackWeight / (pw + axis.stackWeight) * (195 - 22) - run('RSI_PANE')) < 1e-9, 'RSI 칸이 약 RSI_PANE px');
+  assert.equal(y.stackWeight({ chart: { height: 30 } }), run('RSI_PANE'), '아주 작아도 가격 칸이 사라지지 않는다');
+  // 거래량 축은 그림 전체 높이 — 바닥을 음수로 내려 0 이 가격 칸 바닥(아래에서 RSI 칸 비율)에 온다. 천장은 그대로 4배
+  const vmin = yVol.min(ctx);
+  assert.equal(yVol.max, 4, '거래량 최댓값(1)의 4배');
+  assert.ok(Math.abs(-vmin / (yVol.max - vmin) - axis.stackWeight / (pw + axis.stackWeight)) < 1e-9, '거래량 0 = 가격 칸 바닥');
+  assert.ok(Math.abs(1 / (yVol.max - vmin) - (1 / 4) * pw / (pw + axis.stackWeight)) < 1e-9, '막대는 가격 칸 아래 1/4');
   const on = cfg.data.datasets.filter((d) => d.yAxisID === 'yRsi');
   assert.ok(on.every((d) => d.order < 0 && d.order > -1), '거래량 막대(0) 위 · 추세선(-1) 아래');
   assert.ok(on.every((d) => !d.pointHitRadius), '마우스 대상은 주가선 하나다');
@@ -1094,6 +1109,8 @@ await test('indicators: drawChart puts RSI and its signal faintly in the volume 
   run('arg_.rsi = null; drawChart(arg_);');
   assert.equal(configs.at(-1).data.datasets.some((d) => d.yAxisID === 'yRsi'), false);
   assert.equal(configs.at(-1).options.scales.yRsi, undefined, 'RSI 를 끄면 축도 없다');
+  assert.equal(configs.at(-1).options.scales.y.stack, undefined, '가격이 그림 전체 높이를 쓴다');
+  assert.equal(configs.at(-1).options.scales.yVol.min, undefined, '거래량도 예전처럼 그림 바닥부터');
 });
 
 // 지수 대비 수익률(보조 지표): 기간 배지에 종목 수익률 - 같은 기간 지수 수익률(%p).
@@ -1693,10 +1710,10 @@ await test('plain chart: the switch beside the candle/line icon shows its state 
   run("state.chartMode = 'line'; state.plainChart = false; renderChartMode(30, true);");
   const b = elements.get('plainChart');
   assert.equal(b.hidden, false);
-  assert.equal(b.className, '');
+  assert.equal(b.className, 'on', '덧그림이 보이면 또렷하게 — RSI 칸 · 정규장/전체 버튼처럼 켜져 있으면 또렷');
   assert.equal(b.title, '차트만 보기 — 이동평균 · 보조 지표 · 기준선 끄기');
   run('state.plainChart = true; renderChartMode(30, true);');
-  assert.equal(b.className, 'on');
+  assert.equal(b.className, '', '차트만 보기로 덧그림을 껐으면 흐리게');
   assert.equal(b.title, '덧그림 다시 보기');
   assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('plainChart'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
 });
@@ -1732,11 +1749,11 @@ await test('ext hours: the 정규장/전체 switch shows only on 1D · 1W for st
   const b = elements.get('extHours');
   assert.equal(b.hidden, false);
   assert.equal(b.textContent, '전체');
-  assert.equal(b.className, '');
+  assert.equal(b.className, 'on', '시간외를 켠 전체면 또렷하게 — RSI 칸 버튼처럼 켜져 있으면 또렷');
   assert.equal(b.title, '전체(장전 · 장후 포함) — 누르면 정규장만');
   run('state.extHours = false; renderChartMode(0, false);');
   assert.equal(b.textContent, '정규장');
-  assert.equal(b.className, 'on', '정규장만 보고 있으면 또렷하게 — 빠진 구간이 있다');
+  assert.equal(b.className, '', '정규장만이면 흐리게');
   assert.equal(b.title, '정규장만 — 누르면 장전 · 장후까지');
   run("state.timeframe = '1M'; renderChartMode(20, true);");
   assert.equal(b.hidden, true, '일봉은 정규장만 있다');
@@ -1756,6 +1773,53 @@ await test('ext hours: the switch flips the view, saves it and redraws', async (
   assert.deepEqual(log.splice(0), ['save', 'load:false']);
   await c.toggleExtHours();
   assert.deepEqual(log.splice(0), ['save', 'load:true']);
+});
+
+// RSI 칸 버튼(차트 왼쪽 위) — 설정의 RSI 칩과 같은 값을 켜고 끈다. RSI 를 그릴 수 있는 기간에서만 보이고, 차트만 보기 중엔
+// 숨는다. 켜 두면 차트 상자가 RSI 칸만큼 커진다(.sub) — 기간과 상관없이 켜 둔 동안은 같은 높이.
+await test('rsi pane: the chart switch shows on RSI timeframes, names its state and hides with the chart or the plain view', () => {
+  const { c, run, elements } = harness(['renderChartMode']);
+  c.MODE_ICON = { candle: 'C', line: 'L' };
+  run("state.timeframe = '1D'; state.plainChart = false; state.indicators = { rsi: false }; renderChartMode(0, false);");
+  const b = elements.get('rsiPane');
+  assert.equal(b.hidden, false);
+  assert.equal(b.className, '');
+  assert.equal(b.title, 'RSI 칸 켜기 — 차트 아래에 RSI · 시그널');
+  run('state.indicators = { rsi: true }; renderChartMode(0, false);');
+  assert.equal(b.className, 'on', '켜져 있으면 또렷하게');
+  assert.equal(b.title, 'RSI 칸 끄기');
+  run("state.timeframe = '전체'; renderChartMode(20, true);");
+  assert.equal(b.hidden, true, '전체(월봉 · 분기봉)는 RSI 를 그리지 않는다');
+  run("state.timeframe = '1Y'; state.plainChart = true; renderChartMode(20, true);");
+  assert.equal(b.hidden, true, '차트만 보기는 보조 지표를 다 끈다');
+  run('state.plainChart = false; delete state.indicators; renderChartMode(20, true);');
+  assert.equal(b.className, '', '지표 설정이 없어도 꺼진 것으로');
+  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('rsiPane'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
+});
+
+await test('rsi pane: the switch flips the RSI indicator, saves it, updates the settings chip and redraws', async () => {
+  const { c, run } = harness(['toggleRsiPane']);
+  const log = [];
+  Object.assign(c, { save: () => log.push('save'), renderIndChips: () => log.push('chips'),
+    loadChart: async () => log.push(`load:${run('state.indicators.rsi')}`) });
+  run('state.indicators = { sar: true, rsi: false };');
+  await c.toggleRsiPane();
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:true']);
+  assert.equal(run('state.indicators.sar'), true, '다른 지표는 그대로');
+  await c.toggleRsiPane();
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:false']);
+});
+
+await test('rsi pane: the chart box grows by the RSI pane while RSI is on, loading or not', () => {
+  const { run } = harness();
+  run('state.indicators = { rsi: true };');
+  assert.equal(run('chartBoxClass()'), 'chartbox sub');
+  assert.equal(run('chartBoxClass(true)'), 'chartbox sub loading');
+  run('state.indicators = { rsi: false };');
+  assert.equal(run('chartBoxClass()'), 'chartbox');
+  assert.equal(run('chartBoxClass(true)'), 'chartbox loading');
+  run('delete state.indicators;');
+  assert.equal(run('chartBoxClass()'), 'chartbox', '지표 설정이 없어도');
 });
 
 // NXT 에 없는 종목(DSC인베스트먼트 · ETF)은 정규장 · 전체 응답이 똑같다 — 서명이 같아 다시 그리지 않으면 버튼 글자
@@ -2164,7 +2228,7 @@ await test('horizontal lines: close labels merge instead of vanishing; out-of-ra
   c.cssVar = (n) => n;
   // 가격 v 는 y = 200 - v (값이 클수록 위). 차트 안은 y 0~100 → 가격 100~200.
   const chartStub = { ctx, chartArea: { left: 0, right: 300, top: 0, bottom: 100 },
-    scales: { y: { getPixelForValue: (v) => 200 - v } } };
+    scales: { y: { top: 0, bottom: 100, getPixelForValue: (v) => 200 - v } } };
   plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [
     { value: 150, label: '전일', varName: '--prev-line' },
     { value: 145, label: '전고', varName: '--prevhi-line' }, // 5px 아래 — 예전에는 이름표가 빠졌다
@@ -2224,6 +2288,15 @@ await test('horizontal lines: close labels merge instead of vanishing; out-of-ra
   plugin.afterDatasetsDraw({ ...chartStub, tooltip: { getActiveElements: () => [{}] } }, {}, { cur: 'USD',
     lines: [{ value: 127.57, label: '전일', varName: '--prev-line' }] });
   assert.deepEqual(texts.filter((t) => t.x === 298).map((t) => t.t), ['127.57'], '값은 그 종목 통화 형식');
+
+  // RSI 칸을 켜면 그림(chartArea)은 RSI 칸까지 내려가고 가격 칸(y)은 그 위에서 끝난다 — 가격 칸 밖의 선은
+  // RSI 칸에 긋지 않고 가격 칸 아래 가장자리에 적는다
+  strokes.length = 0;
+  texts.length = 0;
+  plugin.afterDatasetsDraw({ ...chartStub, chartArea: { ...chartStub.chartArea, bottom: 145 } }, {}, { cur: 'KRW', lines: [
+    { value: 150, label: '전일', varName: '--prev-line' }, { value: 70, label: '전저', varName: '--prevlo-line' }] });
+  assert.deepEqual(strokes.map((s) => s.y), [50], 'RSI 칸(y 100~145)에는 선을 긋지 않는다');
+  assert.equal(texts.find((t) => t.t === '▼ 전저 70').y, 99, '가격 칸 아래 가장자리에');
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른

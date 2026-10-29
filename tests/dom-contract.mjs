@@ -128,5 +128,19 @@ check('.qbar 의 버튼 규칙은 직계 자식(닫기)에만 건다', /\.qbar\s
 // 지표 화면은 단락(오늘 · 기간 수익률 · 매매동향 · 실적 · 가치 지표 …)이 길게 이어져 경계가 보여야 한다
 check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \+ section\s*\{[^}]*border-top:\s*1px dashed/.test(html));
 
+// --- RSI 칸 ------------------------------------------------------------------
+// RSI 를 켜 두면 차트 상자(.chartbox.sub)가 RSI 칸(renderer.js RSI_PANE)만큼 커져 가격 칸은 그대로다 — 세 값이 어긋나면
+// 가격 칸이 줄거나 빈 띠가 남는다. 켜고 끄는 버튼(#rsiPane)은 차트 왼쪽 위 버튼 묶음 안에 있다.
+{
+  const pane = +/const RSI_PANE = (\d+);/.exec(fs.readFileSync(new URL('../renderer.js', import.meta.url), 'utf8'))[1];
+  const base = /\.chartbox\s*\{\s*height:\s*clamp\((\d+)px,\s*26vh,\s*(\d+)px\)/.exec(html);
+  const sub = /\.chartbox\.sub\s*\{\s*height:\s*clamp\((\d+)px,\s*calc\(26vh \+ (\d+)px\),\s*(\d+)px\)/.exec(html);
+  check('.chartbox · .chartbox.sub 높이 규칙이 있다', !!base && !!sub);
+  check('.chartbox.sub 는 최소 · 보통 · 최대 모두 RSI_PANE 만큼 크다', !!base && !!sub
+    && +sub[1] === +base[1] + pane && +sub[2] === pane && +sub[3] === +base[2] + pane, `RSI_PANE ${pane}`);
+  const ctl = /<span class="chartctl">([\s\S]*?)<\/span>/.exec(html);
+  check('#rsiPane 은 차트 버튼 묶음(.chartctl) 안에 있다', !!ctl && /<button id="rsiPane" type="button" hidden>RSI<\/button>/.test(ctl[1]));
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);
