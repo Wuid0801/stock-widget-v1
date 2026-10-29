@@ -519,14 +519,26 @@ function trendFollow(closes, period = 200) {
   return { above, ma: ma[n], days };
 }
 
-// 모멘텀 12-1 — 최근 한 달(skip 거래일)을 뺀 12개월(long 거래일) 수익률(%). 마지막 한 달은 단기 되돌림이 섞여 빼는 것이
-// 흔한 정의다. 봉이 모자라면 null.
-function momentum(closes, long = 252, skip = 21) {
-  if (!closes || closes.length <= long) return null;
-  const n = closes.length - 1;
-  const from = closes[n - long];
-  const to = closes[n - skip];
-  return from > 0 && to > 0 ? (to / from - 1) * 100 : null;
+// 모멘텀 12-1 — 최근 skip 달을 뺀 long 달 수익률(%) = skip 달 전 종가 / long 달 전 종가 - 1. 마지막 한 달은 단기 되돌림이
+// 섞여 빼는 것이 흔한 정의다. 그날(없으면 그 앞의 마지막 봉) 종가이고 날짜는 마지막 봉의 UTC 날짜에서 달로 센다 — 거래일
+// 수로 세면 국내는 1년 거래일이 244일 남짓이라 252봉 전이 12개월보다 열흘 넘게 앞이었다(2026-10-29 하이닉스 279.8% ·
+// 달력 216.3%). 그달에 그날이 없으면(3/31 의 한 달 전) 그달 마지막 날. long 달 전보다 앞선 봉이 없으면 null.
+function momentum(times, closes, long = 12, skip = 1) {
+  if (!times || times.length < 2) return null;
+  const n = times.length - 1;
+  const dayOf = (t) => Math.floor(t / 86400000);
+  const back = (m) => {
+    const d = new Date(times[n]);
+    const want = d.getUTCDate();
+    d.setUTCDate(1);
+    d.setUTCMonth(d.getUTCMonth() - m);
+    d.setUTCDate(Math.min(want, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()));
+    return dayOf(d.getTime());
+  };
+  const at = (day) => { let k = -1; for (let i = 0; i <= n && dayOf(times[i]) <= day; i++) k = i; return k; };
+  const from = at(back(long));
+  const to = at(back(skip));
+  return from >= 0 && closes[from] > 0 && closes[to] > 0 ? (closes[to] / closes[from] - 1) * 100 : null;
 }
 
 // 적립식 — 최근 months 달(이번 달 포함) 매달 첫 거래일 종가에 같은 금액을 샀을 때의 평균 단가(같은 금액이라 조화평균)와
@@ -577,28 +589,64 @@ function reboundCheck(closes, volumes, lookback = 60, drop = 15) {
   };
 }
 
-// 코스톨라니 달걀(해석) — 가격 방향(20일선이 60일선 위면 상승)과 거래량 흐름(확정된 봉의 20일 평균 / 60일 평균:
-// 1 미만 감소, EGG_SURGE 미만 증가, 그 이상 급증)으로 여섯 국면. 원래 이론에는 숫자 기준이 없어 이 기준은 해석이다.
-// 상승: A1(감소 — 소수가 사 모으는 초기) · A2(증가 — 따라 오름) · A3(급증 — 과열)
-// 하락: B1(감소 — 꼭대기 뒤 이탈 시작) · B2(증가 — 따라 내림) · B3(급증 — 투매)
-// 거래량 0 인 날(휴장 · 빈 봉 · 거래량이 없는 지수)은 뺀다. 모자라면 null.
+// 코스톨라니 달걀(해석) — 상승장 · 하락장은 저마다 수정 → 동행 → 과장 세 국면을 차례로 지나고 그다음은 반대편이다
+// (A1 → A2 → A3 → B1 → B2 → B3 → 다시 A1). 그래서 국면은 그날 값만으로 붙이지 않고 순서를 기억해 한 칸씩 나아간다 —
+// 그날 값만으로 붙였더니 하락장 중의 반등이 A1(바닥 뒤 상승 초기)이 되어 삼성전자가 A1 → B1 로 보였다(2026-10-29).
+// 판정에 쓰는 값: 방향(20일선이 60일선 위면 상승), 거래량 흐름(확정된 봉의 20일 평균 / 60일 평균), RSI(14).
+// 원래 이론에는 숫자 기준이 없어 아래 기준은 해석이다.
+//   A1 → A2  거래량 증가(1배 이상, 상승 중)      A2 → A3  과열(RSI EGG_HOT 이상 또는 거래량 EGG_SURGE 배 이상)
+//   A3 → B1  20일선이 60일선 아래로              B1 → B2  거래량 증가(하락 중)
+//   B2 → B3  투매(RSI EGG_PANIC 이하 또는 거래량 EGG_SURGE 배 이상)    B3 → A1  20일선이 60일선 위로
+// 과열 · 투매는 칸을 건너뛰어 바로 간다(A1 → A3, B1 → B3). 과열 없이 EGG_CONFIRM 거래일 넘게 내리면 B1, 투매 없이 그만큼
+// 오르면 A1 로 넘어간다(꼭대기 · 바닥이 늘 과열 · 투매로 끝나지는 않는다). 되돌아가지는 않는다(A2 → A1 같은 흔들림 없음).
+// 과열 · 투매는 이동평균보다 먼저 온다 — B3 에 든 날 20일선이 아직 60일선 위였으면(삼성전자 10/15 RSI 28) 그 위를 A1 의
+// 근거로 쓰지 않고, 한 번 아래로 내려갔다 다시 올라서야 A1 이다(armed). A3 도 같다.
 const EGG_SURGE = 1.5;
+const EGG_HOT = 70;
+const EGG_PANIC = 30;
+const EGG_CONFIRM = 20;
 const EGG_ORDER = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3']; // 달걀을 도는 순서 — B3 다음은 다시 A1
 
-// 봉마다의 국면 { phase, up, ratio } — 그 봉까지의 일봉으로(그 봉의 거래량은 진행 중일 수 있어 뺀다). 모자라는 앞부분은 null.
+// 달걀 한 걸음 — 지금 국면 st(처음이면 null)와 그 봉의 x = { up, ratio, rsi, upRun, dnRun, armed } 로 다음 국면.
+// upRun · dnRun 은 방향이 이어진 봉 수, armed 는 A3 · B3 에 든 뒤 그 방향(A3 는 상승, B3 는 하락)을 한 번 지났는지.
+function eggNext(st, x) {
+  const hot = x.rsi >= EGG_HOT || x.ratio >= EGG_SURGE;
+  const panic = x.rsi <= EGG_PANIC || x.ratio >= EGG_SURGE;
+  if (st == null) return x.up ? (hot ? 'A3' : x.ratio < 1 ? 'A1' : 'A2') : (panic ? 'B3' : x.ratio < 1 ? 'B1' : 'B2');
+  if (st === 'A1') return hot ? 'A3' : x.up && x.ratio >= 1 ? 'A2' : x.dnRun >= EGG_CONFIRM ? 'B1' : st;
+  if (st === 'A2') return hot ? 'A3' : x.dnRun >= EGG_CONFIRM ? 'B1' : st;
+  if (st === 'A3') return (x.armed && !x.up) || x.dnRun >= EGG_CONFIRM ? 'B1' : st;
+  if (st === 'B1') return panic ? 'B3' : !x.up && x.ratio >= 1 ? 'B2' : x.upRun >= EGG_CONFIRM ? 'A1' : st;
+  if (st === 'B2') return panic ? 'B3' : x.upRun >= EGG_CONFIRM ? 'A1' : st;
+  return (x.armed && x.up) || x.upRun >= EGG_CONFIRM ? 'A1' : st; // B3
+}
+
+// 봉마다의 국면 { phase, up, ratio, rsi } — 셀 수 있는 첫 봉부터 eggNext 로 나아간다. 거래량은 그 봉 앞까지(그 봉은 진행 중일
+// 수 있어 뺀다), 0 인 날(휴장 · 빈 봉 · 거래량이 없는 지수)은 뺀다. 60일선 · 거래량 있는 날 60개가 모이기 전은 null.
 function eggSeries(closes, volumes) {
   const out = new Array(closes ? closes.length : 0).fill(null);
   if (!closes || !volumes) return out;
   const ma20 = sma(closes, 20);
   const ma60 = sma(closes, 60);
+  const rsi = rsiSeries(closes);
   const sum = [0]; // 그 봉 앞까지 거래량이 있는 날들의 누적합
+  let st = null;
+  let upRun = 0;
+  let dnRun = 0;
+  let armed = false;
   for (let i = 0; i < closes.length; i++) {
     if (i > 0 && volumes[i - 1] > 0) sum.push(sum[sum.length - 1] + volumes[i - 1]);
     const k = sum.length - 1;
     if (ma60[i] == null || k < 60) continue;
     const ratio = ((sum[k] - sum[k - 20]) / 20) / ((sum[k] - sum[k - 60]) / 60);
     const up = ma20[i] > ma60[i];
-    out[i] = { phase: `${up ? 'A' : 'B'}${ratio < 1 ? 1 : ratio < EGG_SURGE ? 2 : 3}`, up, ratio };
+    upRun = up ? upRun + 1 : 0;
+    dnRun = up ? 0 : dnRun + 1;
+    if ((st === 'A3' && up) || (st === 'B3' && !up)) armed = true;
+    const next = eggNext(st, { up, ratio, rsi: rsi[i], upRun, dnRun, armed });
+    if (next !== st) armed = false;
+    st = next;
+    out[i] = { phase: st, up, ratio, rsi: rsi[i] };
   }
   return out;
 }
@@ -623,6 +671,6 @@ if (typeof module !== 'undefined') {
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
     hull, trendLine, breakoutOf, meetAt,
-    trendFollow, momentum, dcaCost, reboundCheck, EGG_SURGE, EGG_ORDER, eggSeries, eggPhase,
+    trendFollow, momentum, dcaCost, reboundCheck, EGG_SURGE, EGG_HOT, EGG_PANIC, EGG_CONFIRM, EGG_ORDER, eggNext, eggSeries, eggPhase,
   };
 }

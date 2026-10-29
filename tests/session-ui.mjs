@@ -1365,7 +1365,7 @@ await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its
   const won = (v) => run(`money(${v}, 'KRW')`);
   const pct = (v) => run(`fmtPct(${v})`);
   const tf = indicators.trendFollow(C, 200);
-  const mom = indicators.momentum(C);
+  const mom = indicators.momentum(T, C);
   const dca = indicators.dcaCost(T, C, 12);
   const rb = indicators.reboundCheck(C, V, 60, 15);
   const egg = indicators.eggPhase(C, V);
@@ -1377,12 +1377,13 @@ await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its
   assert.ok(t.includes('비중 보유 2종목 중 84.0% · 균등이면 50.0%'), '2,616 / (2,616 + 499)');
   assert.ok(t.includes(`반등 점검 고점 ${won(289.5)} → 저점 ${won(rb.low)} (${pct(rb.dropPct)}) · ${rb.retrace.toFixed(0)}% 되돌림`));
   assert.ok(t.includes(`20일선 ${rb.aboveMa20 ? '위' : '아래'} · RSI ${rb.rsi.toFixed(0)} · 반등 거래량 하락 때의 ${rb.volRatio.toFixed(1)}배`));
-  assert.equal(egg.phase, 'B2', '20일선이 60일선 아래 · 최근 거래량이 늘었다');
-  assert.ok(egg.prev && egg.prev !== 'B2' && egg.days > 0, JSON.stringify(egg));
-  assert.ok(t.includes(`코스톨라니 ${egg.prev} → B2 · ${egg.days}일째 · 하락 · 거래량 증가 · 다음 B3 (해석)`), '직전 → 지금 · 일수 · 다음');
+  // 급락(RSI 30 아래)으로 B3 에 들었고, 반등 중이어도 20일선이 아직 60일선 아래라 B3 — 다음은 A1
+  assert.equal(`${egg.prev} → ${egg.phase} · 다음 ${egg.next}`, 'B1 → B3 · 다음 A1', JSON.stringify(egg));
+  assert.ok(t.includes(`코스톨라니 B1 → B3 · ${egg.days}일째 · 투매 · 다음 A1 (해석)`), '직전 → 지금 · 일수 · 다음');
   assert.equal((html.match(/<p title="[^"]+"><span class="mxmute">/g) || []).length, 6, '여섯 줄 모두 툴팁에 규칙');
-  assert.match(html, /title="코스톨라니 달걀\(해석\) B2 — 20일선이 60일선 아래\(하락\)/);
-  assert.ok(html.includes(`로 바뀐 지 ${egg.days}거래일째(오늘 포함)`) && html.includes('달걀 순서로 다음은 B3(하락 · 거래량 급증)'), '툴팁에 방향');
+  assert.match(html, /title="코스톨라니 달걀\(해석\) B3\(투매\)\n지금 20일선이 60일선 아래\(하락\) · 거래량 20일 평균이 60일 평균의 1\.39배 · RSI 54/);
+  assert.ok(html.includes(`B1(꼭대기 뒤 하락 초기)에서 B3로 바뀐 지 ${egg.days}거래일째(오늘 포함)`), '툴팁에 바뀐 때');
+  assert.ok(html.includes('다음은 A1(바닥 뒤 상승 초기) — 20일선이 다시 60일선 위로 올라서면'), '툴팁에 다음 칸으로 가는 조건');
   // 기법 점검은 기간 수익률 다음
   assert.ok(html.indexOf('기간 수익률') < html.indexOf('기법 점검'));
 
@@ -2918,22 +2919,24 @@ await test('market panel: stock indices note their Kostolany egg phase with the 
   const q = (vols) => `{ daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} }, dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(vols)} } }`;
   h.run(`quotes['^KS11'] = ${q(V)}; quotes['NQ=F'] = ${q(V)}; quotes['^SOX'] = ${q(T.map(() => 0))};`);
   const row = h.c.marketRow('KOSPI');
-  assert.equal(row.note, '달걀 A2 · 다음 A3', '처음 셀 수 있는 봉이라 직전 국면이 없다');
-  assert.match(row.noteTitle, /^코스톨라니 달걀\(해석\) A2 — 20일선이 60일선 위\(상승\) · 거래량 20일 평균이 60일 평균의 1\.18배/);
-  assert.match(row.noteTitle, /달걀 순서로 다음은 A3\(상승 · 거래량 급증\)/);
-  assert.match(row.noteTitle, /순서 A1 → A2 → A3 → B1 → B2 → B3 → 다시 A1/);
-  assert.match(row.noteTitle, /B3 하락\+급증\(투매\)/, '여섯 국면을 함께 적는다');
+  // 쉬지 않고 올라 RSI 100 — 처음 셀 수 있는 봉부터 과열(A3), 직전 국면은 없다
+  assert.equal(row.note, '달걀 A3 · 다음 B1', '처음 셀 수 있는 봉이라 직전 국면이 없다');
+  assert.match(row.noteTitle, /^코스톨라니 달걀\(해석\) A3\(과열\)\n지금 20일선이 60일선 위\(상승\) · 거래량 20일 평균이 60일 평균의 1\.18배 · RSI 100/);
+  assert.match(row.noteTitle, /다음은 B1\(꼭대기 뒤 하락 초기\) — 20일선이 60일선 아래로 내려가면/);
+  assert.match(row.noteTitle, /순서 A1 → A2 → A3 → B1 → B2 → B3 → 다시 A1\. 한 칸씩 나아가고 되돌아가지 않습니다/);
+  assert.match(row.noteTitle, /과열 없이 20거래일 넘게 내리면 B1, 투매 없이 그만큼 오르면 A1/, '건너뛰는 규칙도 적는다');
   assert.doesNotMatch(row.noteTitle, /바뀐 지/, '직전 국면이 없으면 바뀐 때도 없다');
-  assert.match(rowOf(h.c.marketHtml(), '^KS11'), /<span class="mnote" title="코스톨라니 달걀\(해석\) A2[^"]*">달걀 A2 · 다음 A3<\/span>/);
-  // 100봉 오르다 30봉 내린다(거래량 같음) — A2 에서 B2 로. 메모는 이름 칸(기본 폭 95px 남짓)에 맞게 일수 없이, 일수는 툴팁에
+  assert.match(rowOf(h.c.marketHtml(), '^KS11'), /<span class="mnote" title="코스톨라니 달걀\(해석\) A3[^"]*">달걀 A3 · 다음 B1<\/span>/);
+  // 100봉 오르다 30봉 내린다(거래량 같음) — A3 에서 20일선이 꺾여 B1, 이어진 급락(RSI 30 아래)으로 B3.
+  // 메모는 이름 칸(기본 폭 95px 남짓)에 맞게 일수 없이, 일수는 툴팁에
   const T2 = days('2026-03-01', 130);
   const C2 = [...Array.from({ length: 100 }, (_, i) => 700 + i), ...Array.from({ length: 30 }, (_, i) => 799 - (i + 1) * 3)];
   h.run(`quotes['^KQ11'] = { daily: { times: ${JSON.stringify(T2)}, closes: ${JSON.stringify(C2)} },
     dailyVolume: { times: ${JSON.stringify(T2)}, volumes: ${JSON.stringify(T2.map(() => 100))} } };`);
   const kq = h.c.marketRow('KOSDAQ');
   const e = indicators.eggPhase(C2, T2.map(() => 100));
-  assert.equal(kq.note, '달걀 A2→B2 · 다음 B3');
-  assert.ok(kq.noteTitle.includes(`A2(상승 · 거래량 증가)에서 B2(하락 · 거래량 증가)로 바뀐 지 ${e.days}거래일째(오늘 포함)`), kq.noteTitle);
+  assert.equal(kq.note, '달걀 B1→B3 · 다음 A1');
+  assert.ok(kq.noteTitle.includes(`B1(꼭대기 뒤 하락 초기)에서 B3로 바뀐 지 ${e.days}거래일째(오늘 포함)`), kq.noteTitle);
   assert.equal(h.c.marketRow('SOX').note, '', 'SOX 는 거래량이 없다(야후 0)');
   assert.equal(h.c.marketRow('NQ').note, '10분 지연', '선물은 달걀을 달지 않는다');
   assert.match(rowOf(h.c.marketHtml(), 'NQ=F'), /<span class="mnote">10분 지연<\/span>/, '툴팁 없는 메모는 그대로');

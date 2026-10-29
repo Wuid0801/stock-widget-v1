@@ -1,5 +1,6 @@
 // 기법 점검(지표 화면) 계산 — 앱을 띄우지 않고 indicators.js 의 추세 추종 · 모멘텀 · 적립식 · 반등 점검 · 코스톨라니 달걀을 본다.
-import { trendFollow, momentum, dcaCost, reboundCheck, eggPhase, eggSeries, EGG_SURGE, EGG_ORDER, sma, calcRSI } from '../indicators.js';
+import { trendFollow, momentum, dcaCost, reboundCheck, eggNext, eggPhase, eggSeries, EGG_SURGE, EGG_HOT, EGG_PANIC, EGG_CONFIRM, EGG_ORDER,
+  sma, calcRSI } from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -20,13 +21,27 @@ const near = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-9;
   check('기간을 바꿀 수 있다', trendFollow(up.slice(0, 20), 20).days === 1);
 }
 
-// --- 모멘텀 12-1: 최근 21거래일을 뺀 252거래일 수익률(%) ----------------------------------------------------
+// --- 모멘텀 12-1: 1개월 전 종가 / 12개월 전 종가 - 1. 날짜는 달력으로(거래일 수가 아니라) ------------------------------
 {
-  const c = Array.from({ length: 253 }, (_, i) => 100 + i);
-  check('253봉이면 첫 봉 → 21봉 전', near(momentum(c), (331 / 100 - 1) * 100), String(momentum(c)));
-  check('252봉 이하면 null', momentum(c.slice(0, 252)) === null && momentum(null) === null);
-  check('마지막 한 달은 보지 않는다', near(momentum([...c.slice(0, 232), ...Array(21).fill(1)]), momentum(c)));
-  check('기간을 바꿀 수 있다', near(momentum([10, 11, 12, 20], 3, 1), 20));
+  // 2025-06-02 ~ 2026-10-26 평일(09:00 KST = 00:00 UTC), 값은 봉 번호
+  const times = [];
+  for (let t = Date.UTC(2025, 5, 2); t <= Date.UTC(2026, 9, 26); t += 86400000) if (![0, 6].includes(new Date(t).getUTCDay())) times.push(t);
+  const closes = times.map((_, i) => 100 + i);
+  const on = (y, m, d) => times.indexOf(Date.UTC(y, m - 1, d));
+  // 2026-10-26(월)의 12개월 전 2025-10-26 은 일요일 → 10-24(금), 1개월 전 2026-09-26 은 토요일 → 09-25(금)
+  const want = (closes[on(2026, 9, 25)] / closes[on(2025, 10, 24)] - 1) * 100;
+  check('그날(없으면 그 앞 거래일) 종가로', near(momentum(times, closes), want), `${momentum(times, closes)} / ${want}`);
+  check('거래일 수가 아니라 달력', on(2026, 10, 26) - on(2025, 10, 24) !== 252);
+  check('마지막 한 달은 보지 않는다', near(momentum(times, closes.map((v, i) => (i > on(2026, 9, 25) ? 1 : v))), want));
+  // 3/31 의 한 달 전은 2/28(토) → 2/27(금), 두 달 전은 1/31(토) → 1/30(금)
+  const mar = times.slice(0, on(2026, 3, 31) + 1);
+  check('그달에 그날이 없으면 그달 마지막 날', near(momentum(mar, closes, 2, 1), (closes[on(2026, 2, 27)] / closes[on(2026, 1, 30)] - 1) * 100));
+  check('12개월 전보다 앞선 봉이 없으면 null', momentum(times.slice(on(2025, 11, 3)), closes.slice(on(2025, 11, 3))) === null
+    && momentum(null, null) === null);
+  // 미국 일봉(13:30 · 14:30 UTC, 서머타임)도 날짜로 맞춘다
+  const us = times.map((t, i) => t + (i % 2 ? 13.5 : 14.5) * 3600000);
+  check('봉 시각이 달라도 날짜로', near(momentum(us, closes), want));
+  check('기간을 바꿀 수 있다', near(momentum(times, closes, 3, 0), (closes.at(-1) / closes[on(2026, 7, 24)] - 1) * 100));
 }
 
 // --- 적립식: 최근 12달(이번 달 포함) 매달 첫 거래일 종가에 같은 금액 → 평균 단가(조화평균) --------------------------
@@ -76,44 +91,74 @@ const near = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-9;
     && reboundCheck(closes, vols, 60, 25) === null);
 }
 
-// --- 코스톨라니 달걀(해석): 20일선 vs 60일선 × 거래량 20일 평균 / 60일 평균 ---------------------------------------
+// --- 코스톨라니 달걀(해석): 순서를 기억해 한 칸씩 — 방향(20일선 vs 60일선) · 거래량 20일/60일 · RSI ---------------------
 {
-  const rise = Array.from({ length: 61 }, (_, i) => 100 + i);
-  const fall = rise.slice().reverse();
-  // 확정된 봉 60개: 앞 40봉 100, 최근 20봉 v. 마지막(61번째) 봉은 진행 중이라 뺀다
-  const vols = (v) => [...Array(40).fill(100), ...Array(20).fill(v), 1e9];
-  const e = eggPhase(rise, vols(130));
-  check('상승 + 거래량 증가 = A2', e && e.phase === 'A2' && e.up === true, JSON.stringify(e));
-  check('비율 = 최근 20봉 평균 / 60봉 평균', near(e.ratio, 130 / ((40 * 100 + 20 * 130) / 60)));
-  check('상승 + 거래량 감소 = A1', eggPhase(rise, vols(80)).phase === 'A1');
-  check(`상승 + 거래량 급증(${EGG_SURGE}배 이상) = A3`, eggPhase(rise, vols(300)).phase === 'A3');
-  check('하락 = B1 · B2 · B3', eggPhase(fall, vols(80)).phase === 'B1' && eggPhase(fall, vols(130)).phase === 'B2'
-    && eggPhase(fall, vols(300)).phase === 'B3');
+  check('순서는 A1 → A2 → A3 → B1 → B2 → B3', EGG_ORDER.join(' ') === 'A1 A2 A3 B1 B2 B3');
+  // 한 걸음(eggNext) — 규칙 표 그대로
+  const x = (o) => ({ up: true, ratio: 1.1, rsi: 50, upRun: 1, dnRun: 0, armed: false, ...o });
+  const steps = [
+    // [지금, 그 봉, 다음, 뜻]
+    [null, x({}), 'A2', '처음: 상승 + 거래량 증가'], [null, x({ ratio: 0.9 }), 'A1', '처음: 상승 + 감소'],
+    [null, x({ rsi: EGG_HOT }), 'A3', '처음: 상승 + 과열'], [null, x({ up: false, ratio: 0.9 }), 'B1', '처음: 하락 + 감소'],
+    [null, x({ up: false }), 'B2', '처음: 하락 + 증가'], [null, x({ up: false, rsi: EGG_PANIC }), 'B3', '처음: 하락 + 투매'],
+    ['A1', x({}), 'A2', 'A1 → A2 거래량 증가'], ['A1', x({ ratio: 0.9 }), 'A1', 'A1 거래량 감소면 그대로'],
+    ['A1', x({ ratio: EGG_SURGE }), 'A3', '과열(거래량)은 A2 를 건너뛴다'], ['A1', x({ up: false, dnRun: 5 }), 'A1', '잠깐 내린 것은 그대로'],
+    ['A1', x({ up: false, dnRun: EGG_CONFIRM }), 'B1', `과열 없이 ${EGG_CONFIRM}거래일 내리면 B1`],
+    ['A2', x({ ratio: 0.5 }), 'A2', 'A2 → A1 로 되돌아가지 않는다'], ['A2', x({ rsi: 70 }), 'A3', 'A2 → A3 과열(RSI)'],
+    ['A2', x({ up: false, dnRun: EGG_CONFIRM - 1 }), 'A2', '확인 전'], ['A2', x({ up: false, dnRun: EGG_CONFIRM }), 'B1', '과열 없이 꺾인 꼭대기'],
+    ['A3', x({ rsi: 50, ratio: 0.8 }), 'A3', '식어도 상승 중이면 A3'], ['A3', x({ up: false, dnRun: 1, armed: true }), 'B1', 'A3 → B1 20일선이 아래로'],
+    ['A3', x({ up: false, dnRun: 1 }), 'A3', '상승을 지나지 않은 A3 는 아래로 간 것만으로 B1 이 아니다'],
+    ['A3', x({ up: false, dnRun: EGG_CONFIRM }), 'B1', '대신 그만큼 내리면 B1'],
+    ['B1', x({ up: false }), 'B2', 'B1 → B2 하락 중 거래량 증가'], ['B1', x({ up: false, ratio: 0.9 }), 'B1', '감소면 그대로'],
+    ['B1', x({ up: true, ratio: 1.2, upRun: 3 }), 'B1', '반등 중 거래량 증가는 B2 가 아니다'],
+    ['B1', x({ up: false, rsi: 30 }), 'B3', '투매(RSI)는 B2 를 건너뛴다'], ['B1', x({ upRun: EGG_CONFIRM }), 'A1', `투매 없이 ${EGG_CONFIRM}거래일 오르면 A1`],
+    ['B2', x({ up: false, ratio: 0.5 }), 'B2', 'B2 → B1 로 되돌아가지 않는다'], ['B2', x({ upRun: 5 }), 'B2', '짧은 반등은 그대로(하락장 중의 반등)'],
+    ['B2', x({ rsi: 28 }), 'B3', '투매는 20일선이 아직 위여도 B3'], ['B2', x({ upRun: EGG_CONFIRM }), 'A1', '투매 없이 돌아선 바닥'],
+    ['B3', x({ up: false }), 'B3', '하락 중이면 B3'], ['B3', x({ upRun: 5 }), 'B3', '하락을 지나지 않은 B3 는 위인 것만으로 A1 이 아니다'],
+    ['B3', x({ upRun: 1, armed: true }), 'A1', 'B3 → A1 20일선이 다시 위로'],
+  ];
+  const bad = steps.filter(([st, o, want]) => eggNext(st, o) !== want);
+  check(`한 걸음 규칙 ${steps.length}가지`, bad.length === 0, bad.map(([st, , want, why]) => `${st}→${want}(${why})`).join(' / '));
+
+  // 이어서 — 오름(과열) → 내림 → 하락장 중의 반등(20일선이 잠깐 위) → 급락(투매, 20일선 아직 위) → 낮은 데서 횡보 → 다시 오름
+  const c = [];
+  let p = 100;
+  const push = (n, f) => { for (let i = 0; i < n; i++) { p = f(i, p); c.push(p); } };
+  push(90, (i, v) => v + (i % 2 ? -0.6 : 1.4));
+  push(45, (i, v) => v + (i % 2 ? 0.8 : -1.8));
+  push(25, (i, v) => v + (i % 2 ? -0.5 : 2.6));
+  push(6, (i, v) => v * 0.94);
+  push(25, (i, v) => v + (i % 2 ? 0.4 : -0.5));
+  push(60, (i, v) => v + (i % 2 ? -0.4 : 1.2));
+  const s = eggSeries(c, c.map(() => 100));
+  const path = [];
+  s.forEach((e, i) => { if (e && (!path.length || path.at(-1).phase !== e.phase)) path.push({ i, ...e }); });
+  check('한 바퀴: A3 → B1 → B2 → B3 → A1 → A2 → A3', path.map((e) => e.phase).join(' ') === 'A3 B1 B2 B3 A1 A2 A3', path.map((e) => `${e.i}:${e.phase}`).join(' '));
+  const forward = path.slice(1).every((e, k) => [1, 2, 3].includes((EGG_ORDER.indexOf(e.phase) - EGG_ORDER.indexOf(path[k].phase) + 6) % 6));
+  check('되돌아가지 않는다', forward);
+  const b3 = path.find((e) => e.phase === 'B3');
+  const a1 = path.find((e) => e.phase === 'A1');
+  check('하락장 중의 반등(20일선 잠깐 위)은 A1 이 아니다', s.slice(path[2].i, b3.i).some((e) => e.up));
+  check('투매는 20일선이 아직 위일 때 왔다', b3.up === true && b3.rsi <= EGG_PANIC, JSON.stringify(b3));
+  check('A1 은 20일선이 한 번 내려갔다 다시 올라선 뒤', s.slice(b3.i, a1.i).some((e) => !e.up) && a1.up && a1.i > b3.i + 1);
+
+  // 지금 국면 · 방향(eggPhase) — 직전 국면 · 이어진 봉 수(오늘 포함) · 달걀 순서의 다음
+  const e = eggPhase(c, c.map(() => 100));
+  const last = path.at(-1);
+  check('지금은 A3, 직전 A2, 다음 B1', e.phase === 'A3' && e.prev === 'A2' && e.next === 'B1', JSON.stringify(e));
+  check('일수는 바뀐 봉부터 오늘까지', e.days === c.length - last.i);
+  check('B3 다음은 다시 A1', eggPhase(c.slice(0, a1.i), c.slice(0, a1.i).map(() => 100)).next === 'A1');
+  check('봉마다의 국면은 그 봉까지로 센 eggPhase 와 같다',
+    [60, 120, b3.i, a1.i, c.length - 1].every((i) => s[i].phase === eggPhase(c.slice(0, i + 1), c.slice(0, i + 1).map(() => 100)).phase));
+  // 처음 셀 수 있는 봉 — 60일선과 거래량 있는 날 60개
+  const rise = Array.from({ length: 61 }, (_, i) => 100 + i * 0.25 + (i % 2 ? -1 : 0)); // 톱니(+1.25 / -0.75)라 RSI 가 70 아래
+  const vols = (v) => [...Array(40).fill(100), ...Array(20).fill(v), 1e9]; // 마지막 봉(진행 중)은 뺀다
+  const first = eggPhase(rise, vols(130));
+  check('처음 봉은 그날 값으로(상승 + 증가 = A2) · 직전 없음', first && first.phase === 'A2' && first.prev === null && first.days === 1, JSON.stringify(first));
+  check('비율 = 최근 20봉 평균 / 60봉 평균', near(first.ratio, 130 / ((40 * 100 + 20 * 130) / 60)));
   check('거래량이 없는 지수(0)는 null', eggPhase(rise, rise.map(() => 0)) === null);
   check('봉이 모자라면 null', eggPhase(rise.slice(1), vols(130).slice(1)) === null && eggPhase(rise, null) === null);
-  check('거래량 0 인 날은 빼고 센다', eggPhase([...rise, 161], [...vols(130).slice(0, 60), 0, 1e9]).phase === 'A2');
-
-  // 방향 — 직전 국면 → 지금 국면 · 이어진 봉 수 · 달걀 순서의 다음 국면
-  check('처음 셀 수 있는 봉이면 직전 국면이 없다', e.prev === null && e.days === 1 && e.next === 'A3', JSON.stringify(e));
-  // 100봉 오르다 30봉 내린다. 거래량은 늘 같아 비율 1(증가) — A2 에서 20일선이 60일선 밑으로 내려간 봉부터 B2
-  const turn = [...Array.from({ length: 100 }, (_, i) => 100 + i), ...Array.from({ length: 30 }, (_, i) => 199 - (i + 1) * 3)];
-  const flat = turn.map(() => 100);
-  const t = eggPhase(turn, flat);
-  const m20 = sma(turn, 20); const m60 = sma(turn, 60);
-  const flip = m20.findLastIndex((v, i) => v > m60[i]); // 마지막으로 위였던 봉
-  check('A2 → B2', t.prev === 'A2' && t.phase === 'B2', JSON.stringify(t));
-  check('일수는 바뀐 봉부터 오늘까지', t.days === turn.length - 1 - flip, `${t.days} / ${turn.length - 1 - flip}`);
-  check('다음은 달걀 순서로 B3', t.next === 'B3');
-  check('B3 다음은 다시 A1', eggPhase(fall, vols(300)).next === 'A1');
-  check('순서는 A1 → A2 → A3 → B1 → B2 → B3', EGG_ORDER.join(' ') === 'A1 A2 A3 B1 B2 B3');
-  // 봉마다의 국면은 그 봉까지의 일봉으로 센 지금 국면과 같다
-  const wave = Array.from({ length: 160 }, (_, i) => 100 + 20 * Math.sin(i / 9) + i * 0.1);
-  const wv = wave.map((_, i) => 100 + 60 * Math.abs(Math.sin(i / 7)));
-  const s = eggSeries(wave, wv);
-  const same = [60, 61, 90, 120, 159].every((i) => (s[i] && s[i].phase) === (eggPhase(wave.slice(0, i + 1), wv.slice(0, i + 1)) || {}).phase);
-  check('eggSeries[i] = 그 봉까지로 센 eggPhase', same && s[59] === null && s[60] !== null);
-  check('파도 모양이면 국면이 여러 번 바뀐다', new Set(s.filter(Boolean).map((x) => x.phase)).size >= 3,
-    [...new Set(s.filter(Boolean).map((x) => x.phase))].join(','));
+  check('거래량 0 인 날은 빼고 센다', eggPhase([...rise, 158], [...vols(130).slice(0, 60), 0, 1e9]).ratio === first.ratio);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

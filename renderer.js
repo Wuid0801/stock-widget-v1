@@ -226,19 +226,24 @@ const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw:
 // 코스톨라니 달걀(해석, indicators.js eggPhase)을 메모에 다는 지표 화면 줄 — 거래량이 있는 주가지수만. SOX · 환율 · VIX · 금리는
 // 거래량이 없고(야후 0), 나스닥 선물 · WTI 는 만기 때 거래량이 튀고 주식시장 이론이 맞지 않아 뺀다.
 const EGG_INDEX = new Set(['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX']);
-const EGG_NOTE = { A1: '상승 · 거래량 감소', A2: '상승 · 거래량 증가', A3: '상승 · 거래량 급증',
-  B1: '하락 · 거래량 감소', B2: '하락 · 거래량 증가', B3: '하락 · 거래량 급증' };
+// 국면 이름(달걀은 순서를 기억해 나아간다 — 국면은 그날의 거래량 상태가 아니라 달걀의 자리다)과 다음 칸으로 가는 조건
+const EGG_NOTE = { A1: '바닥 뒤 상승 초기', A2: '상승 · 거래량 증가', A3: '과열',
+  B1: '꼭대기 뒤 하락 초기', B2: '하락 · 거래량 증가', B3: '투매' };
+const EGG_WHEN = {
+  A1: '상승 중 거래량이 늘면(20일/60일 1배 이상)', A2: `과열되면(RSI ${EGG_HOT} 이상 또는 거래량 ${EGG_SURGE}배 이상)`,
+  A3: '20일선이 60일선 아래로 내려가면', B1: '하락 중 거래량이 늘면(20일/60일 1배 이상)',
+  B2: `투매가 나오면(RSI ${EGG_PANIC} 이하 또는 거래량 ${EGG_SURGE}배 이상)`, B3: '20일선이 다시 60일선 위로 올라서면',
+};
 // 시장 지표 줄 메모의 달걀 국면과 방향 — 직전 국면→지금 국면 · 달걀 순서의 다음 국면(eggPhase). 이름 칸이 기본 폭(340px)에서
 // 95px 남짓이라(2026-10-29 측정 — '달걀 A2→B1 · 6일째 · 다음 B2' 는 122px 로 잘렸다) 이어진 일수는 툴팁에만 둔다.
 const eggDir = (e) => `${e.prev ? `${e.prev}→` : ''}${e.phase} · 다음 ${e.next}`;
-// 달걀 국면의 근거 · 방향과 여섯 국면 — 지표 화면 툴팁(종목 기법 점검 · 시장 지표 줄)
-const eggTip = (e) => `코스톨라니 달걀(해석) ${e.phase} — 20일선이 60일선 ${e.up ? '위(상승)' : '아래(하락)'}`
-  + ` · 거래량 20일 평균이 60일 평균의 ${e.ratio.toFixed(2)}배 (1배 미만 감소 · ${EGG_SURGE}배 미만 증가 · 그 이상 급증)\n`
-  + (e.prev ? `${e.prev}(${EGG_NOTE[e.prev]})에서 ${e.phase}(${EGG_NOTE[e.phase]})로 바뀐 지 ${e.days}거래일째(오늘 포함)\n` : '')
-  + `달걀 순서로 다음은 ${e.next}(${EGG_NOTE[e.next]}) — 실제로는 건너뛰거나 거꾸로 가기도 합니다\n`
-  + `순서 ${EGG_ORDER.join(' → ')} → 다시 ${EGG_ORDER[0]}\n`
-  + 'A1 상승+감소(소수가 사 모으는 초기) · A2 상승+증가(따라 오름) · A3 상승+급증(과열)\n'
-  + 'B1 하락+감소(꼭대기 뒤 이탈 시작) · B2 하락+증가(따라 내림) · B3 하락+급증(투매)\n'
+// 달걀 국면의 근거 · 방향과 규칙 — 지표 화면 툴팁(종목 기법 점검 · 시장 지표 줄)
+const eggTip = (e) => `코스톨라니 달걀(해석) ${e.phase}(${EGG_NOTE[e.phase]})\n`
+  + `지금 20일선이 60일선 ${e.up ? '위(상승)' : '아래(하락)'} · 거래량 20일 평균이 60일 평균의 ${e.ratio.toFixed(2)}배 · RSI ${e.rsi.toFixed(0)}\n`
+  + (e.prev ? `${e.prev}(${EGG_NOTE[e.prev]})에서 ${e.phase}로 바뀐 지 ${e.days}거래일째(오늘 포함)\n` : '')
+  + `다음은 ${e.next}(${EGG_NOTE[e.next]}) — ${EGG_WHEN[e.phase]}\n`
+  + `순서 ${EGG_ORDER.join(' → ')} → 다시 ${EGG_ORDER[0]}. 한 칸씩 나아가고 되돌아가지 않습니다. `
+  + `과열 · 투매는 바로 건너뛰고(A1 → A3, B1 → B3), 과열 없이 ${EGG_CONFIRM}거래일 넘게 내리면 B1, 투매 없이 그만큼 오르면 A1\n`
   + '원래 이론에는 숫자 기준이 없어 이 기준은 해석입니다 — 참고용';
 // group: 업종 · 테마 안으로 들어가 있으면 그 묶음({ no, name, pct, count, up, down }), 아니면 null
 let rankView = { market: 'kr', kind: 'search', group: null };
@@ -963,12 +968,12 @@ function techHtml(item) {
       `종가가 ${FOLLOW_MA}일선 위면 보유, 아래면 현금으로 보는 규칙 — 큰 하락을 피하는 데 강점이 있고 횡보장에서는 자주 바뀝니다. `
       + '일수는 그 상태가 이어진 거래일(오늘 포함)'));
   }
-  const mom = momentum(d.closes);
+  const mom = momentum(d.times, d.closes);
   if (mom != null) {
-    const all = state.watchlist.map((w) => { const x = quotes[w.symbol]; return x && x.daily ? momentum(x.daily.closes) : null; })
+    const all = state.watchlist.map((w) => { const x = quotes[w.symbol]; return x && x.daily ? momentum(x.daily.times, x.daily.closes) : null; })
       .filter((m) => m != null);
     out.push(line('모멘텀', `12-1개월 ${pct(mom)}${all.length > 1 ? ` · 관심종목 <b>${all.filter((m) => m > mom).length + 1}/${all.length}위</b>` : ''}`,
-      '최근 1개월(21거래일)을 뺀 12개월(252거래일) 수익률 — 많이 오른 종목이 한동안 더 오르는 경향을 봅니다. 급반전할 때 크게 잃습니다. '
+      '최근 1개월을 뺀 12개월 수익률(1개월 전 종가 / 12개월 전 종가) — 많이 오른 종목이 한동안 더 오르는 경향을 봅니다. 급반전할 때 크게 잃습니다. '
       + '순위는 관심종목 중 이 값이 있는 종목끼리'));
   }
   const dca = dcaCost(d.times, d.closes, DCA_MONTHS);
