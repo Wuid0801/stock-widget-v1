@@ -15,7 +15,9 @@
 
 ## 빌드
 
-Node.js 22.12 이상이 필요합니다 — 설치하는 Electron 43 이 요구합니다(`node_modules/electron/package.json` 의 `engines`). 메인 프로세스는 Electron 에 든 Node 로 돕니다.
+Node.js 22.12 이상이 필요합니다 — 설치하는 Electron 44 가 요구합니다(`node_modules/electron/package.json` 의 `engines`). 메인 프로세스는 Electron 에 든 Node 로 돕니다.
+
+Electron 44 는 `npm install` 때 실행 파일을 받지 않고(설치 스크립트가 없다), 처음 `electron` 을 부를 때(`npm start` · 테스트 · `npm run dist`) `node_modules/electron/dist` 에 받습니다 — 받다 실패하면 `npx install-electron --no` 로 손으로 받습니다. 43.3.0 → 44.10.0(2026-10-29): 44 · 45 의 바뀐 점(클립보드 · net.request · 32비트 · 샌드박스 preload 의 Node 대용품 · window.open 자식 창 · ASAR 파일 기술자)은 이 앱이 쓰지 않는다 — preload 는 contextBridge · ipcRenderer 만, 창 열기는 막고(deny) 권한 요청은 모두 거절한다. 45 는 나온 지 8일이라 다음에 올린다. Electron 은 최신 세 주 버전만 보안 수정을 내므로(지금 45 · 44 · 43, 주 버전은 8주마다) 44 는 47 이 나오면 지원이 끝난다 — 그 전에 다시 올린다.
 
 ```bash
 npm install

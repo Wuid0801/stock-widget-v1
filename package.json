@@ -14,9 +14,9 @@
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
-    "electron": "^43.3.0",
-    "playwright-core": "^1.56.0",
+    "electron": "^44.10.0",
     "electron-builder": "^24.13.3",
+    "playwright-core": "^1.56.0",
     "rcedit": "^4.0.1"
   },
   "productName": "관심종목 위젯",

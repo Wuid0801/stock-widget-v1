@@ -202,7 +202,7 @@
 
 ## 직접 빌드하기
 
-[Node.js](https://nodejs.org/) 22.12 이상이 필요합니다(Electron 43 이 요구합니다).
+[Node.js](https://nodejs.org/) 22.12 이상이 필요합니다(Electron 44 가 요구합니다). Electron 실행 파일은 처음 `npm start` 할 때 내려받습니다.
 
 ```bash
 npm install
