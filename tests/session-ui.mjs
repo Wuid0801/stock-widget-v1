@@ -926,6 +926,7 @@ await test('indicators: RSI continues from the daily history, 1D from the earlie
   assert.equal(r.rising, done.at(-1).golden, '마지막 확정 교차의 방향');
   assert.equal(r.since, 20 - done.at(-1).i, '교차한 봉부터 센 봉 수');
   assert.equal(r.flipAt, T.slice(-20)[done.at(-1).i]);
+  assert.equal(r.pending, null, '일봉 기간은 진행 중인 교차를 보이지 않는다(오늘 봉이 하루 내내 진행 중이다)');
 
   // 1D: 앞 거래일 봉(warm)을 앞에 잇는다 — 첫 봉부터 RSI · 시그널, 교차도 이은 흐름에서
   run("state.timeframe = '1D';");
@@ -935,6 +936,15 @@ await test('indicators: RSI continues from the daily history, 1D from the earlie
   assert.ok(d.data[0] != null && d.signal[0] != null, '장 초반(첫 봉)부터 있다');
   const want = c.crossings(full, sig).filter((x) => x.i >= 60 && x.i < N - 1).map((x) => x.i - 60);
   assert.equal(JSON.stringify(d.crosses.map((x) => x.i)), JSON.stringify(want));
+  // 1D 는 진행 중인 마지막 봉의 교차를 따로 준다 — drawChart 가 테두리 점으로 그린다(확정 교차 · 범례에는 넣지 않는다)
+  assert.equal(JSON.stringify(d.pending && [d.pending.i, d.pending.golden]), JSON.stringify([19, raw.at(-1).golden]));
+  assert.ok(!d.crosses.some((x) => x.i === 19));
+  const calm = run(`rsiFor('X', ${JSON.stringify(T.slice(60, 79))}, ${JSON.stringify(C.slice(60, 79))}, ${JSON.stringify(C.slice(0, 60))})`);
+  assert.equal(calm.pending, null, '마지막 봉에서 뚫지 않았으면 없다');
+  run("state.timeframe = '1W';");
+  assert.equal(run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, ${JSON.stringify(C.slice(0, 60))})`).pending,
+    null, '1W 도 보이지 않는다(1D 만)');
+  run("state.timeframe = '1D';");
   // 앞 거래일 봉을 못 받으면 오늘 봉만으로 — 앞 14봉은 빈다
   const bare = run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, null)`);
   assert.ok(bare.data.slice(0, 14).every((v) => v === null) && bare.data[14] != null);
@@ -1064,6 +1074,16 @@ await test('indicators: drawChart puts RSI and its signal faintly in the volume 
   const dots = on.find((d) => d.showLine === false);
   assert.equal(JSON.stringify(dots.data), '[null,null,55,null]', '확정된 교차 봉에만 점');
   assert.equal(dots.pointBackgroundColor[2], run('UP'), '위로 뚫으면 빨강');
+  assert.equal(dots.pointBorderWidth[2], 0, '확정된 교차는 속이 찬 점');
+  // 1D 진행 중인 마지막 봉의 교차(pending)는 테두리만 — 봉이 끝나 확정되면 속이 찬 점이 된다
+  run('arg_.rsi = { ...arg_.rsi, pending: { i: 3, golden: false } }; drawChart(arg_);');
+  const open = configs.at(-1).data.datasets.find((d) => d.yAxisID === 'yRsi' && d.showLine === false);
+  assert.equal(JSON.stringify(open.data), '[null,null,55,60]', '진행 중인 교차 봉에도 점');
+  assert.equal(open.pointBackgroundColor[3], 'transparent', '속은 비우고');
+  assert.equal(open.pointBorderColor[3], run('DOWN'), '테두리는 방향 색');
+  assert.ok(open.pointBorderWidth[3] > 0);
+  assert.equal(open.pointBackgroundColor[2], run('UP'), '확정된 점은 그대로');
+  run('arg_.rsi = { ...arg_.rsi, pending: null };');
   const footer = cfg.options.plugins.tooltip.callbacks.footer([{ datasetIndex: 0, dataIndex: 2, dataset: {} }]);
   assert.ok(footer.includes('RSI 55.0 · 시그널 50.0'), '툴팁에 그 봉의 RSI · 시그널');
   assert.equal(cfg.options.plugins.tooltip.callbacks.footer([{ datasetIndex: 0, dataIndex: 0, dataset: {} }])

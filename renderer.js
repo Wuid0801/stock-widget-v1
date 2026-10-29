@@ -2152,7 +2152,10 @@ function drawChart(arg) {
   // 확대 중에는 보이는 구간의 최댓값으로 — 전체 최댓값이면 막대가 납작해진다.
   const shownVol = zr ? volumes.slice(zr.from, zr.to + 1) : volumes;
   const maxVol = shownVol.length ? Math.max(...shownVol) : 0;
-  const rsiDot = new Map((rsi ? rsi.crosses : []).map((x) => [x.i, x.golden])); // RSI 교차 봉 → 위로 뚫었는지
+  // RSI 교차 봉 → { golden(위로 뚫었는지), open(1D 진행 중인 마지막 봉 — 테두리 점) }
+  const rsiDot = new Map(rsi ? [...rsi.crosses.map((x) => [x.i, { golden: x.golden, open: false }]),
+    ...(rsi.pending ? [[rsi.pending.i, { golden: rsi.pending.golden, open: true }]] : [])] : []);
+  const rsiDotColor = (i) => (rsiDot.has(i) && rsiDot.get(i).golden ? UP : DOWN);
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
@@ -2391,8 +2394,9 @@ function drawChart(arg) {
         pointRadius: 2.2,
         pointHoverRadius: 2.2,
         pointHitRadius: 0,
-        pointBorderWidth: 0,
-        pointBackgroundColor: closes.map((_, i) => (rsiDot.get(i) ? UP : DOWN)),
+        pointBorderWidth: closes.map((_, i) => (rsiDot.has(i) && rsiDot.get(i).open ? 1.2 : 0)),
+        pointBorderColor: closes.map((_, i) => rsiDotColor(i)),
+        pointBackgroundColor: closes.map((_, i) => (rsiDot.has(i) && rsiDot.get(i).open ? 'transparent' : rsiDotColor(i))),
       }] : []),
       ],
     },
@@ -2736,7 +2740,10 @@ function rsiFor(symbol, times, closes, warm) {
   if (!data.some((v) => v != null)) return null;
   const crosses = confirmedCrosses(found, times.length);
   const last = crosses[crosses.length - 1];
-  return { data, signal, crosses, rising: last ? last.golden : null, since: last ? times.length - last.i : null,
+  // 1D 는 진행 중인 마지막 봉의 교차도 따로 준다 — drawChart 가 테두리 점으로 그리고, 봉이 끝나면 crosses 로 옮겨 속이 찬다.
+  // 일봉 기간은 오늘 봉이 하루 내내 진행 중이라 종일 생겼다 사라지기를 되풀이해 뺀다. 1W 도 1D 만 해 달라고 했다(2026-10-29).
+  const pending = state.timeframe === '1D' ? found.find((c) => c.i === times.length - 1) || null : null;
+  return { data, signal, crosses, pending, rising: last ? last.golden : null, since: last ? times.length - last.i : null,
     flipAt: last ? times[last.i] : null };
 }
 
