@@ -497,5 +497,75 @@ const FRONT = 'https://m.stock.naver.com/front-api/chart/pricesByPeriod?';
   frontReply = () => null;
 }
 
+// --- 8. 코스피200 현물 · 선물(시장 지표 화면의 줄): 네이버로만 ------------------------------------------------
+// 야후는 ^KS200 일봉을 오늘 봉 하나만 주고(2026-10-30 실측 — 5y · 1mo · max 모두) 선물은 기호가 없다(KS200=F 404). 1D · 1W 는
+// 코스피처럼 네이버 분봉, 일봉은 네이버 지수 일봉, 실패해도 야후는 묻지 않는다. 선물의 정규장은 08:45~15:45. 2026-10-30 사용자 요청.
+const dayRow = (d, c, v = 10, o = c, h = c, l = c) => ({ localDate: d, openPrice: o, highPrice: h, lowPrice: l, closePrice: c,
+  accumulatedTradingVolume: v });
+{
+  NOW = kst('2026-10-30T13:50');
+  yahooCalls.length = 0; krxCalls.length = 0;
+  krxReply = (url) => (url.includes('/index/KPI200/minute?startDateTime=202610300000') ? [
+    minute('2026-10-30T09:00', 905.22, 1000, 905.22, 910.42, 904), minute('2026-10-30T10:52', 877.03, 50), minute('2026-10-30T13:49', 903, 20)]
+    : url.includes('/index/FUT/minute?startDateTime=202610300000') ? [minute('2026-10-30T05:59', 920, 3),
+      minute('2026-10-30T08:45', 906, 100), minute('2026-10-30T13:29', 901, 20)]
+    : []);
+  let r = await oneDay('^KS200');
+  check('코스피200 현물 1D 는 네이버 지수 분봉(코스피와 같은 칸)', same(krxCalls.map(krxPathOf),
+    ['index/KPI200/minute?startDateTime=202610300000&endDateTime=202610301535']) && r.realtime === true
+    && same(r.times.map(hm), ['09:00', '10:50', '13:45']) && !('ext' in r), `${krxCalls.join(' ')} ${JSON.stringify(r).slice(0, 160)}`);
+  krxCalls.length = 0;
+  r = await oneDay('^KS200F');
+  check('선물 1D 는 08:45~15:45 정규장 — 15:50 칸 앞까지 묻고, 그 앞(야간) 봉은 뺀다', same(krxCalls.map(krxPathOf),
+    ['index/FUT/minute?startDateTime=202610300000&endDateTime=202610301550']) && r.realtime === true
+    && same(r.times.map(hm), ['08:45', '13:25']) && same(r.closes, [906, 901]), `${krxCalls.join(' ')} ${JSON.stringify(r).slice(0, 160)}`);
+  check('둘 다 야후는 묻지 않는다', yahooCalls.length === 0, yahooCalls.join(' '));
+
+  // 장 마감 뒤: 15:45 봉(종가 단일가)까지, 야간(18:00) 봉은 뺀다
+  NOW = kst('2026-11-02T18:30');
+  krxReply = (url) => (url.includes('/index/FUT/minute?startDateTime=202611020000') ? [minute('2026-11-02T15:44', 899, 5),
+    minute('2026-11-02T15:45', 900, 300), minute('2026-11-02T18:00', 902, 7)] : []);
+  r = await oneDay('^KS200F');
+  check('선물 마감 뒤: 15:45 칸까지, 18:00 야간 봉은 뺀다', same(r.times.map(hm), ['15:40', '15:45']) && r.closes.at(-1) === 900,
+    JSON.stringify(r.times?.map(hm)));
+
+  // 일봉: 기간의 첫날부터 오늘까지 네이버 지수 일봉, 시각은 야후 국내 일봉처럼 그날 09:00 KST(00:00 UTC)
+  NOW = kst('2026-10-30T13:50');
+  krxCalls.length = 0;
+  krxReply = (url) => (url.includes('/index/KPI200/day?') ? [dayRow('20261029', 935.87, 900, 930, 940, 925),
+    dayRow('20261028', 920, 800), dayRow('20261030', 903, 500, 905.22, 910.42, 877.03)] : []);
+  r = await handlers['yf:chart']({}, { symbol: '^KS200', range: '1mo', interval: '1d' });
+  check('현물 1M 은 네이버 일봉 — 31일 앞부터 오늘까지', same(krxCalls.map(krxPathOf), ['index/KPI200/day?startDateTime=20260929&endDateTime=20261030']),
+    krxCalls.join(' '));
+  check('날짜 순 · 그날 09:00 KST · 시고저종 · 거래량', r.ok && same(r.times.map(md), ['10-28 09:00', '10-29 09:00', '10-30 09:00'])
+    && same([r.opens[1], r.highs[1], r.lows[1], r.closes[1], r.volumes[1]], [930, 940, 925, 935.87, 900]) && r.price === 903
+    && !r.realtime && !('ext' in r), JSON.stringify(r).slice(0, 240));
+  krxCalls.length = 0;
+  krxReply = (url) => (url.includes('/index/FUT/day?') ? [dayRow('20261030', 901)] : []);
+  r = await handlers['yf:chart']({}, { symbol: '^KS200F', range: '5y', interval: '1d' });
+  check('선물 5년 일봉(시세 · RSI 용)도 네이버', same(krxCalls.map(krxPathOf), ['index/FUT/day?startDateTime=20211029&endDateTime=20261030'])
+    && r.ok && same(r.closes, [901]), krxCalls.join(' '));
+
+  // 전체: 1990년부터의 일봉을 달마다 묶는다(시각은 그달 1일)
+  krxCalls.length = 0;
+  krxReply = (url) => (url.includes('/index/FUT/day?') ? [dayRow('20260929', 105, 10, 100, 110, 90), dayRow('20260930', 115, 20, 105, 120, 95),
+    dayRow('20261001', 85, 5, 115, 118, 80), dayRow('20261030', 88, 1, 85, 90, 84)] : []);
+  r = await handlers['yf:chart']({}, { symbol: '^KS200F', range: 'max', interval: '1mo' });
+  check('전체는 1990년부터 묻는다', krxCalls[0]?.includes('/index/FUT/day?startDateTime=19900101&endDateTime=20261030'), krxCalls.join(' '));
+  check('달마다 묶는다: 시가는 첫날, 고 · 저는 그달, 종가는 끝날, 거래량은 합', r.ok && same(r.times.map(md), ['09-01 09:00', '10-01 09:00'])
+    && same([r.opens, r.highs, r.lows, r.closes, r.volumes], [[100, 115], [120, 118], [90, 80], [115, 88], [30, 6]]), JSON.stringify(r).slice(0, 240));
+
+  // 실패하거나 비면 야후로 가지 않고 실패(오늘 분봉 기억 10초가 지난 뒤)
+  NOW = kst('2026-10-30T13:51');
+  yahooCalls.length = 0;
+  krxReply = () => new TypeError('fetch failed');
+  r = await handlers['yf:chart']({}, { symbol: '^KS200', range: '3mo', interval: '1d' });
+  const r2 = await oneDay('^KS200F');
+  krxReply = () => [];
+  const r3 = await handlers['yf:chart']({}, { symbol: '^KS200F', range: '1y', interval: '1d' });
+  check('네이버가 실패하거나 비면 실패 — 야후는 묻지 않는다', r.ok === false && r2.ok === false && r3.ok === false && yahooCalls.length === 0,
+    `${JSON.stringify([r, r2, r3])} ${yahooCalls.join(' ')}`);
+}
+
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');
 process.exit(fails ? 1 : 0);

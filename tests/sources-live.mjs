@@ -156,6 +156,20 @@ export const CHECKS = [
     verify: (r, calls) => [...series(r.nq, 'NQ=F 1D', 10, 4), ...series(r.tnx, '^TNX 1D', 10, 4), ...yahooCalled(calls)],
   },
   {
+    // 지표 화면의 코스피200 현물 · 선물 줄을 누르면 그리는 차트(2026-10-30) — 야후에 없어 분봉 · 일봉 모두 네이버다
+    name: '코스피200 현물 · 선물 차트', source: '네이버 지수 분봉 · 일봉',
+    call: async (h) => ({
+      spot: await h['yf:chart']({}, { symbol: '^KS200', range: '1d', interval: '5m' }),
+      fut: await h['yf:chart']({}, { symbol: '^KS200F', range: '1d', interval: '5m' }),
+      spotDay: await h['yf:chart']({}, { symbol: '^KS200', range: '5y', interval: '1d' }),
+      futDay: await h['yf:chart']({}, { symbol: '^KS200F', range: '5y', interval: '1d' }),
+      futMax: await h['yf:chart']({}, { symbol: '^KS200F', range: 'max', interval: '1mo' }),
+    }),
+    verify: (r, calls) => [...series(r.spot, '^KS200 1D', 1, 4), ...series(r.fut, '^KS200F 1D', 1, 4),
+      ...series(r.spotDay, '^KS200 5년 일봉', 1000, 7), ...series(r.futDay, '^KS200F 5년 일봉', 1000, 7),
+      ...series(r.futMax, '^KS200F 전체(월봉)', 60, 40), ...yahooCalled(calls)],
+  },
+  {
     name: '종목 지표 (국내)', source: '네이버 종목 상세 · 매매동향 · 분기 실적, WiseReport 주주',
     call: (h) => h['naver:detail']({}, '005930.KS'),
     verify: (r) => [...okOf(r), ...(r && r.ok ? [

@@ -149,6 +149,9 @@ const YAHOO_KR_DELAY_MIN = 20;
 // overseas 는 야후 시세가 국내처럼 20분 늦지 않고 하루가 한국 날짜와 다른 것(미국 지수 · 선물 · 유가 · 금리 · 환율)
 // — 미국 종목처럼 다룬다. delayMin 은 거래소가 늦게 주는 분이다 — 나스닥 100 선물(CME) · WTI(NYMEX)는 네이버 · 야후
 // 모두 10분 늦다(2026-10-23 실측). cur 는 값의 단위(없으면 포인트 'pt') — 미국채 10년은 금리 '%' 다.
+// 코스피200 현물 · 선물(시장 지표 화면에서 고른다, 2026-10-30 사용자 요청)은 야후에 쓸 것이 없어 main.js 가 차트 · 일봉을 네이버로만
+// 그린다(NAVER_ONLY) — 선물 기호 ^KS200F 는 앱이 붙인 것이고, =F 로 끝나지 않게 했다(marketDay 가 CME 선물로 날짜를 센다).
+// 선물은 네이버가 20분 늦게 준다.
 // loadChart 가 selectedItem 을 부르므로 tests/session-ui.mjs 의 prelude(아래 '과열도 5단계'
 // 마커 앞)에 있어야 한다.
 const INDICES = [
@@ -162,6 +165,8 @@ const INDICES = [
   { symbol: '^TNX', code: 'US10Y', name: '미국채 10년', overseas: true, cur: '%' },
   { symbol: '^VIX', code: 'VIX', name: 'VIX', overseas: true },
   { symbol: '^SOX', code: 'SOX', name: 'SOX', overseas: true },
+  { symbol: '^KS200', code: 'KPI200', name: '코스피200' },
+  { symbol: '^KS200F', code: 'FUT', name: '코스피200 선물', delayMin: 20 },
 ];
 
 function isIndex(symbol) {
@@ -216,16 +221,15 @@ const RANK_TABS = {
   us: [['up', '급등'], ['down', '급락'], ['value', '거래대금'], ['cap', '시총 상위']], // 미국 인기 검색은 네이버에 없다
 };
 // 패널의 지표 화면(시장 버튼 '지표', market 'mk') — 묶음과 줄 순서. 키는 INDICES 의 code 이고, 그 밖은 지표 화면만의 줄이다
-// (FUT 코스피200 선물 · SPOT 외국인 현물 수급 · FUTFLOW 외국인 선물 수급 · HYOAS 미국 하이일드 스프레드 — 2단계,
-//  KPI200 코스피200 현물 · BASIS 베이시스(선물 - 현물) — 2026-10-29).
+// (SPOT 외국인 현물 수급 · FUTFLOW 외국인 선물 수급 · HYOAS 미국 하이일드 스프레드 — 2단계, BASIS 베이시스(선물 - 현물) — 2026-10-29).
+// FUT 코스피200 선물 · KPI200 코스피200 현물도 처음에는 이쪽(차트 없는 줄)이었다 — 2026-10-30 부터 INDICES.
 const MARKET_GROUPS = [
   ['국내', ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']],
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
   ['위험 · 자금', ['VIX', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']],
 ];
 // 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
-const MARKET_EXTRA_NAMES = { KPI200: '코스피200', FUT: '코스피200 선물', BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물',
-  HYOAS: '미국 HY OAS' };
+const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS' };
 // 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
 const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };
 // 코스톨라니 달걀(해석, indicators.js eggPhase)을 메모에 다는 지표 화면 줄 — 거래량이 있는 주가지수만. SOX · 환율 · VIX · 금리는

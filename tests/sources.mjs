@@ -41,6 +41,7 @@ const GOOD = {
   '1D RSI 앞 거래일 5분봉': chart(300),
   '미국 1D 프리 · 애프터': chart(150, 1),
   '선물 · 미국채 1D': { nq: chart(200), tnx: chart(200) },
+  '코스피200 현물 · 선물 차트': { spot: chart(60), fut: chart(70), spotDay: chart(1220, 1), futDay: chart(1220, 1), futMax: chart(360, 20) },
   '종목 지표 (국내)': { ok: true, today: { volume: 11822115 }, valuation: [{}, {}, {}, {}], trend: Array(20).fill({}),
     quarters: { cols: Array(5).fill({}) }, holders: { rows: [{ name: '삼성생명보험', pct: 8.5 }] }, consensus: { target: 495227 } },
   '종목 지표 (미국 · ETF)': { us: { ok: true, valuation: [{}, {}, {}], quarters: { cols: Array(4).fill({}) } },

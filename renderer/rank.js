@@ -111,8 +111,7 @@ function k200At(t, spot, mins) {
 }
 
 // 지표 화면에만 있는 줄 — 차트가 없어 누를 수 없다(symbol null). market:extras 를 아직 못 받았거나 그 부분이 실패했으면 null.
-//  - FUT 코스피200 선물 · KPI200 코스피200 현물: 값 · 등락률은 지수 줄과 함께 받은 것(선물은 20분 늦다), 5일 변화는 그 일봉의
-//    6번째 앞 종가 대비.
+// (코스피200 현물 · 선물은 2026-10-30 부터 누를 수 있는 INDICES 줄이다 — 위 marketRow.)
 //  - BASIS 베이시스: 선물 - 현물(포인트). 선물은 네이버가 20분 늦게 줘서 지금 현물과 빼면 그 20분 동안 움직인 만큼이 섞였다(오르는
 //    장에서 콘탱고가 백워데이션으로 보였다, 2026-10-30) — 선물 시각의 현물(k200At)과 뺀다. 장중엔 20분 전 베이시스이고 메모에 그 시각.
 //    오늘 등락은 어제 베이시스(같은 날 종가끼리) 대비, 5일 변화 · 미니 선은 날마다의 베이시스에 지금 값을 이은 것.
@@ -122,15 +121,6 @@ function k200At(t, spot, mins) {
 function marketExtraRow(key) {
   const x = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
   const signed = (v) => (v > 0 ? '+' : '') + v.toLocaleString('ko-KR');
-  if (key === 'FUT' || key === 'KPI200') {
-    const it = indexItems.find((i) => i.code === key);
-    if (!it || !(it.value > 0)) return null;
-    const days = x && (key === 'FUT' ? x.futDays : x.k200Days);
-    const base = days && days.length >= 6 ? days[days.length - 6].close : null;
-    return { key, name: MARKET_EXTRA_NAMES[key], symbol: null, value: it.value, cur: 'pt', pct: it.pct, change: it.change,
-      d5: base > 0 ? (it.value / base - 1) * 100 : null, d5Unit: '%', note: key === 'FUT' ? '20분 지연' : '',
-      spark: days ? days.slice(-20).map((d) => d.close) : null };
-  }
   if (key === 'BASIS') {
     const fut = indexItems.find((i) => i.code === 'FUT');
     const spot = indexItems.find((i) => i.code === 'KPI200');

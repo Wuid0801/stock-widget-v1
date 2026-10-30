@@ -1350,7 +1350,11 @@ async function withNaverExtended(code, series, now, week = false) {
 // 그날 네이버가 알려 준 값이다(수능일은 늦다, noteKrxEnd). 시가 · 종가 동시호가 거래량은 09:00 · 15:30 봉에 담긴다
 // (야후는 시가 동시호가를 뺐다). 날: 오늘 정규장 봉이 있으면 오늘, 없으면(장 전 · 휴장) 앞 거래일 — 1W 는 최근
 // 다섯 거래일(네이버 일봉의 날짜). 지난 날은 바뀌지 않으므로 한 번만 묻는다. 실패하거나 비면 부르는 쪽이 야후로 그린다.
-const KR_INDEX_PATH = { '^KS11': 'index/KOSPI', '^KQ11': 'index/KOSDAQ' };
+// 코스피200 현물 · 선물(시장 지표 화면의 줄, ^KS200 · ^KS200F — 선물은 앱이 붙인 기호)도 같은 분봉이다(NAVER_ONLY).
+const KR_INDEX_PATH = { '^KS11': 'index/KOSPI', '^KQ11': 'index/KOSDAQ', '^KS200': 'index/KPI200', '^KS200F': 'index/FUT' };
+// 코스피200 선물의 정규장은 08:45~15:45 — 15:35 에 자르면 마지막 10분이 빠진다. 시작 앞은 뺀다 — 야간 거래(18:00~다음 날
+// 06:00) 봉이 그날 날짜로 섞여 와도(섞이는지는 확인하지 못했다) 정규장 앞에 붙지 않게.
+const KR_HOURS = { 'index/FUT': ['0845', '1545'] };
 const krPath = (symbol) => {
   const m = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol);
   return m ? `item/${m[1]}` : KR_INDEX_PATH[symbol] || null;
@@ -1378,11 +1382,14 @@ async function naverRegular(path, day, now) {
   const key = `${path}|${day}`;
   const hit = naverRegularBars.get(key);
   if (hit && (hit.done || now - hit.at < REGULAR_TTL)) return hit.bars;
-  const cut = plusMin(krxEnd.day === day ? krxEnd.end : '1530', 5); // 이 시각 앞까지가 정규장
+  const hours = KR_HOURS[path];
+  const cut = plusMin(hours ? hours[1] : krxEnd.day === day ? krxEnd.end : '1530', 5); // 이 시각 앞까지가 정규장
   const rows = await naverJson(`https://api.stock.naver.com/chart/domestic/${path}/minute`
     + `?startDateTime=${day}0000&endDateTime=${day}${cut}`);
-  const bars = bucket5m((Array.isArray(rows) ? rows : [])
-    .filter((r) => String(r?.localDateTime ?? '').slice(8, 12) < cut), null);
+  const bars = bucket5m((Array.isArray(rows) ? rows : []).filter((r) => {
+    const hm = String(r?.localDateTime ?? '').slice(8, 12);
+    return hm < cut && (!hours || hm >= hours[0]);
+  }), null);
   naverRegularBars.set(key, { at: now, bars, done: day < kstDay(now) || kstClock(now) >= plusMin(cut, 5) });
   return bars;
 }
@@ -1408,6 +1415,37 @@ async function naverIntraday(path, now, week, want = week ? 5 : 1) {
   if (days.length < want) days = [...(await naverDaysBefore(path, now)).slice(-(want - days.length)), ...days];
   const bars = (await Promise.all(days.map((d) => (d === today ? todayBars : naverRegular(path, d, now))))).flat();
   return week ? rebucket(bars, STEP_30M) : bars;
+}
+
+// 코스피200 현물 · 선물은 야후에 쓸 일봉이 없다 — ^KS200 은 5y · 1mo · max 모두 오늘 봉 하나뿐이고, 선물은 기호가 없다
+// (2026-10-30 실측 KS200=F 404). 1D · 1W 는 위 분봉, 일봉은 네이버 지수 일봉(naverDaily)으로 그리고 실패해도 야후는 묻지 않는다.
+const NAVER_ONLY = new Set(['^KS200', '^KS200F']);
+const NAVER_DAILY_DAYS = { '1mo': 31, '3mo': 92, '1y': 366, '5y': 1827 }; // 기간 → 며칠 앞부터
+
+// 네이버 지수 일봉 → 봉. 기간의 첫날부터 오늘까지(장중이면 오늘 봉이 있다), 시각은 야후 국내 일봉처럼 그날 09:00 KST(00:00 UTC).
+// 전체(max)는 1990년(코스피200 기준 해)부터의 일봉을 달마다 묶는다 — 시각은 그달 1일(야후 월봉처럼).
+async function naverDaily(path, range, now) {
+  const from = range === 'max' ? '19900101' : kstDay(now - NAVER_DAILY_DAYS[range] * 86400000);
+  const rows = await naverJson(`https://api.stock.naver.com/chart/domestic/${path}/day?startDateTime=${from}&endDateTime=${kstDay(now)}`);
+  const bars = [];
+  for (const r of (Array.isArray(rows) ? rows : []).slice().sort((a, b) => String(a?.localDate).localeCompare(String(b?.localDate)))) {
+    const m = /^(\d{4})(\d{2})(\d{2})$/.exec(String(r?.localDate ?? ''));
+    const c = Number(r?.closePrice);
+    if (!m || !(c > 0)) continue;
+    const pick = (v) => (Number(v) > 0 ? Number(v) : c);
+    const time = Date.UTC(+m[1], m[2] - 1, range === 'max' ? 1 : +m[3]);
+    const v = Number(r.accumulatedTradingVolume) || 0;
+    const last = bars[bars.length - 1];
+    if (last && last.time === time) {
+      last.close = c;
+      last.high = Math.max(last.high, pick(r.highPrice));
+      last.low = Math.min(last.low, pick(r.lowPrice));
+      last.volume += v;
+    } else {
+      bars.push({ time, open: pick(r.openPrice), high: pick(r.highPrice), low: pick(r.lowPrice), close: c, volume: v });
+    }
+  }
+  return bars;
 }
 
 // 국내는 NXT 시간외 봉을 붙이고, 시간외가 있으면 빈 칸을 채운다. 없으면 응답 모양은 예전 그대로(ext 없음).
@@ -1541,6 +1579,22 @@ ipcMain.handle('yf:chart', async (_e, req) => {
           realtime: true, ...series };
       }
     } catch { /* 야후로 */ }
+  }
+  // 코스피200 현물 · 선물: 분봉이 실패했거나 일봉이면 여기서 끝난다(NAVER_ONLY)
+  if (NAVER_ONLY.has(symbol)) {
+    if (kr || !((interval === '1d' && range in NAVER_DAILY_DAYS) || (interval === '1mo' && range === 'max'))) {
+      return { ok: false, error: '데이터 없음' };
+    }
+    try {
+      const bars = await naverDaily(krPath(symbol), range, Date.now());
+      // '빈 데이터' 는 렌더러가 "분봉이 아직 안 들어왔다" 로 읽는다(전체의 1mo 도 분봉으로 친다) — 일봉이 비는 것은 그 뜻이 아니다
+      if (!bars.length) return { ok: false, error: '데이터 없음' };
+      const series = toSeries(bars);
+      delete series.ext;
+      return { ok: true, symbol, price: bars.at(-1).close, currency: 'KRW', week52High: null, week52Low: null, ...series };
+    } catch (err) {
+      return { ok: false, error: err.message || '요청 실패' };
+    }
   }
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
     + `?range=${range}&interval=${interval}${usExt ? '&includePrePost=true' : ''}`;

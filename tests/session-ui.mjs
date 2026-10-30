@@ -2752,7 +2752,7 @@ await test('index line shows one page at a time, marks the selected index, and t
     { code: 'NASDAQ', name: '나스닥', value: 26692.87, pct: -1.88 },
     { code: 'SPX', name: 'S&P 500', value: 6600.1, pct: -1.2 },
     { code: 'USDKRW', name: '원/달러', value: 1351.4, pct: 0.63 },
-    { code: 'KPI200', name: '코스피200', value: 950, pct: 0 }];`);
+    { code: 'KPI200', name: '코스피200', value: 950, pct: 0 }, { code: 'FUT', name: '코스피200 선물', value: 952, pct: 0 }];`);
   c.renderIndices();
   const box = elements.get('indices');
   const shown = () => [...box.innerHTML.matchAll(/data-symbol="([^"]+)"/g)].map((m) => m[1]).join(' ');
@@ -2760,7 +2760,7 @@ await test('index line shows one page at a time, marks the selected index, and t
   assert.equal(shown(), '^KS11 ^KQ11', '첫 장은 국내');
   assert.match(box.innerHTML, /<span class="ix" data-symbol="\^KS11" title="코스피 차트 보기">/);
   assert.match(box.innerHTML, /7,003\.74/);
-  assert.doesNotMatch(box.innerHTML, /코스피200/, '모르는 지수는 보이지 않는다');
+  assert.doesNotMatch(box.innerHTML, /코스피200/, '지표 화면에만 있는 지수(page 없음 — 코스피200 현물 · 선물)는 보이지 않는다');
   c.tickIndices();
   assert.equal(shown(), '^IXIC ^GSPC', '다음 장은 미국');
   assert.match(box.innerHTML, /^<div class="ixpage in">/, '넘길 때는 등장 애니메이션');
@@ -3003,17 +3003,24 @@ await test('market panel: flows show the last final day, the streak, and today\'
   assert.doesNotMatch(html, /data-sym="[^"]*"[^>]*data-key="SPOT"/, '수급 줄은 누를 수 없다');
 });
 
-await test('market panel: KOSPI 200 futures says 20분 지연 and cannot be clicked; HY OAS shows the date it is from', () => {
+// 코스피200 현물 · 선물 줄은 누르면 차트(main.js 가 네이버 분봉 · 일봉으로 그린다) — 2026-10-30 사용자 요청. 5일 변화 · 미니 선은 다른
+// 지수 줄처럼 받아 둔 일봉(quotes)에서.
+await test('market panel: KOSPI 200 futures says 20분 지연 and opens its chart; HY OAS shows the date it is from', () => {
   const h = marketHarness();
   h.run("indexItems.push({ code: 'FUT', name: '코스피 200 선물', value: 883.7, change: 33.7, pct: 3.96 });");
+  h.run("quotes['^KS200F'] = { daily: { times: [1, 2, 3, 4, 5, 6], closes: [850, 860, 857, 863.3, 850, 883.7] } };");
   h.run(EXTRAS);
   const html = h.c.marketHtml();
   const fut = keyRow(html, 'FUT');
-  assert.match(html, /<div class="rrow mrow mfix" data-key="FUT"/, '선물 줄은 누를 수 없다(차트 없음)');
+  assert.match(html, /<div class="hit rrow mrow" data-sym="\^KS200F" data-key="FUT" title="코스피200 선물 차트 보기">/, '선물 줄을 누르면 차트');
   assert.match(fut, /코스피200 선물/);
   assert.match(fut, /883\.70/);
   assert.match(fut, /20분 지연/);
   assert.match(fut, /<span class="md5"[^>]*>\+3\.96%<\/span>/, '5일 변화는 선물 일봉의 6번째 앞 종가(850) 대비');
+  assert.match(fut, /class="mspark"/, '미니 선도 받아 둔 일봉');
+  assert.equal(h.run("curOf('^KS200F')"), 'pt');
+  h.c.rankClick({ closest: (sel) => (sel === '[data-sym]' ? { dataset: { sym: '^KS200F' } } : null) });
+  assert.deepEqual(h.picked, ['^KS200F'], '지수 줄처럼 고른다');
   const oas = keyRow(html, 'HYOAS');
   assert.match(oas, /<span class="mval">3\.38%<\/span>/);
   assert.match(oas, /10\/23 기준/);
@@ -3031,12 +3038,13 @@ await test('market panel: KOSPI 200 spot sits beside the futures, and the basis 
   // 10/28 13:36 — 선물은 13:16 값(20분 지연), 현물은 지금 값. 현물 13:16 의 1분 종가는 886.5
   h.run(`indexItems.push({ code: 'KPI200', name: '코스피 200', value: 888, change: 6.8, pct: 0.77, tradedAt: '2026-10-28T13:36:00+09:00' },
     { code: 'FUT', name: '코스피 200 선물', value: 890, change: 6.3, pct: 0.71, tradedAt: '2026-10-28T13:16:00+09:00' });`);
+  h.run("quotes['^KS200'] = { daily: { times: [1, 2, 3, 4, 5, 6], closes: [848, 857.8, 855, 860.3, 848.6, 881.2] } };");
   h.run(EXTRAS);
   h.run(`marketExtras.d.k200Min = [{ t: ${kst2('2026-10-28T13:10:00')}, close: 885 }, { t: ${kst2('2026-10-28T13:16:00')}, close: 886.5 },
     { t: ${kst2('2026-10-28T13:30:00')}, close: 887.8 }];`);
   let html = h.c.marketHtml();
   const spot = keyRow(html, 'KPI200');
-  assert.match(html, /<div class="rrow mrow mfix" data-key="KPI200"/, '현물 줄은 누를 수 없다(야후에 코스피200 일봉이 없다)');
+  assert.match(html, /<div class="hit rrow mrow" data-sym="\^KS200" data-key="KPI200" title="코스피200 차트 보기">/, '현물 줄을 누르면 차트');
   assert.match(spot, /<span class="mname">코스피200<\/span>/);
   assert.match(spot, /888\.00/);
   assert.doesNotMatch(spot, /지연/, '현물은 늦지 않는다');
