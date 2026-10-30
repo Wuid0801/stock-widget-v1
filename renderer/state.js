@@ -223,13 +223,20 @@ const RANK_TABS = {
 // 패널의 지표 화면(시장 버튼 '지표', market 'mk') — 묶음과 줄 순서. 키는 INDICES 의 code 이고, 그 밖은 지표 화면만의 줄이다
 // (SPOT 외국인 현물 수급 · FUTFLOW 외국인 선물 수급 · HYOAS 미국 하이일드 스프레드 — 2단계, BASIS 베이시스(선물 - 현물) — 2026-10-29).
 // FUT 코스피200 선물 · KPI200 코스피200 현물도 처음에는 이쪽(차트 없는 줄)이었다 — 2026-10-30 부터 INDICES.
+// 장중 수급(INTRA_*, 다음 금융 — 2026-10-30)은 주체별 한 줄이다(사용자가 고름).
+const INTRADAY_GROUP = '코스피 장중 수급'; // 현물 · 프로그램이 코스피 기준이라(코스닥 없음) 이름에 — 사용자 요청
 const MARKET_GROUPS = [
   ['국내', ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']],
+  [INTRADAY_GROUP, ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']],
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
   ['위험 · 자금', ['VIX', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']],
 ];
 // 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
-const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS' };
+const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS',
+  INTRA_FOREIGN: '외국인', INTRA_INDIV: '개인', INTRA_INST: '기관', INTRA_PENSION: '연기금', INTRA_CORP: '기타법인', INTRA_PROGRAM: '프로그램' };
+// 장중 수급 줄 → market:extras intraday 의 주체 필드. 프로그램은 필드가 아니라 현물 값 하나(intraday.program)다.
+const INTRADAY_FIELD = { INTRA_FOREIGN: 'foreign', INTRA_INDIV: 'individual', INTRA_INST: 'institution', INTRA_PENSION: 'pension',
+  INTRA_CORP: 'corp', INTRA_PROGRAM: null };
 // 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
 const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };
 // 코스톨라니 달걀(해석, indicators.js eggPhase)을 메모에 다는 지표 화면 줄 — 거래량이 있는 주가지수만. SOX · 환율 · VIX · 금리는

@@ -118,6 +118,9 @@ function k200At(t, spot, mins) {
 //  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(네이버 표기 그대로 — 네이버 화면도 단위를 적지 않는다),
 //    5일 변화 자리에 확정일 끝에서 같은 부호가 이어진 날 수, 18:00 전 오늘 값은 잠정이라 메모에 따로.
 //  - HYOAS 미국 HY OAS: 마지막 값(%), 오늘 등락은 앞 줄 · 5일 변화는 다섯 줄 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다).
+//  - INTRA_* 장중 수급(다음 금융, main 의 intraday): 값 = 코스피 현물 누적 순매수(억), 오늘 등락 자리 = 코스피200 선물 누적(계약,
+//    부호 색), 5일 변화 자리 = 최근 30분 현물 변화(그 시각 또는 그 앞의 마지막 값 대비 — 없으면 —), 미니 선 = 오늘 현물 누적.
+//    프로그램은 현물 값 하나뿐이다(선물 · 30분 · 미니 선 없음).
 function marketExtraRow(key) {
   const x = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
   const signed = (v) => (v > 0 ? '+' : '') + v.toLocaleString('ko-KR');
@@ -176,7 +179,47 @@ function marketExtraRow(key) {
       title: '미국 하이일드 회사채 가산금리(ICE BofA US High Yield OAS, FRED) — 1~2영업일 늦다',
       spark: rows.slice(-20).map((r) => r.value) };
   }
+  if (key in INTRADAY_FIELD) {
+    const it = x && x.intraday;
+    const field = INTRADAY_FIELD[key];
+    const spot = (it && it.spot) || [];
+    const last = spot[spot.length - 1];
+    const value = field ? last && last[field] : it && it.program;
+    if (!Number.isFinite(value)) return null;
+    const eok = (v) => signed(Math.round(v) || 0);
+    const hm = (t) => new Date(t + 9 * 3600000).toISOString().slice(11, 16);
+    const name = MARKET_EXTRA_NAMES[key];
+    if (!field) {
+      return { key, name, symbol: null, value, pct: null, change: null, d5: null, d5Unit: '%', valueText: eok(value), dayText: '—', d5Text: '—',
+        title: `프로그램 매매 장중 누적 순매수 — 코스피 현물 ${eok(value)}억. 여러 종목을 바구니로 한꺼번에 사고파는 매매(차익 · 비차익 합)다. `
+          + '다음 금융이 지금 값 하나만 줘서 선물 · 30분 · 미니 선은 없다. 장 마감 전은 잠정치' };
+    }
+    const futRow = it.fut && it.fut.length ? it.fut[it.fut.length - 1] : null;
+    const fut = futRow && Number.isFinite(futRow[field]) ? futRow[field] : null;
+    let ago = null; // 30분 앞 — 그 시각 또는 그 앞의 마지막 값
+    for (const r of spot) if (r.t <= last.t - 30 * 60000) ago = r;
+    const d30 = ago && Number.isFinite(ago[field]) ? value - ago[field] : null;
+    const note = { INTRA_INST: '기관은 연기금 포함 합계다. ', INTRA_PENSION: '연기금은 기관 안의 일부다. ',
+      INTRA_CORP: '기타법인은 일반 회사다 — 회사가 직접 사는 자사주 매입이 여기에 섞인다(신탁 등을 거치면 다른 분류). ' }[key] || '';
+    return { key, name, symbol: null, value, pct: null, change: null, d5: null, d5Unit: '%',
+      valueText: eok(value), dayText: fut == null ? '—' : eok(fut), dayTone: fut,
+      d5Text: d30 == null ? '—' : eok(d30), d5Title: '최근 30분 현물 순매수 변화(억)',
+      title: `${name} 장중 누적 순매수 — 코스피 현물 ${eok(value)}억(${hm(last.t)})`
+        + `${fut == null ? '' : ` · 코스피200 선물 ${eok(fut)}계약(${hm(futRow.t)})`}. ${note}`
+        + '30분은 최근 30분 동안의 현물 순매수 변화, 미니 선은 오늘 09:00 부터의 현물 누적. 다음 금융 — 장 마감 전은 잠정치',
+      spark: spot.map((r) => r[field]) };
+  }
   return null;
+}
+
+// 장중 수급 묶음 제목 — 칸의 단위와 마지막 현물 값의 시각. 오늘이 아니면(장 전 · 휴장일 — 마지막 거래일 값이다) 날짜도.
+function intradayTitle() {
+  const it = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d.intraday : null;
+  const last = it && it.spot && it.spot.length ? it.spot[it.spot.length - 1] : null;
+  const kst = (t) => new Date(t + 9 * 3600000).toISOString();
+  const at = last ? kst(last.t) : null;
+  const day = at && at.slice(0, 10) !== kst(Date.now()).slice(0, 10) ? `${at.slice(5, 7)}/${at.slice(8, 10)} ` : '';
+  return `${INTRADAY_GROUP} · 현물 억 · 선물 계약 · 30분${at ? ` (${day}${at.slice(11, 16)})` : ''}`;
 }
 
 // 데드캣 점검의 입력 — market:extras 의 다섯 부분과, SOX · 원/달러 · VIX · 미국채의 { now(지수 줄 실시간, 없으면 받은 시세),
@@ -220,7 +263,7 @@ function marketHtml() {
     // 데이터가 없으면(출처 실패 · 아직 못 받음) 줄을 빼지 않고 — 로 둔다(설계 ④) — 점검 대상이면 점은 테두리만(판정 불가)
     const rows = keys.map((key) => marketRow(key) || { key, symbol: null, valueText: '—', dayText: '—', d5Text: '—', note: '',
       name: (INDICES.find((i) => i.code === key) || {}).name || MARKET_EXTRA_NAMES[key] });
-    out.push(`<div class="qhint rnote mgroup">${title}</div>`);
+    out.push(`<div class="qhint rnote mgroup">${title === INTRADAY_GROUP ? intradayTitle() : title}</div>`);
     for (const r of rows) {
       const bp = r.d5Unit === 'bp';
       const day = r.dayText != null ? r.dayText : bp ? (r.change != null ? fmtBp(r.change) : '—') : (r.pct != null ? fmtPct(r.pct) : '—');
@@ -233,7 +276,7 @@ function marketHtml() {
       out.push(`${open}${dot}<span class="hname"><span class="mname">${esc(r.name)}</span>${r.note ? `<span class="mnote"${r.noteTitle ? ` title="${esc(r.noteTitle)}"` : ''}>${esc(r.note)}</span>` : ''}</span>`
         + `<span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
         + `<span class="rpct" style="color:${tone(r.dayTone != null ? r.dayTone : bp ? r.change : r.pct)}">${day}</span>`
-        + `<span class="md5" title="5거래일 전 종가 대비">${d5}</span>${sparkSvg(r.spark)}</div>`);
+        + `<span class="md5" title="${esc(r.d5Title || '5거래일 전 종가 대비')}">${d5}</span>${sparkSvg(r.spark)}</div>`);
     }
   }
   const count = (v) => checks.filter((c) => c.verdict === v).length;
@@ -292,7 +335,7 @@ async function loadMarket() {
   const prev = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
   let next = d && d.ok ? { ...d } : prev || d || { ok: false, error: '응답 없음' };
   if (d && d.ok && prev) {
-    for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
+    for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
   }
   marketExtras = { at: Date.now(), d: next };
   renderRank();

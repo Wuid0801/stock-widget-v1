@@ -2881,7 +2881,7 @@ const MARKET_ITEMS = `indexItems = [
   { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }, { code: 'USDKRW', name: '원/달러', value: 1323.23, change: -1.94, pct: -0.15 }];`;
 const marketHarness = (extra = []) => {
   const h = harness(['marketRow', 'marketExtraRow', 'marketHtml', 'marketCheckInput', 'sparkSvg', 'renderRank', 'setRankView', 'rankClick', 'rankHtml',
-    'dailyVolumesOf', 'k200At', ...extra]);
+    'dailyVolumesOf', 'k200At', 'intradayTitle', ...extra]);
   if (!extra.includes('loadMarket')) h.c.loadMarket = async () => {}; // 지표 화면을 열면 market:extras 를 묻는다 — 따로 본다
   h.run(formatting);
   h.run(source.match(/^let indexItems = .*$/m)[0]);
@@ -2901,7 +2901,8 @@ await test('market panel: 지표 lists every index item in three groups and pick
   assert.match(h.elements.get('rankMarket').innerHTML, /<button data-market="kr">국내<\/button><button data-market="us">미국<\/button><button data-market="mk" class="on">지표<\/button>/);
   assert.equal(h.elements.get('rankTabs').hidden, true, '지표 화면은 탭 줄이 없다');
   const html = h.elements.get('rankList').innerHTML;
-  assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]), ['국내', '미국', '위험 · 자금']);
+  assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
+    ['국내', '코스피 장중 수급 · 현물 억 · 선물 계약 · 30분', '미국', '위험 · 자금']);
   const order = [...html.matchAll(/data-sym="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(order, ['^KS11', '^KQ11', '^IXIC', '^GSPC', 'NQ=F', '^SOX', '^VIX', '^TNX', 'KRW=X', 'CL=F'], '묶음 안 순서');
   assert.match(rowOf(html, '^TNX'), /4\.970/);
@@ -3173,7 +3174,7 @@ await test('sparkSvg draws values as a polyline and nothing below two', () => {
 await test('market panel: a part that fails on refresh keeps its previous value', async () => {
   const h = marketHarness(['loadMarket']);
   let answer = { ok: true, spotFlows: null, futFlows: null, kospiDays: null, futDays: null, hyOas: [{ date: '20261023', value: 3.38 }],
-    k200Days: [{ date: '20261023', close: 860.3 }] };
+    k200Days: [{ date: '20261023', close: 860.3 }], intraday: { spot: [], fut: [], program: -419 } };
   h.c.api.marketExtras = async () => answer;
   h.c.setRankView('mk');
   await new Promise((r) => setImmediate(r));
@@ -3189,6 +3190,55 @@ await test('market panel: a part that fails on refresh keeps its previous value'
   assert.match(keyRow(html, 'HYOAS'), /3\.38%/, 'HY OAS 만 실패 — 있던 값을 둔다');
   assert.match(keyRow(html, 'SPOT'), /\+3,300/, '새로 온 부분은 새 값');
   assert.equal(h.run('marketExtras.d.k200Days.length'), 1, '코스피200 일봉도 실패하면 있던 값을 둔다');
+  assert.equal(h.run('marketExtras.d.intraday.program'), -419, '장중 수급도 실패하면 있던 값을 둔다');
+});
+
+// 장중 수급(다음 금융, main 의 market:extras intraday) — 주체별 한 줄: 코스피 현물 누적(억) · 코스피200 선물 누적(계약, 부호 색) ·
+// 최근 30분 현물 변화 · 오늘 현물 흐름 미니 선. 프로그램은 현물 값 하나뿐이다. 누를 수 없다. 2026-10-30 사용자 요청(주체별 한 줄을 고름).
+const kstMs = (s) => Date.parse(`${s}+09:00`);
+const INTRADAY = (day) => `marketExtras = { at: Date.now(), d: { ok: true, intraday: {
+  spot: [{ t: ${kstMs(`${day}T13:50`)}, individual: 8615, foreign: -11298, institution: 776, pension: 3000, corp: 1990 },
+    { t: ${kstMs(`${day}T13:55`)}, individual: 8000, foreign: -12500, institution: 2500, pension: 3100, corp: 2000 },
+    { t: ${kstMs(`${day}T14:25`)}, individual: 7761.4, foreign: -13737.2, institution: 3670, pension: 4853, corp: 2306 }],
+  fut: [{ t: ${kstMs(`${day}T08:45`)}, individual: 5, foreign: -5, institution: 0, pension: 0, corp: 0 },
+    { t: ${kstMs(`${day}T14:24`)}, individual: 434, foreign: 203, institution: -541, pension: 130, corp: -96 }],
+  program: -418.8 } } };`;
+await test('market panel: 장중 수급 shows spot and futures net buying per investor, the last 30 minutes and today\'s line', () => {
+  const h = marketHarness();
+  h.run(INTRADAY('2026-09-10')); // 하네스의 오늘(2026-09-10 18:30 KST)
+  let html = h.c.marketHtml();
+  assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
+    ['국내', '코스피 장중 수급 · 현물 억 · 선물 계약 · 30분 (14:25)', '미국', '위험 · 자금'], '국내 다음 묶음 — 제목에 단위와 마지막 현물 시각');
+  const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(keys.slice(keys.indexOf('FUTFLOW') + 1, keys.indexOf('FUTFLOW') + 7),
+    ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']);
+  const fr = keyRow(html, 'INTRA_FOREIGN');
+  assert.match(html, /<div class="rrow mrow mfix" data-key="INTRA_FOREIGN" title="[^"]+">/, '누를 수 없다');
+  assert.match(fr, /<span class="mname">외국인<\/span>/);
+  assert.match(fr, /<span class="mval">-13,737<\/span>/, '현물 누적(억, 반올림)');
+  assert.match(fr, /<span class="rpct" style="color:#e24b4a">\+203<\/span>/, '선물 누적(계약) — 사면 빨강');
+  assert.match(fr, /<span class="md5" title="최근 30분 현물 순매수 변화\(억\)">-1,237<\/span>/, '14:25 − 13:55');
+  assert.match(fr, /class="mspark"/, '오늘 현물 흐름');
+  assert.match(html, /data-key="INTRA_FOREIGN" title="외국인 장중 누적 순매수 — 코스피 현물 -13,737억\(14:25\) · 코스피200 선물 \+203계약\(14:24\)\. /);
+  assert.match(keyRow(html, 'INTRA_INST'), /<span class="rpct" style="color:#[0-9a-f]{6}">-541<\/span>/);
+  assert.match(html, /data-key="INTRA_INST" title="기관 [^"]*연기금 포함/);
+  assert.match(html, /data-key="INTRA_CORP" title="기타법인 [^"]*자사주/, '자사주 매입은 기타법인에 섞인다');
+  assert.match(keyRow(html, 'INTRA_PENSION'), /<span class="mval">\+4,853<\/span><span class="rpct"[^>]*>\+130<\/span>/);
+  const prog = keyRow(html, 'INTRA_PROGRAM');
+  assert.match(prog, /<span class="mval">-419<\/span><span class="rpct"[^>]*>—<\/span><span class="md5"[^>]*>—<\/span>/, '프로그램은 현물 값 하나');
+  assert.doesNotMatch(prog, /mspark/);
+
+  // 30분 앞 값이 없으면(장 시작 직후) —
+  h.run('marketExtras.d.intraday.spot = marketExtras.d.intraday.spot.slice(2);');
+  assert.match(keyRow(h.c.marketHtml(), 'INTRA_FOREIGN'), /<span class="md5"[^>]*>—<\/span>/);
+  // 오늘이 아니면(장 전 · 휴장) 제목에 날짜
+  h.run(INTRADAY('2026-09-09'));
+  assert.match(h.c.marketHtml(), /코스피 장중 수급 · 현물 억 · 선물 계약 · 30분 \(09\/09 14:25\)/);
+  // 받은 적이 없으면 여섯 줄 모두 — 로 남는다
+  h.run('marketExtras = null;');
+  html = h.c.marketHtml();
+  assert.match(html, /class="qhint rnote mgroup">코스피 장중 수급 · 현물 억 · 선물 계약 · 30분</);
+  for (const k of ['INTRA_FOREIGN', 'INTRA_PROGRAM']) assert.match(keyRow(html, k), /<span class="mval">—<\/span>/, k);
 });
 
 // 설계 ④: 출처가 실패했거나 아직 없으면 그 줄은 사라지지 않고 — 와 판정 불가(테두리 점)로 남는다. 예전에는 줄이 빠져

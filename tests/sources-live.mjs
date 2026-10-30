@@ -91,7 +91,7 @@ export const CHECKS = [
     })],
   },
   {
-    name: '시장 지표', source: '네이버 수급 · 지수 일봉, FRED HY OAS',
+    name: '시장 지표', source: '네이버 수급 · 지수 일봉, FRED HY OAS, 다음 금융 장중 수급',
     call: (h) => h['market:extras'](),
     verify: (r) => [...okOf(r), ...(r && r.ok ? [
       ...need(Array.isArray(r.kospiDays) && r.kospiDays.length >= 10 && r.kospiDays.every((d) => pos(d.close)), '코스피 일별 종가가 10일 미만'),
@@ -106,6 +106,14 @@ export const CHECKS = [
       ...need(Array.isArray(r.futFlows) && r.futFlows.some((f) => f.final && num(f.foreign)), '외국인 선물 수급(확정일)이 없음'),
       ...need(Array.isArray(r.hyOas) && r.hyOas.length >= 6 && r.hyOas.every((d) => num(d.value)), 'HY OAS 가 6개 미만'),
       ...need(Array.isArray(r.hyOas) && r.hyOas.length && recent(r.hyOas.at(-1).date, 10), 'HY OAS 가 10일보다 오래됨'),
+      // 장중 수급(다음 금융, 2026-10-30) — 장 전 · 휴장일에도 마지막 거래일 값이 오는지는 아직 모른다
+      ...need(r.intraday && Array.isArray(r.intraday.spot) && r.intraday.spot.length > 0
+        && r.intraday.spot.every((s) => num(s.t) && num(s.foreign) && num(s.individual) && num(s.institution)), '장중 수급 현물(다음 금융)이 없음'),
+      ...need(r.intraday && Array.isArray(r.intraday.spot) && r.intraday.spot.length && recent(r.intraday.spot.at(-1).t, 7),
+        '장중 수급 현물이 7일보다 오래됨'),
+      ...need(r.intraday && Array.isArray(r.intraday.fut) && r.intraday.fut.length > 0 && r.intraday.fut.every((s) => num(s.foreign)),
+        '장중 수급 선물(다음 금융)이 없음'),
+      ...need(r.intraday && num(r.intraday.program), '프로그램 매매(다음 금융)가 없음'),
     ] : [])],
   },
   {

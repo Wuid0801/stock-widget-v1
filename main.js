@@ -624,12 +624,13 @@ async function usdKrwItem() {
 }
 
 // --- 시장 지표 화면(market:extras) ---------------------------------------------------------
-// 순위 패널의 '지표' 가 열려 있을 때 1분마다 묻는다. 일곱 부분은 따로 받아 하나가 실패해도 나머지는 온다(실패한 부분은 null).
+// 순위 패널의 '지표' 가 열려 있을 때 1분마다 묻는다. 여덟 부분은 따로 받아 하나가 실패해도 나머지는 온다(실패한 부분은 null).
 // - 외국인 현물 · 선물 수급: 네이버 모바일 지수 수급(trend?bizdate=) — 날짜를 주면 그날 값이다. 휴장일 · 미래 날짜도 오류 없이
 //   0 을 줘서(2026-10-27 실측 10/25 토 · 10/28) 코스피 일봉에 있는 날만 묻는다. 지난 날과 18:00 뒤의 오늘은 확정이라 기억한다.
 // - 코스피 · 코스피200 선물 · 코스피200 현물 일별 종가: 네이버 지수 일봉(최근 30일) — 장중에는 오늘 행이 있다.
 // - 코스피200 현물 오늘 1분 종가: 네이버 지수 분봉 — 20분 늦은 선물과 같은 시각의 현물로 베이시스를 낸다.
 // - 미국 HY OAS(ICE BofA US High Yield OAS, %): FRED CSV(키 없음, 최근 3년, 1~2영업일 늦다) — 6시간 기억한다.
+// - 장중 수급: 다음 금융(daumIntraday, 아래).
 const FLOW_FINAL = '1800';   // 이때부터 오늘 수급을 확정으로 본다(장중 값은 잠정치)
 const FLOW_DAYS = 10;        // 수급을 묻는 거래일 수
 const HYOAS_TTL = 6 * 3600000;
@@ -699,6 +700,52 @@ async function fredHyOas(now) {
   return rows;
 }
 
+// 장중 수급(지표 화면의 '코스피 장중 수급' 묶음, 2026-10-30 사용자 요청) — 다음 금융. 네이버 수급(trend?bizdate=)은 날짜마다 값 하나라
+// 장중 흐름이 없다. 2026-10-30 브라우저에서 확인한 주소 셋을 함께 받는다(하나가 실패하면 그것만 null, 셋 다면 실패):
+//  - 코스피 현물 시간별(investor/KOSPI/times) — 그날 09:01 부터 1~2분 간격 누적 순매수(원, 최신이 앞), 세부(details)에 연기금 · 기타법인
+//  - 코스피200 선물 시간별(investor/future/times) — 08:45 부터 누적 순매수(계약 — 다음 화면의 기본값이 계약수)
+//  - 프로그램(domestic/quotes?summary=true) — 코스피(KGG01P)의 지금 누적 순매수(원) 하나. 장중 흐름은 없다
+// 현물은 억 원으로 바꾸고, 둘 다 시각 오름차순. 순매수는 모두 더하면 0 이라(산 만큼 판다) 합이 총량의 5% 넘게 어긋난 줄은 뺀다 —
+// 한 칸이 0 으로 빈 줄이 섞여 왔다(2026-10-30 14:01 개인 0, 외국인 -12,854억). Referer 가 없으면 막는 곳이라 브라우저처럼 붙인다.
+const DAUM_API = 'https://finance.daum.net/api';
+const daumJson = async (url) => {
+  const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://finance.daum.net/' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+};
+const balanced = (v) => Math.abs(v.reduce((a, x) => a + x, 0)) <= 0.05 * v.reduce((a, x) => a + Math.abs(x), 0);
+
+async function daumIntraday() {
+  const list = (a) => { if (!Array.isArray(a)) throw new Error('모양이 다른 응답'); return a; };
+  const parts = await Promise.allSettled([
+    daumJson(`${DAUM_API}/investor/KOSPI/times?market=KOSPI&page=1&perPage=400&details=true&pagination=true`).then((j) => list(j?.data)),
+    daumJson(`${DAUM_API}/investor/future/times?page=1&perPage=400&terms=times&pagination=true`).then((j) => list(j?.data)),
+    daumJson(`${DAUM_API}/domestic/quotes?summary=true&changeStatistics=true`).then(list),
+  ]);
+  if (parts.every((p) => p.status === 'rejected')) throw parts[0].reason;
+  const [spotRows, futRows, quotes] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
+  const at = (r) => Date.parse(`${String(r?.date ?? '').replace(' ', 'T')}+09:00`);
+  const fin = (v) => (Number.isFinite(v) ? v : null);
+  // 줄 → { t, individual, foreign, institution, pension, corp }. v 는 개인 · 외국인 · 기관 · 기타법인(· 기타외국인) — 합이 0 이어야 한다
+  const series = (rows, pick) => (rows ? rows.map((r) => {
+    const t = at(r);
+    const p = pick(r);
+    return Number.isFinite(t) && p.v.every(Number.isFinite) && balanced(p.v)
+      ? { t, individual: p.v[0] / p.unit, foreign: p.v[1] / p.unit, institution: p.v[2] / p.unit, pension: p.pension == null ? null : p.pension / p.unit,
+        corp: p.v[3] / p.unit } : null;
+  }).filter(Boolean).sort((a, b) => a.t - b.t) : null);
+  const spot = series(spotRows, (r) => {
+    const d = r?.details || {};
+    return { unit: 1e8, pension: fin(d.PENSION_FUND), v: [r?.individualStraightPurchasePrice, r?.foreignStraightPurchasePrice,
+      r?.institutionStraightPurchasePrice, d.ETC_CORPORATION, d.ETC_FOREIGN ?? 0] };
+  });
+  const fut = series(futRows, (r) => ({ unit: 1, pension: fin(r?.pensionFundInvestment),
+    v: [r?.privateSettlement, r?.foreignSettlement, r?.institutionalSettlement, r?.etcCorporationSettlement] }));
+  const kospi = quotes ? quotes.find((q) => q?.symbolCode === 'KGG01P') : null;
+  const program = fin(kospi?.investorSummary?.programStraightPurchasePrice);
+  return { spot, fut, program: program == null ? null : program / 1e8 };
+}
+
 ipcMain.handle('market:extras', async () => {
   const now = Date.now();
   const kospi = naverIndexCloses('KOSPI', now);
@@ -710,12 +757,13 @@ ipcMain.handle('market:extras', async () => {
   });
   const parts = await Promise.allSettled([flows('KOSPI'), flows('FUT'), kospi, naverIndexCloses('FUT', now), fredHyOas(now),
     naverIndexCloses('KPI200', now), // 코스피200 현물 일별 종가 — 5일 변화 · 날마다의 베이시스(선물 종가 - 현물 종가)
-    naverMinuteCloses('KPI200', now)]); // 오늘 1분 종가 — 장중 베이시스를 20분 늦은 선물의 시각에 맞춘다
+    naverMinuteCloses('KPI200', now), // 오늘 1분 종가 — 장중 베이시스를 20분 늦은 선물의 시각에 맞춘다
+    daumIntraday()]); // 장중 수급(현물 · 선물 · 프로그램)
   if (parts.every((p) => p.status === 'rejected')) {
     return { ok: false, error: parts[0].reason?.message || '시장 지표 조회 실패' };
   }
-  const [spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days, k200Min] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
-  return { ok: true, spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days, k200Min, at: new Date(now).toISOString() };
+  const [spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days, k200Min, intraday] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
+  return { ok: true, spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days, k200Min, intraday, at: new Date(now).toISOString() };
 });
 
 // 원/달러 환율. 포트폴리오 합계에서 달러 종목을 원화로 환산할 때만 쓴다.

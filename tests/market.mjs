@@ -38,14 +38,18 @@ const kst = (s) => Date.parse(`${s}+09:00`);
 
 // 가짜 네트워크 — 주소별로 답한다. 답이 Error 면 던지고, { status } 면 그 상태로 실패한다.
 const calls = [];
+const headersOf = {}; // 경로 → 마지막 요청 헤더
 let reply = {};
-const fakeFetch = async (url) => {
+const fakeFetch = async (url, opt) => {
   url = String(url);
   calls.push(url);
   const route = url.includes('/chart/domestic/index/KOSPI/day') ? 'kospiDay' : url.includes('/chart/domestic/index/FUT/day') ? 'futDay'
     : url.includes('/chart/domestic/index/KPI200/day') ? 'k200Day' : url.includes('/chart/domestic/index/KPI200/minute') ? 'k200Min'
     : url.includes('/api/index/KOSPI/trend') ? 'spot' : url.includes('/api/index/FUT/trend') ? 'fut'
-      : url.includes('fred.stlouisfed.org') ? 'fred' : 'other';
+      : url.includes('fred.stlouisfed.org') ? 'fred'
+        : url.includes('finance.daum.net/api/investor/KOSPI/times') ? 'daumSpot' : url.includes('finance.daum.net/api/investor/future/times') ? 'daumFut'
+          : url.includes('finance.daum.net/api/domestic/quotes') ? 'daumQuotes' : 'other';
+  headersOf[route] = opt && opt.headers;
   const date = (/bizdate=(\d{8})/.exec(url) || [])[1];
   const body = typeof reply[route] === 'function' ? reply[route](date) : reply[route];
   if (body instanceof Error) throw body;
@@ -185,6 +189,53 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   reply.kospiDay = [day('20261104', 5810)];
   r = await extras();
   check('외국인만 0 이면 진짜 0 이다(둔다)', r.spotFlows?.[0]?.foreign === 0, JSON.stringify(r.spotFlows));
+}
+
+// --- 8. 장중 수급(다음 금융) — 지표 화면의 '코스피 장중 수급' 묶음, 2026-10-30 사용자 요청 ---------------------------------
+// 네이버 수급은 날짜마다 값 하나라 장중 흐름이 없다. 응답 모양은 2026-10-30 브라우저 실측에서 쓰는 필드만 옮겼다 — 현물은 원(최신이 앞),
+// 선물은 계약, 프로그램은 코스피(KGG01P)의 지금 값 하나.
+const spotRow = (t, i, f, inst, corp, pension, etcForeign = 0) => ({ date: `2026-10-30 ${t}:00`, time: `${t}:00`,
+  individualStraightPurchasePrice: i * 1e8, foreignStraightPurchasePrice: f * 1e8, institutionStraightPurchasePrice: inst * 1e8,
+  details: { ETC_CORPORATION: corp * 1e8, PENSION_FUND: pension * 1e8, ETC_FOREIGN: etcForeign * 1e8, BANK: 0 } });
+const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, privateSettlement: p, foreignSettlement: f,
+  institutionalSettlement: inst, etcCorporationSettlement: corp, pensionFundInvestment: pension });
+{
+  NOW = kst('2026-10-30T14:30');
+  reply = {
+    ...base(),
+    daumSpot: { code: 200, data: [spotRow('14:25', 7761, -13737, 3670, 2306, 4853),
+      spotRow('14:01', 0, -12854, 2845, 2159, 3446), // 한 칸이 0 으로 빈 줄(실측) — 합이 0 이 아니다
+      { date: null }, spotRow('13:55', 8000, -12500, 2500, 1990, 3000, 10)] },
+    daumFut: { code: 200, data: [futRow('14:25', 434, 203, -541, -96, 130), futRow('08:45', 5, -5, 0, 0, 0)] },
+    daumQuotes: [{ symbolCode: 'K2G01P', investorSummary: { programStraightPurchasePrice: null } },
+      { symbolCode: 'KGG01P', investorSummary: { programStraightPurchasePrice: -419e8 } }],
+  };
+  calls.length = 0;
+  let r = await extras();
+  check('다음 금융 세 주소를 묻는다 — 현물은 그날 하루치(세부 포함), 선물도 하루치', [
+    'finance.daum.net/api/investor/KOSPI/times?market=KOSPI&page=1&perPage=400&details=true&pagination=true',
+    'finance.daum.net/api/investor/future/times?page=1&perPage=400&terms=times&pagination=true',
+    'finance.daum.net/api/domestic/quotes?summary=true&changeStatistics=true'].every((u) => calls.some((c) => c.endsWith(u))),
+  calls.filter((c) => c.includes('daum')).join(' '));
+  check('브라우저처럼 Referer 를 붙인다(없으면 막힌다)', ['daumSpot', 'daumFut', 'daumQuotes']
+    .every((k) => headersOf[k] && headersOf[k].Referer === 'https://finance.daum.net/'), JSON.stringify(headersOf.daumSpot));
+  check('현물: 억 원 · 시각 오름차순 · 빈 줄(합이 어긋난 줄)과 날짜 없는 줄은 뺀다', same(r.intraday?.spot, [
+    { t: kst('2026-10-30T13:55'), individual: 8000, foreign: -12500, institution: 2500, pension: 3000, corp: 1990 },
+    { t: kst('2026-10-30T14:25'), individual: 7761, foreign: -13737, institution: 3670, pension: 4853, corp: 2306 }]), JSON.stringify(r.intraday?.spot));
+  check('선물: 계약 · 시각 오름차순', same(r.intraday?.fut, [
+    { t: kst('2026-10-30T08:45'), individual: 5, foreign: -5, institution: 0, pension: 0, corp: 0 },
+    { t: kst('2026-10-30T14:25'), individual: 434, foreign: 203, institution: -541, pension: 130, corp: -96 }]), JSON.stringify(r.intraday?.fut));
+  check('프로그램: 코스피의 지금 값(억 원)', r.intraday?.program === -419, JSON.stringify(r.intraday?.program));
+
+  reply.daumQuotes = { status: 500 };
+  reply.daumFut = new TypeError('fetch failed');
+  r = await extras();
+  check('하나가 실패하면 그것만 null', r.intraday?.program === null && r.intraday?.fut === null && r.intraday?.spot?.length === 2,
+    JSON.stringify(r.intraday));
+  reply.daumSpot = { status: 403 };
+  r = await extras();
+  check('셋 다 실패하면 장중 수급 부분이 null(나머지는 온다)', r.ok === true && r.intraday === null && r.kospiDays?.length === 3,
+    JSON.stringify(r).slice(0, 160));
 }
 
 // --- 6. 데드캣 점검 판정(market-check.js — 순수 함수) ---------------------------------------------------
