@@ -2982,6 +2982,8 @@ const EXTRAS = `marketExtras = { at: Date.now(), d: { ok: true,
   kospiDays: null,
   futDays: [{ date: '20261020', close: 850 }, { date: '20261021', close: 860 }, { date: '20261022', close: 857 },
     { date: '20261023', close: 863.3 }, { date: '20261026', close: 850 }, { date: '20261027', close: 883.7 }],
+  k200Days: [{ date: '20261020', close: 848 }, { date: '20261021', close: 857.5 }, { date: '20261022', close: 855 },
+    { date: '20261023', close: 860.3 }, { date: '20261026', close: 848.6 }, { date: '20261027', close: 881.2 }],
   hyOas: [{ date: '20261017', value: 3.1 }, { date: '20261020', value: 3.2 }, { date: '20261021', value: 3.27 },
     { date: '20261022', value: 3.4 }, { date: '20261022', value: 3.4 }, { date: '20261023', value: 3.38 }] } };`;
 
@@ -3013,8 +3015,44 @@ await test('market panel: KOSPI 200 futures says 20분 지연 and cannot be clic
   assert.match(oas, /<span class="mval">3\.38%<\/span>/);
   assert.match(oas, /10\/23 기준/);
   assert.match(oas, /<span class="md5"[^>]*>\+28\.0bp<\/span>/, '다섯 줄 앞(3.10) 대비 bp');
-  // 국내 묶음 순서: 코스피 · 코스닥 · 선물 · 현물 수급 · 선물 수급
-  assert.deepEqual([...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]).slice(0, 5), ['KOSPI', 'KOSDAQ', 'FUT', 'SPOT', 'FUTFLOW']);
+  // 국내 묶음 순서: 코스피 · 코스닥 · 코스피200 · 선물 · 베이시스 · 현물 수급 · 선물 수급
+  assert.deepEqual([...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]).slice(0, 7),
+    ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']);
+});
+
+// 코스피200 현물과 베이시스(선물 - 현물) — 현물은 지수 줄 요청에 붙여 받은 KPI200, 날마다의 베이시스는 두 일봉의 같은 날 종가끼리.
+// 2026-10-29 사용자 요청.
+await test('market panel: KOSPI 200 spot sits beside the futures, and the basis row shows futures − spot with its daily history', () => {
+  const h = marketHarness();
+  h.run(`indexItems.push({ code: 'KPI200', name: '코스피 200', value: 880.45, change: 32.2, pct: 3.8 },
+    { code: 'FUT', name: '코스피 200 선물', value: 883.7, change: 33.7, pct: 3.96 });`);
+  h.run(EXTRAS);
+  let html = h.c.marketHtml();
+  const spot = keyRow(html, 'KPI200');
+  assert.match(html, /<div class="rrow mrow mfix" data-key="KPI200"/, '현물 줄은 누를 수 없다(야후에 코스피200 일봉이 없다)');
+  assert.match(spot, /<span class="mname">코스피200<\/span>/);
+  assert.match(spot, /880\.45/);
+  assert.doesNotMatch(spot, /지연/, '현물은 늦지 않는다');
+  assert.match(spot, /<span class="md5"[^>]*>\+3\.83%<\/span>/, '5일 변화는 현물 일봉의 6번째 앞 종가(848) 대비');
+  const basis = keyRow(html, 'BASIS');
+  assert.match(basis, /<span class="mname">베이시스<\/span><span class="mnote">선물 − 현물 · 선물 20분 지연<\/span>/);
+  assert.match(basis, /<span class="mval">\+3\.25<\/span>/, '883.70 − 880.45');
+  assert.match(basis, /<span class="rpct" style="color:#e24b4a">\+1\.50<\/span>/, '오늘 등락 = 선물 등락 33.7 − 현물 등락 32.2');
+  assert.match(basis, /<span class="md5"[^>]*>\+1\.25<\/span>/, '날마다의 베이시스 [2, 2.5, 2, 3, 1.4, 2.5] 의 6번째 앞(2.00) 대비');
+  assert.match(basis, /class="mspark"/, '날마다의 베이시스로 미니 선');
+  assert.match(html, /data-key="BASIS" title="베이시스 = 코스피200 선물 − 코스피200 현물 \(\+3\.25pt, 현물의 \+0\.37%\)\. 선물이 현물보다 비싸면/,
+    '툴팁에 뜻과 만기 · 20분 지연');
+  // 현물 일봉이 없으면 5일 변화 · 미니 선만 빈다
+  h.run('marketExtras.d.k200Days = null;');
+  html = h.c.marketHtml();
+  assert.match(keyRow(html, 'BASIS'), /<span class="md5"[^>]*>—<\/span>/);
+  assert.doesNotMatch(keyRow(html, 'BASIS'), /mspark/);
+  assert.match(keyRow(html, 'BASIS'), /<span class="mval">\+3\.25<\/span>/, '지금 값은 그대로');
+  // 현물이나 선물 값이 없으면 베이시스는 —
+  h.run("indexItems = indexItems.filter((i) => i.code !== 'KPI200');");
+  html = h.c.marketHtml();
+  assert.match(keyRow(html, 'BASIS'), /<span class="mval">—<\/span>/);
+  assert.match(keyRow(html, 'KPI200'), /<span class="mval">—<\/span>/);
 });
 
 await test('market panel: extras load once a minute while open, keep the last good answer on failure', async () => {
@@ -3086,12 +3124,14 @@ await test('sparkSvg draws values as a polyline and nothing below two', () => {
 // 사라졌다 — 부분마다 있던 값을 둔다.
 await test('market panel: a part that fails on refresh keeps its previous value', async () => {
   const h = marketHarness(['loadMarket']);
-  let answer = { ok: true, spotFlows: null, futFlows: null, kospiDays: null, futDays: null, hyOas: [{ date: '20261023', value: 3.38 }] };
+  let answer = { ok: true, spotFlows: null, futFlows: null, kospiDays: null, futDays: null, hyOas: [{ date: '20261023', value: 3.38 }],
+    k200Days: [{ date: '20261023', close: 860.3 }] };
   h.c.api.marketExtras = async () => answer;
   h.c.setRankView('mk');
   await new Promise((r) => setImmediate(r));
   assert.match(keyRow(h.elements.get('rankList').innerHTML, 'HYOAS'), /3\.38%/);
-  answer = { ok: true, spotFlows: [{ date: '20261026', foreign: 3300, final: true }], futFlows: null, kospiDays: null, futDays: null, hyOas: null };
+  answer = { ok: true, spotFlows: [{ date: '20261026', foreign: 3300, final: true }], futFlows: null, kospiDays: null, futDays: null, hyOas: null,
+    k200Days: null };
   const realNow = h.c.Date.now;
   h.c.Date.now = () => NOW + 61000;
   h.c.renderRank();
@@ -3100,6 +3140,7 @@ await test('market panel: a part that fails on refresh keeps its previous value'
   const html = h.elements.get('rankList').innerHTML;
   assert.match(keyRow(html, 'HYOAS'), /3\.38%/, 'HY OAS 만 실패 — 있던 값을 둔다');
   assert.match(keyRow(html, 'SPOT'), /\+3,300/, '새로 온 부분은 새 값');
+  assert.equal(h.run('marketExtras.d.k200Days.length'), 1, '코스피200 일봉도 실패하면 있던 값을 둔다');
 });
 
 // 설계 ④: 출처가 실패했거나 아직 없으면 그 줄은 사라지지 않고 — 와 판정 불가(테두리 점)로 남는다. 예전에는 줄이 빠져

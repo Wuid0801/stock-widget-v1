@@ -82,7 +82,7 @@ export const CHECKS = [
   {
     name: '지수 줄', source: '네이버 polling · 미국채 · 야후 환율',
     call: (h) => h['quote:indices'](),
-    verify: (r) => [...okOf(r), ...['KOSPI', 'KOSDAQ', 'FUT', 'NASDAQ', 'SPX', 'VIX', 'SOX', 'NQ', 'WTI', 'US10Y', 'USDKRW'].flatMap((code) => {
+    verify: (r) => [...okOf(r), ...['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'NASDAQ', 'SPX', 'VIX', 'SOX', 'NQ', 'WTI', 'US10Y', 'USDKRW'].flatMap((code) => {
       const it = r && Array.isArray(r.items) && r.items.find((i) => i.code === code);
       return need(it && pos(it.value) && num(it.pct), `${code}: 값 · 등락률 없음`);
     })],
@@ -94,6 +94,7 @@ export const CHECKS = [
       ...need(Array.isArray(r.kospiDays) && r.kospiDays.length >= 10 && r.kospiDays.every((d) => pos(d.close)), '코스피 일별 종가가 10일 미만'),
       ...need(Array.isArray(r.kospiDays) && r.kospiDays.length && recent(r.kospiDays.at(-1).date, 7), '코스피 일봉이 7일보다 오래됨'),
       ...need(Array.isArray(r.futDays) && r.futDays.length >= 10, '코스피200 선물 일별 종가가 10일 미만'),
+      ...need(Array.isArray(r.k200Days) && r.k200Days.length >= 10 && r.k200Days.every((d) => pos(d.close)), '코스피200 현물 일별 종가가 10일 미만'),
       ...need(Array.isArray(r.spotFlows) && r.spotFlows.some((f) => f.final && num(f.foreign)), '외국인 현물 수급(확정일)이 없음'),
       ...need(Array.isArray(r.futFlows) && r.futFlows.some((f) => f.final && num(f.foreign)), '외국인 선물 수급(확정일)이 없음'),
       ...need(Array.isArray(r.hyOas) && r.hyOas.length >= 6 && r.hyOas.every((d) => num(d.value)), 'HY OAS 가 6개 미만'),

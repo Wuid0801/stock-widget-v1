@@ -580,8 +580,9 @@ ipcMain.handle('quote:indices', async () => {
     tradedAt: d.localTradedAt || null,
   });
   const parts = await Promise.allSettled([
-    // FUT(코스피200 선물)는 시장 지표 화면에만 쓴다 — 같은 요청에 붙여 요청이 늘지 않는다(20분 늦다, 2026-10-23 실측)
-    naver('https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ,FUT')
+    // KPI200(코스피200 현물) · FUT(코스피200 선물)는 시장 지표 화면에만 쓴다(코스피200 · 베이시스 = 선물 - 현물) — 같은 요청에
+    // 붙여 요청이 늘지 않는다. 선물은 20분 늦다(2026-10-23 실측)
+    naver('https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ,KPI200,FUT')
       .then((ds) => { noteKrxEnd(ds); return ds.map((d) => item(d, d.itemCode, d.stockName)); }),
     naver('https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX,.VIX,.SOX')
       .then((ds) => ds.filter((d) => US_INDICES[d.reutersCode])
@@ -623,10 +624,10 @@ async function usdKrwItem() {
 }
 
 // --- 시장 지표 화면(market:extras) ---------------------------------------------------------
-// 순위 패널의 '지표' 가 열려 있을 때 1분마다 묻는다. 다섯 부분은 따로 받아 하나가 실패해도 나머지는 온다(실패한 부분은 null).
+// 순위 패널의 '지표' 가 열려 있을 때 1분마다 묻는다. 여섯 부분은 따로 받아 하나가 실패해도 나머지는 온다(실패한 부분은 null).
 // - 외국인 현물 · 선물 수급: 네이버 모바일 지수 수급(trend?bizdate=) — 날짜를 주면 그날 값이다. 휴장일 · 미래 날짜도 오류 없이
 //   0 을 줘서(2026-10-27 실측 10/25 토 · 10/28) 코스피 일봉에 있는 날만 묻는다. 지난 날과 18:00 뒤의 오늘은 확정이라 기억한다.
-// - 코스피 · 코스피200 선물 일별 종가: 네이버 지수 일봉(최근 30일) — 장중에는 오늘 행이 있다.
+// - 코스피 · 코스피200 선물 · 코스피200 현물 일별 종가: 네이버 지수 일봉(최근 30일) — 장중에는 오늘 행이 있다.
 // - 미국 HY OAS(ICE BofA US High Yield OAS, %): FRED CSV(키 없음, 최근 3년, 1~2영업일 늦다) — 6시간 기억한다.
 const FLOW_FINAL = '1800';   // 이때부터 오늘 수급을 확정으로 본다(장중 값은 잠정치)
 const FLOW_DAYS = 10;        // 수급을 묻는 거래일 수
@@ -659,7 +660,7 @@ async function naverFlow(path, date, now) {
   return row;
 }
 
-// 지수 일별 종가(오름차순, 최근 30일) — path 'KOSPI' · 'FUT'.
+// 지수 일별 종가(오름차순, 최근 30일) — path 'KOSPI' · 'FUT' · 'KPI200'.
 async function naverIndexCloses(path, now) {
   const rows = await naverJson(`https://api.stock.naver.com/chart/domestic/index/${path}/day`
     + `?startDateTime=${kstDay(now - 30 * 86400000)}&endDateTime=${kstDay(now)}`);
@@ -692,12 +693,13 @@ ipcMain.handle('market:extras', async () => {
     if (got.length && got.every((g) => g.status === 'rejected')) throw got[0].reason;
     return got.map((g) => (g.status === 'fulfilled' ? g.value : null)).filter(Boolean);
   });
-  const parts = await Promise.allSettled([flows('KOSPI'), flows('FUT'), kospi, naverIndexCloses('FUT', now), fredHyOas(now)]);
+  const parts = await Promise.allSettled([flows('KOSPI'), flows('FUT'), kospi, naverIndexCloses('FUT', now), fredHyOas(now),
+    naverIndexCloses('KPI200', now)]); // 코스피200 현물 일별 종가 — 5일 변화 · 날마다의 베이시스(선물 종가 - 현물 종가)
   if (parts.every((p) => p.status === 'rejected')) {
     return { ok: false, error: parts[0].reason?.message || '시장 지표 조회 실패' };
   }
-  const [spotFlows, futFlows, kospiDays, futDays, hyOas] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
-  return { ok: true, spotFlows, futFlows, kospiDays, futDays, hyOas, at: new Date(now).toISOString() };
+  const [spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
+  return { ok: true, spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days, at: new Date(now).toISOString() };
 });
 
 // 원/달러 환율. 포트폴리오 합계에서 달러 종목을 원화로 환산할 때만 쓴다.

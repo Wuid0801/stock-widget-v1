@@ -43,6 +43,7 @@ const fakeFetch = async (url) => {
   url = String(url);
   calls.push(url);
   const route = url.includes('/chart/domestic/index/KOSPI/day') ? 'kospiDay' : url.includes('/chart/domestic/index/FUT/day') ? 'futDay'
+    : url.includes('/chart/domestic/index/KPI200/day') ? 'k200Day'
     : url.includes('/api/index/KOSPI/trend') ? 'spot' : url.includes('/api/index/FUT/trend') ? 'fut'
       : url.includes('fred.stlouisfed.org') ? 'fred' : 'other';
   const date = (/bizdate=(\d{8})/.exec(url) || [])[1];
@@ -63,6 +64,7 @@ const FRED = 'observation_date,BAMLH0A0HYM2\n2026-10-21,3.27\n2026-10-22,\n2026-
 const base = () => ({
   kospiDay: [day('20261023', 5550.3), day('20261026', 5469.47), day('20261027', 5641.17)],
   futDay: [day('20261023', 863.3), day('20261026', 850), day('20261027', 883.7)],
+  k200Day: [day('20261023', 860.3), day('20261026', 848.6), day('20261027', 881.2)],
   spot: (d) => trend(d, SPOT[d]),
   fut: (d) => trend(d, FUT[d]),
   fred: FRED,
@@ -83,6 +85,8 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   check('빈 값은 null', r.spotFlows?.[0].inst === null && r.spotFlows?.[0].personal === 1, JSON.stringify(r.spotFlows?.[0]));
   check('일별 종가 · HY OAS 모양', same(r.kospiDays?.map((d) => [d.date, d.close]), [['20261023', 5550.3], ['20261026', 5469.47], ['20261027', 5641.17]])
     && r.futDays?.length === 3 && r.ok === true && typeof r.at === 'string', JSON.stringify(r).slice(0, 200));
+  check('코스피200 현물 일별 종가(베이시스용)', same(r.k200Days?.map((d) => [d.date, d.close]), [['20261023', 860.3], ['20261026', 848.6], ['20261027', 881.2]]),
+    JSON.stringify(r.k200Days));
 }
 
 // --- 2. final 은 한국 18:00 — 지난 날 · 확정된 오늘은 다시 묻지 않는다 -------------------------------------

@@ -216,14 +216,16 @@ const RANK_TABS = {
   us: [['up', '급등'], ['down', '급락'], ['value', '거래대금'], ['cap', '시총 상위']], // 미국 인기 검색은 네이버에 없다
 };
 // 패널의 지표 화면(시장 버튼 '지표', market 'mk') — 묶음과 줄 순서. 키는 INDICES 의 code 이고, 그 밖은 지표 화면만의 줄이다
-// (FUT 코스피200 선물 · SPOT 외국인 현물 수급 · FUTFLOW 외국인 선물 수급 · HYOAS 미국 하이일드 스프레드 — 2단계).
+// (FUT 코스피200 선물 · SPOT 외국인 현물 수급 · FUTFLOW 외국인 선물 수급 · HYOAS 미국 하이일드 스프레드 — 2단계,
+//  KPI200 코스피200 현물 · BASIS 베이시스(선물 - 현물) — 2026-10-29).
 const MARKET_GROUPS = [
-  ['국내', ['KOSPI', 'KOSDAQ', 'FUT', 'SPOT', 'FUTFLOW']],
+  ['국내', ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']],
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
   ['위험 · 자금', ['VIX', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']],
 ];
 // 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
-const MARKET_EXTRA_NAMES = { FUT: '코스피200 선물', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS' };
+const MARKET_EXTRA_NAMES = { KPI200: '코스피200', FUT: '코스피200 선물', BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물',
+  HYOAS: '미국 HY OAS' };
 // 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
 const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };
 // 코스톨라니 달걀(해석, indicators.js eggPhase)을 메모에 다는 지표 화면 줄 — 거래량이 있는 주가지수만. SOX · 환율 · VIX · 금리는
