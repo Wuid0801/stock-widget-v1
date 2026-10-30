@@ -224,6 +224,7 @@ function marketHtml() {
   const tone = (v) => (v > 0 ? UP : v < 0 ? DOWN : cssVar('--flat'));
   const checks = marketChecks(marketCheckInput());
   const checkOf = new Map(checks.map((c) => [MARKET_CHECK_ROW[c.key], c]));
+  const names = new Map(); // 판정 key → 줄 이름(요약 툴팁에 판정별로 적는다)
   const out = [];
   for (const [title, keys] of MARKET_GROUPS) {
     // 데이터가 없으면(출처 실패 · 아직 못 받음) 줄을 빼지 않고 — 로 둔다(설계 ④) — 점검 대상이면 점은 테두리만(판정 불가)
@@ -237,6 +238,7 @@ function marketHtml() {
       const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(r.name)} 차트 보기">`
         : `<div class="rrow mrow mfix" data-key="${r.key}"${r.title ? ` title="${esc(r.title)}"` : ''}>`;
       const chk = checkOf.get(r.key);
+      if (chk) names.set(chk.key, r.name);
       const dot = chk ? `<span class="mdot ${chk.verdict || 'none'}" title="${esc(chk.detail)}"></span>` : '<span class="mdsp"></span>';
       out.push(`${open}${dot}<span class="hname"><span class="mname">${esc(r.name)}</span>${r.note ? `<span class="mnote"${r.noteTitle ? ` title="${esc(r.noteTitle)}"` : ''}>${esc(r.note)}</span>` : ''}</span>`
         + `<span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
@@ -246,7 +248,11 @@ function marketHtml() {
   }
   const count = (v) => checks.filter((c) => c.verdict === v).length;
   const judged = checks.filter((c) => c.verdict).length;
-  return `<div class="qhint msum" title="경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다">데드캣 점검 · 긍정 ${count('good')}`
+  // 툴팁에 판정마다 어느 지표인지(2026-10-30 사용자 요청) — 근거 숫자는 줄 앞 점의 툴팁
+  const listOf = (v) => checks.filter((c) => c.verdict === v).map((c) => names.get(c.key)).join(' · ');
+  const tip = [['긍정', 'good'], ['중립', 'neutral'], ['위험', 'risk'], ['판정 불가', null]]
+    .map(([label, v]) => (listOf(v) ? `${label}: ${listOf(v)}\n` : '')).join('');
+  return `<div class="qhint msum" title="${esc(`${tip}경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다`)}">데드캣 점검 · 긍정 ${count('good')}`
     + ` · 중립 ${count('neutral')} · 위험 ${count('risk')} (참고용)${judged < checks.length ? ` · 판정 ${judged}/${checks.length}` : ''}</div>`
     + out.join('');
 }

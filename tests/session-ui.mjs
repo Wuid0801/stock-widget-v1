@@ -3118,10 +3118,16 @@ await test('market panel: summary counts verdicts and says how many could be jud
   const h = marketHarness();
   h.run(CHECKS(['good', 'good', 'neutral', 'risk', null, 'good', 'risk']));
   const html = h.c.marketHtml();
-  assert.match(html, /^<div class="qhint msum" title="경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다">데드캣 점검 · 긍정 3 · 중립 1 · 위험 2 \(참고용\) · 판정 6\/7<\/div>/);
+  assert.match(html, /^<div class="qhint msum" title="[^"]*">데드캣 점검 · 긍정 3 · 중립 1 · 위험 2 \(참고용\) · 판정 6\/7<\/div>/);
+  // 툴팁에 판정마다 어느 지표인지(점검 순서대로) — 2026-10-30 사용자 요청
+  assert.equal(/class="qhint msum" title="([^"]*)"/.exec(html)[1],
+    '긍정: 외국인 현물 · 외국인 선물 · 미국 HY OAS\n중립: SOX\n위험: 원/달러 · 미국채 10년\n판정 불가: VIX\n'
+    + '경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다');
   assert.doesNotMatch(html, /데드캣(이다|입니다|아님|가능성)/, '결론을 내리지 않는다');
   h.run(CHECKS(['good', 'good', 'neutral', 'risk', 'good', 'good', 'risk']));
-  assert.match(h.c.marketHtml(), /긍정 4 · 중립 1 · 위험 2 \(참고용\)<\/div>/, '모두 판정했으면 판정 수를 붙이지 않는다');
+  const all = h.c.marketHtml();
+  assert.match(all, /긍정 4 · 중립 1 · 위험 2 \(참고용\)<\/div>/, '모두 판정했으면 판정 수를 붙이지 않는다');
+  assert.doesNotMatch(/class="qhint msum" title="([^"]*)"/.exec(all)[1], /판정 불가/, '없는 판정은 줄을 쓰지 않는다');
 });
 
 await test('market panel: each checked row has a dot with its rule detail in the tooltip; others have none', () => {
