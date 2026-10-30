@@ -1306,12 +1306,15 @@ async function fillGaps(symbol, stamps, q) {
 // 미국은 야후가 includePrePost 로 같이 주고, 어디까지가 정규장인지는 응답의 tradingPeriods 가 알려 준다.
 // 국내는 야후가 15:30 까지만 줘서(includePrePost 도 같다) 네이버 NXT 분봉을 5분봉(1W 는 30분봉)으로 묶어 붙인다.
 // NXT 는 프리(08:00~08:50) · 애프터(15:40~20:00)를 연속 매매로 연다. ETF 는 NXT 에 없어 빈 응답이다.
+// NXT 에 없는 종목은 NXT 분봉이 비어 애프터가 없었다(2026-10-30 DSC인베스트먼트 241520 — 헤더는 종가대비 +290 인데 1D 전체가 15:30 에서
+// 끝났다, 사용자 제보). 2026-09-14 부터 KRX 도 16:00~20:00 애프터마켓을 열어 KRX 분봉의 장 종료 칸 뒤에 그 봉이 있으므로, NXT 애프터가
+// 비면 그것을 애프터로 쓴다(KRX 에 프리는 없다). NXT 에 있는 종목은 지금처럼 NXT 애프터다.
 const STEP_5M = 300000;
 const STEP_30M = 1800000;
 const EXT_FILL_MAX = 12 * 3600000; // 이보다 긴 빈 칸은 하루를 넘는다 — 채우지 않는다(fillExtGaps)
 const EXT_WINDOWS = [['pre', '0800', '0850'], ['after', '1530', '2000']];
 const EXT_TTL = 30000;
-const naverMinutes = new Map(); // '코드|YYYYMMDD|창' → { at, bars, done }
+const naverMinutes = new Map(); // '시장/코드|YYYYMMDD|창' → { at, bars, done }
 const kstClock = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(11, 16).replace(':', '');
 
 // 네이버 분봉(1분) → 5분봉. 시각은 칸의 시작이다(야후 5분봉과 같다).
@@ -1340,12 +1343,12 @@ function bucket5m(rows, session) {
 }
 
 // 그날 한 창(프리 또는 애프터)의 5분봉. 다 지난 창(지난 날 · 끝난 시각)은 바뀌지 않으므로 계속 기억하고,
-// 진행 중인 창은 30초만 쓴다(1D 차트 캐시와 같다). 실패는 기억하지 않는다.
-async function naverWindow(code, day, [name, from, to], now) {
-  const key = `${code}|${day}|${name}`;
+// 진행 중인 창은 30초만 쓴다(1D 차트 캐시와 같다). 실패는 기억하지 않는다. venue 는 'NXT/'(넥스트레이드) 또는 ''(KRX).
+async function naverWindow(code, day, [name, from, to], now, venue = 'NXT/') {
+  const key = `${venue}${code}|${day}|${name}`;
   const hit = naverMinutes.get(key);
   if (hit && (hit.done || now - hit.at < EXT_TTL)) return hit.bars;
-  const rows = await naverJson(`https://api.stock.naver.com/chart/domestic/NXT/item/${code}/minute`
+  const rows = await naverJson(`https://api.stock.naver.com/chart/domestic/${venue}item/${code}/minute`
     + `?startDateTime=${day}${from}&endDateTime=${day}${to}`);
   const bars = bucket5m(Array.isArray(rows) ? rows : [], name);
   naverMinutes.set(key, { at: now, bars, done: day < kstDay(now) || kstClock(now) >= to });
@@ -1384,9 +1387,15 @@ const toSeries = (bars) => ({
 async function withNaverExtended(code, series, now, week = false) {
   const today = kstDay(now);
   const clock = kstClock(now);
+  // NXT 애프터가 비면(NXT 에 없는 종목) KRX 분봉의 장 종료 칸(naverRegular 의 끝) 뒤를 애프터로
+  const window = async (day, w) => {
+    const bars = await naverWindow(code, day, w, now);
+    if (bars.length || w[0] !== 'after') return bars;
+    return naverWindow(code, day, ['after', plusMin(krxEnd.day === day ? krxEnd.end : '1530', 5), w[2]], now, '');
+  };
   const dayBars = async (day) => (await Promise.all(EXT_WINDOWS
     .filter(([, from]) => day < today || clock >= from)
-    .map((w) => naverWindow(code, day, w, now)))).flat();
+    .map((w) => window(day, w)))).flat();
   let days;
   let ext;
   if (week) {

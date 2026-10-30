@@ -146,6 +146,13 @@ export const CHECKS = [
       ...need(r && Array.isArray(r.ext) && r.ext.includes('after'), '005930.KS 1W: 애프터마켓(NXT) 봉이 없음'), ...yahooCalled(calls)],
   },
   {
+    // NXT 에 없는 종목의 애프터는 KRX 분봉의 장 종료 칸 뒤(2026-10-30 사용자 제보 — DSC인베스트먼트)
+    name: '국내 1W 애프터 (NXT 밖 종목)', source: '네이버 KRX 분봉',
+    call: (h) => h['yf:chart']({}, { symbol: '241520.KQ', range: '5d', interval: '30m', extended: true }),
+    verify: (r, calls) => [...series(r, '241520.KQ 1W', 20, 4),
+      ...need(r && Array.isArray(r.ext) && r.ext.includes('after'), '241520.KQ 1W: 애프터마켓(KRX) 봉이 없음'), ...yahooCalled(calls)],
+  },
+  {
     name: '1D RSI 앞 거래일 5분봉', source: '네이버 KRX 분봉',
     call: (h) => h['yf:chart']({}, { symbol: '005930.KS', range: '5d', interval: '5m' }),
     verify: (r, calls) => [...series(r, '005930.KS 5d/5m', 150, 4), ...yahooCalled(calls)],

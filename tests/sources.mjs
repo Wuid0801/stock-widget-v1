@@ -40,6 +40,7 @@ const GOOD = {
   '일봉 5년': { kr: chart(1220, 1), us: chart(1254, 1), ix: chart(1221, 1) },
   '국내 1D 분봉': chart(70),
   '국내 1W 30분봉 · 시간외': chart(60, 0, { ext: [...Array(50).fill(null), 'after', 'pre', ...Array(8).fill(null)] }),
+  '국내 1W 애프터 (NXT 밖 종목)': chart(60, 0, { ext: [...Array(50).fill(null), 'after', ...Array(9).fill(null)] }),
   '1D RSI 앞 거래일 5분봉': chart(300),
   '미국 1D 프리 · 애프터': chart(150, 1),
   '선물 · 미국채 1D': { nq: chart(200), tnx: chart(200) },

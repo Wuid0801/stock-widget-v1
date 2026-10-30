@@ -567,5 +567,37 @@ const dayRow = (d, c, v = 10, o = c, h = c, l = c) => ({ localDate: d, openPrice
     `${JSON.stringify([r, r2, r3])} ${yahooCalls.join(' ')}`);
 }
 
+// --- 9. NXT 에 없는 종목의 애프터: KRX 분봉 ----------------------------------------------------------
+// 2026-09-14 부터 KRX 도 16:00~20:00 애프터마켓을 연다. NXT 에 없는 종목(DSC인베스트먼트 241520 — 프리 봉도 없다)은 NXT 분봉이 비어
+// 장후 봉이 하나도 없었다(2026-10-30 사용자 제보 — 헤더는 종가대비 +290 인데 1D 전체가 15:30 에서 끝났다). KRX 분봉에는 장 종료 칸 뒤의
+// 봉이 있다(다음 금융 5분봉도 16:00 6,360 · 16:05 6,740). NXT 애프터가 비면 KRX 분봉의 장 종료 칸 뒤(15:35~20:00)를 애프터로 쓴다.
+{
+  NOW = kst('2026-10-30T16:14');
+  krxCalls.length = 0; naverCalls.length = 0; yahooCalls.length = 0;
+  naverReply = () => []; // NXT 에 없다
+  krxReply = (url) => (url.includes('/item/241520/minute?startDateTime=202610300000') ? [minute('2026-10-30T09:00', 6610, 100),
+    minute('2026-10-30T15:30', 6450, 500)]
+    : url.includes('/item/241520/minute?startDateTime=202610301535') ? [minute('2026-10-30T16:00', 6360, 36),
+      minute('2026-10-30T16:07', 6740, 12), minute('2026-10-30T16:13', 6740, 259)]
+    : []);
+  let r = await oneDay('241520.KQ');
+  check('NXT 애프터가 비면 KRX 분봉의 장 종료 칸 뒤(15:35~20:00)를 묻는다', same(krxCalls.map(krxPathOf), [
+    'item/241520/minute?startDateTime=202610300000&endDateTime=202610301535',
+    'item/241520/minute?startDateTime=202610301535&endDateTime=202610302000']), krxCalls.join(' '));
+  check('정규장 뒤에 KRX 애프터 봉이 이어진다(빈 칸은 직전 종가)', r.ok && same(r.times.map(hm), ['09:00', '15:30', '16:00', '16:05', '16:10'])
+    && same(r.ext, [null, null, 'after', 'after', 'after']) && same(r.closes.slice(2), [6360, 6740, 6740]), runs(r));
+  check('야후는 묻지 않는다', yahooCalls.length === 0, yahooCalls.join(' '));
+
+  // NXT 에 있는 종목은 지금처럼 NXT 애프터 — KRX 애프터는 묻지 않는다
+  krxCalls.length = 0;
+  naverReply = (url) => (url.includes('/NXT/item/005490/') && url.includes('1530') ? [minute('2026-10-30T15:40', 300000, 10)] : []);
+  krxReply = (url) => (url.includes('/item/005490/minute?startDateTime=202610300000') ? [minute('2026-10-30T15:30', 299000, 500)] : []);
+  r = await oneDay('005490.KS');
+  check('NXT 애프터가 있으면 그것을 쓰고 KRX 애프터는 묻지 않는다', !krxCalls.some((u) => u.includes('startDateTime=202610301535'))
+    && same(r.ext, [null, 'after']) && r.closes.at(-1) === 300000, `${krxCalls.join(' ')} ${runs(r)}`);
+  naverReply = () => [];
+  krxReply = () => [];
+}
+
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');
 process.exit(fails ? 1 : 0);
