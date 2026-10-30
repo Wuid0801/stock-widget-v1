@@ -19,6 +19,8 @@ Node.js 22.12 이상이 필요합니다 — 설치하는 Electron 44 가 요구�
 
 Electron 44 는 `npm install` 때 실행 파일을 받지 않고(설치 스크립트가 없다), 처음 `electron` 을 부를 때(`npm start` · 테스트 · `npm run dist`) `node_modules/electron/dist` 에 받습니다 — 받다 실패하면 `npx install-electron --no` 로 손으로 받습니다. 43.3.0 → 44.10.0(2026-10-29): 44 · 45 의 바뀐 점(클립보드 · net.request · 32비트 · 샌드박스 preload 의 Node 대용품 · window.open 자식 창 · ASAR 파일 기술자)은 이 앱이 쓰지 않는다 — preload 는 contextBridge · ipcRenderer 만, 창 열기는 막고(deny) 권한 요청은 모두 거절한다. 45 는 나온 지 8일이라 다음에 올린다. Electron 은 최신 세 주 버전만 보안 수정을 내므로(지금 45 · 44 · 43, 주 버전은 8주마다) 44 는 47 이 나오면 지원이 끝난다 — 그 전에 다시 올린다.
 
+설치 파일은 electron-builder 26 으로 만듭니다(24.13.3 → 26.18.1, 2026-10-30 — 24 의 빌드 도구 경고: app-builder-lib high · tar critical). 26 에서 바뀐 것은 윈도우 서명 설정을 `win.signtoolOptions` 로 옮긴 것인데 이 앱은 서명하지 않고(`win.signAndEditExecutable: false`, 아이콘 · 버전은 `build/after-pack.cjs` 가 rcedit 로) 쓰는 설정 키(`win` · `nsis` · `afterPack` · `electronLanguages` · `artifactName` 등)는 26 의 설정 스키마에 그대로 있습니다. 같이 Electron 의 실행 파일 내려받기 도구가 쓰는 undici 를 7.30.1 로 올려(high) `npm audit` 경고는 0 건입니다.
+
 ```bash
 npm install
 npm start

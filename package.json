@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "electron": "^44.10.0",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^26.18.1",
     "playwright-core": "^1.56.0",
     "rcedit": "^4.0.1"
   },
