@@ -52,8 +52,12 @@ const route = (url) => {
   if (m) return FX[m[1]]?.[{ basic: 'basic', integration: 'integration', 'finance/quarter': 'quarter' }[m[2]]];
   m = /finance\.daum\.net\/api\/trader\/ranks\?symbolCode=A(\w+)&/.exec(url);
   if (m) return TRADERS[m[1]];
+  m = /finance\.daum\.net\/api\/home\/dart-filings\?code=(\w+)$/.exec(url);
+  if (m) return FILINGS[m[1]] && { code: m[1], rows: FILINGS[m[1]] };
   return undefined;
 };
+// 다음 금융 공시 목록(home/dart-filings) — { code, rows: [{ no, day, name }] }, 2026-10-30 실측(효성중공업 · 삼성전자). 7번에서 채운다.
+const FILINGS = {};
 // 다음 금융 거래원(trader/ranks) — 2026-10-30 브라우저 실측에서 쓰는 필드만. BID 는 매수 상위, ASK 는 매도 상위(각 10개사, 주),
 // foreignInvestorAskBidSum 은 그 목록 안 외국계의 합. 목록에 든 반대쪽 수량은 0 으로 오기도 한다(한화투자 매도 0).
 const trader = (traderName, bid, ask, foreign = false) => ({ traderName, bidAccTradeVolume: bid, askAccTradeVolume: ask,
@@ -229,17 +233,61 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
 }
 
 // --- 7. 관심종목 일정(naver:events) — 목록의 실적 · 배당락 D-day -------------------------------
-// 종목마다 하루 몇 번 받으므로 가볍게: 국내는 종목 상세 1건(실적 발표일), 미국은 해외 종목 정보 1건(배당락일).
+// 국내는 종목 상세 1건(미리 알린 실적 발표일) + 다음 금융 공시 목록 1건(잠정실적 공시 — 오늘 냈는지, 작년 공시일로 본 예상일), 미국은
+// 해외 종목 정보 1건(배당락일). 렌더러가 30분마다 묻고(오늘 공시를 늦지 않게) 네이버 부분은 6시간 기억한다.
+const kstIso = (ms) => new RealDate(ms + 9 * 3600000).toISOString().slice(0, 10);
+const shiftIso = (iso, days, years = 0) => {
+  const d = new RealDate(`${iso}T00:00:00Z`);
+  d.setUTCFullYear(d.getUTCFullYear() + years);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+const prelim = (day, name = '연결재무제표기준영업(잠정)실적(공정공시)') => ({ no: '20261030800916', day, name });
 {
   const events = (symbol) => handlers['naver:events']({}, symbol);
+  const TODAY = kstIso(RealDate.now());
   calls.length = 0;
   let e = await events('005930.KS');
   check('국내 — 실적 발표 일정', e.ok && JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }]),
     JSON.stringify(e));
-  check('국내는 종목 상세 한 건만 묻는다', calls.length === 1 && /\/api\/stock\/005930\/integration$/.test(calls[0].url) && calls[0].signal,
+  check('국내는 종목 상세 · 다음 공시 목록 한 건씩(다음은 Referer)', calls.length === 2 && calls.every((c) => c.signal)
+    && calls.some((c) => /\/api\/stock\/005930\/integration$/.test(c.url))
+    && calls.some((c) => c.url === 'https://finance.daum.net/api/home/dart-filings?code=005930' && c.referer === 'https://finance.daum.net/'),
+  calls.map((c) => c.url).join(' '));
+  calls.length = 0;
+  await events('005930.KS');
+  check('네이버 부분은 6시간 기억한다 — 공시 목록만 다시 묻는다', calls.length === 1 && calls[0].url.includes('dart-filings'),
     calls.map((c) => c.url).join(' '));
   e = await events('069500.KS');
   check('일정이 없으면(ETF) 빈 목록 — 실패가 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+
+  // 잠정실적 공시(2026-10-30 사용자 제보 — 효성중공업은 일정을 미리 알리지 않고 잠정실적 · IR 안내를 같은 날 공시해 D-day 가 없었다)
+  FILINGS['069500'] = [prelim(TODAY), { no: '2', day: TODAY, name: '기업설명회(IR)개최(안내공시)' }, prelim(shiftIso(TODAY, 1, -1))];
+  e = await events('069500.KS');
+  check('오늘 잠정실적을 공시했으면 오늘 실적 일정', JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '잠정실적 공시', date: TODAY }]),
+    JSON.stringify(e));
+  const lastYear = shiftIso(TODAY, 5, -1);
+  FILINGS['069500'] = [prelim(lastYear), { no: '3', day: lastYear, name: '[기재정정]연결재무제표기준영업(잠정)실적(공정공시)' },
+    prelim(shiftIso(TODAY, -60, -1), '영업(잠정)실적(공정공시)'), prelim(shiftIso(TODAY, -100))];
+  e = await events('069500.KS');
+  check('작년 공시일 + 1년이 앞으로 30일 안이면 예상 일정(정정 · 지난 날 · 먼 날은 뺀다)', JSON.stringify(e.events) === JSON.stringify([
+    { kind: 'irEst', title: `작년 같은 분기 잠정실적 공시일(${lastYear}) 기준 예상`, date: shiftIso(lastYear, 0, 1) }]), JSON.stringify(e));
+  FILINGS['069500'] = [prelim(lastYear), prelim(shiftIso(TODAY, -3))];
+  e = await events('069500.KS');
+  check('올해 그 분기를 이미 냈으면(예상일 45일 앞부터 오늘 사이 공시) 예상하지 않는다', e.ok && e.events.length === 0, JSON.stringify(e));
+  // 미리 알린 일정(네이버)이 앞에 있으면 예상하지 않는다 — 삼성전자 10/29 를 아직 앞에 두려고 10/20 로 돌린다
+  SHIFT = RealDate.parse('2026-10-20T12:00:00+09:00') - RealDate.now();
+  FILINGS['005930'] = [prelim('2025-10-25')];
+  e = await events('005930.KS');
+  check('미리 알린 일정이 앞에 있으면 예상 일정은 없다', JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }]),
+    JSON.stringify(e));
+  SHIFT = 0;
+  blocked = ['finance.daum.net'];
+  e = await events('005930.KS');
+  check('공시 목록이 실패하면 네이버 일정만', e.ok && e.events.length === 1 && e.events[0].kind === 'ir', JSON.stringify(e));
+  blocked = [];
+  delete FILINGS['005930'];
+  delete FILINGS['069500'];
   calls.length = 0;
   e = await events('AAPL');
   check('미국 — 배당락일(2026.08.10. → 2026-08-10)', e.ok && JSON.stringify(e.events) === JSON.stringify([{ kind: 'exdiv', title: '배당락일', date: '2026-08-10' }]),
@@ -251,10 +299,15 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   calls.length = 0;
   for (const s of ['^KS11', 'KRW=X', '']) check(`${JSON.stringify(s)} 는 일정을 묻지 않는다`, (await events(s)).ok === false);
   check('지수 · 환율로는 요청이 나가지 않는다', calls.length === 0);
+  SHIFT = 7 * 3600000; // 네이버 기억이 지난 뒤
+  calls.length = 0;
+  await events('AAPL');
+  check('6시간이 지나면 네이버를 다시 묻는다', calls.some((c) => /\/stock\/AAPL\.O\/basic$/.test(c.url)), calls.map((c) => c.url).join(' '));
   blocked = ['/integration'];
   e = await events('005930.KS');
   check('받지 못하면 ok:false(다음 갱신에 다시 묻게)', e.ok === false && typeof e.error === 'string');
   blocked = [];
+  SHIFT = 0;
 }
 
 // --- 8. 주주 구성(국내) — 네이버 금융 기업정보 페이지 ---------------------------------------

@@ -1068,25 +1068,79 @@ ipcMain.handle('naver:detail', async (_e, symbol) => {
 });
 
 // ---- 관심종목 일정(목록의 실적 · 배당락 D-day) -----------------------------------------
-// 렌더러가 종목마다 하루 몇 번(6시간마다) 부르므로 가볍게 한 건씩: 국내는 종목 상세의 실적 발표 일정, 미국은 해외
-// 종목 정보의 배당락일(네이버 해외 응답에는 실적 발표일이 없다). 일정이 없으면 빈 목록(실패가 아니다).
-// 돌려주는 값: { ok, events: [{ kind: 'ir' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
+// 렌더러가 종목마다 30분마다 부른다. 네이버 부분 — 국내는 종목 상세의 (미리 알린) 실적 발표 일정, 미국은 해외 종목 정보의
+// 배당락일(네이버 해외 응답에는 실적 발표일이 없다) — 은 6시간 기억하고(예전 렌더러 주기), 국내는 다음 금융 공시 목록을 매번 본다
+// (prelimEvents — 오늘 잠정실적을 30분 안에 보이려고). 일정이 없으면 빈 목록(실패가 아니다). 네이버가 실패하면 ok:false.
+// 돌려주는 값: { ok, events: [{ kind: 'ir' | 'irEst' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
+const EVENT_NAVER_TTL = 6 * 3600000;
+const naverEventCache = new Map(); // 기호 → { at, events } — 실패는 기억하지 않는다
+
+async function naverEventsOf(s, kr) {
+  if (kr) {
+    const ir = (await naverJson(`https://m.stock.naver.com/api/stock/${kr[1]}/integration`))?.irScheduleInfo;
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(ir?.irScheduleDate ?? '')) ? ir.irScheduleDate : null;
+    return date ? [{ kind: 'ir', title: String(ir.title ?? '실적 발표'), date }] : [];
+  }
+  const code = await naverUsCode(s);
+  if (!code) throw new Error('네이버에 없는 종목');
+  const b = await naverJson(`https://api.stock.naver.com/stock/${encodeURIComponent(code)}/basic`);
+  const m = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(detailInfos(b?.stockItemTotalInfos).get('exDividendAt') || ''); // '2026.08.10.'
+  return m ? [{ kind: 'exdiv', title: '배당락일', date: `${m[1]}-${m[2]}-${m[3]}` }] : [];
+}
+
+// 다음 금융 공시 목록(최근 몇 년, { code, rows: [{ no, day, name }] }). 실패하면 null — 그 부분만 빠진다.
+async function daumFilings(code) {
+  try {
+    const j = await daumJson(`${DAUM_API}/home/dart-filings?code=${code}`);
+    return Array.isArray(j?.rows) ? j.rows : null;
+  } catch {
+    return null;
+  }
+}
+
+// 잠정실적 공시로 본 일정(2026-10-30 사용자 제보 — 효성중공업은 실적 발표 일정을 미리 알리지 않고 잠정실적 · IR 안내를 같은 날
+// 공시해(7/31 · 10/30) 네이버 일정이 없었고 D-day 가 뜨지 않았다). 공시 이름에 '영업(잠정)실적'(연결 · 별도)이 든 것, 정정([기재정정])은
+// 발표가 아니라 뺀다.
+//  - 오늘 공시했으면 { kind: 'ir', title: '잠정실적 공시', date: 오늘 } — 칩은 '실적 D-day'
+//  - 아니면, 미리 알린 일정(announced)이 오늘 이후에 없을 때 작년 공시일 + 1년이 앞으로 30일 안이면 { kind: 'irEst' }(추정).
+//    올해 그 분기를 이미 냈으면(그 날 45일 앞부터 오늘 사이에 공시가 있으면) 뺀다.
+const PRELIM_RE = /영업\(잠정\)실적/;
+function prelimEvents(rows, announced, now) {
+  if (!rows) return [];
+  const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const at = (d) => Date.parse(`${d}T00:00:00Z`);
+  const today = iso(now + 9 * 3600000);
+  const days = [...new Set(rows.filter((r) => PRELIM_RE.test(String(r?.name ?? '')) && !String(r.name).startsWith('['))
+    .map((r) => String(r.day)).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
+  if (days.includes(today)) return [{ kind: 'ir', title: '잠정실적 공시', date: today }];
+  if (announced.some((e) => e.date >= today)) return [];
+  const horizon = iso(at(today) + 30 * 86400000);
+  const out = [];
+  for (const d of days) {
+    const p = iso(Date.UTC(Number(d.slice(0, 4)) + 1, Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))));
+    if (p < today || p > horizon) continue;
+    const from = iso(at(p) - 45 * 86400000);
+    if (days.some((x) => x > from && x <= today)) continue;
+    out.push({ kind: 'irEst', title: `작년 같은 분기 잠정실적 공시일(${d}) 기준 예상`, date: p });
+  }
+  return out;
+}
+
 ipcMain.handle('naver:events', async (_e, symbol) => {
   const s = String(symbol ?? '');
   if (!SYMBOL_RE.test(s)) return { ok: false, error: '잘못된 요청' };
+  const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(s);
+  if (!kr && !US_RE.test(s)) return { ok: false, error: '일정이 없는 종목' }; // 지수 · 환율
   try {
-    const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(s);
-    if (kr) {
-      const ir = (await naverJson(`https://m.stock.naver.com/api/stock/${kr[1]}/integration`))?.irScheduleInfo;
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(ir?.irScheduleDate ?? '')) ? ir.irScheduleDate : null;
-      return { ok: true, events: date ? [{ kind: 'ir', title: String(ir.title ?? '실적 발표'), date }] : [] };
+    const now = Date.now();
+    const filings = kr ? daumFilings(kr[1]) : null; // 실패해도 던지지 않는다
+    const hit = naverEventCache.get(s);
+    let events = hit && now - hit.at < EVENT_NAVER_TTL ? hit.events : null;
+    if (!events) {
+      events = await naverEventsOf(s, kr);
+      naverEventCache.set(s, { at: now, events });
     }
-    if (!US_RE.test(s)) return { ok: false, error: '일정이 없는 종목' }; // 지수 · 환율
-    const code = await naverUsCode(s);
-    if (!code) return { ok: false, error: '네이버에 없는 종목' };
-    const b = await naverJson(`https://api.stock.naver.com/stock/${encodeURIComponent(code)}/basic`);
-    const m = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(detailInfos(b?.stockItemTotalInfos).get('exDividendAt') || ''); // '2026.08.10.'
-    return { ok: true, events: m ? [{ kind: 'exdiv', title: '배당락일', date: `${m[1]}-${m[2]}-${m[3]}` }] : [] };
+    return { ok: true, events: [...events, ...prelimEvents(await filings, events, now)] };
   } catch (err) {
     return { ok: false, error: err.message || '일정 조회 실패' };
   }

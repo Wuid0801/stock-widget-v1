@@ -284,10 +284,12 @@ const RANK_TTL = 60000;
 // 지표 화면의 수급 · 일별 종가 · HY OAS(main 의 market:extras). 지표 화면이 열려 있을 때만 받고 1분 쓴다(RANK_TTL).
 let marketExtras = null; // { at, d(market:extras 응답) }
 let marketLoading = false;
-// 관심종목 일정(실적 발표 · 배당락). 종목마다 6시간 쓴다 — 하루 몇 번이면 충분하고, 종목 수만큼 요청이 나간다.
-const eventCache = new Map(); // symbol -> { at, events: [{ kind: 'ir' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
+// 관심종목 일정(실적 발표 · 잠정실적 공시 · 배당락). 종목마다 30분 쓴다 — 오늘 낸 잠정실적 공시(다음 금융)를 늦지 않게 보이려고
+// (예전 6시간, 2026-10-30). 네이버 일정은 main 이 6시간 기억해 네이버 요청은 예전과 같다. 종목 수만큼 요청이 나간다.
+const eventCache = new Map(); // symbol -> { at, events: [{ kind: 'ir' | 'irEst' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
 let eventsBusy = false;
-const EVENT_TTL = 6 * 3600000;
+const EVENT_TTL = 30 * 60000;
+const EVENT_LABEL = { ir: '실적', irEst: '실적 예상', exdiv: '배당락' }; // 목록 칩의 이름(eventBadge)
 const EVENT_DAYS = 14; // 이만큼 남았을 때부터 목록에 보인다
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.

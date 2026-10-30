@@ -4221,6 +4221,11 @@ await test('events: list chip counts days by the Korean date, shows the nearest 
   c.Date.now = () => at('2026-10-16T10:00:00');
   assert.equal(run("eventChip('X')"), '<span class="evchip" title="&lt;b>가까운&lt;/b> · 10/20">실적 D-4</span>', '제목은 이스케이프');
   assert.equal(run("eventChip('NONE')"), '');
+  // 작년 잠정실적 공시일로 본 예상 일정(main 의 irEst, 2026-10-30) — '실적 예상' · 점선 칩(est)
+  run(`eventCache.set('Y', { at: 0, events: [{ kind: 'irEst', title: '작년 같은 분기 잠정실적 공시일(2025-10-19) 기준 예상', date: '2026-10-19' }] });`);
+  assert.equal(badge('Y', '2026-10-16T10:00:00'), JSON.stringify({ label: '실적 예상 D-3',
+    title: '작년 같은 분기 잠정실적 공시일(2025-10-19) 기준 예상 · 10/19', est: true }));
+  assert.equal(run("eventChip('Y')"), '<span class="evchip est" title="작년 같은 분기 잠정실적 공시일(2025-10-19) 기준 예상 · 10/19">실적 예상 D-3</span>');
   c.Date.now = realNow;
   // 목록 줄은 이름 옆에 칩을 둔다(이름은 말줄임, 칩은 늘 보인다)
   assert.match(realFunction('renderList'), /<span class="nrow"><span class="name">\$\{esc\(item\.name\)\}<\/span>\$\{eventChip\(item\.symbol\)\}<\/span>/);
@@ -4302,7 +4307,7 @@ await test('watchlist: rows are rebuilt only when the stocks or their order chan
   assert.deepEqual(list.kids.map((r) => r.dataset.symbol), ['005930.KS'], '빈 안내 뒤에도 줄을 만든다');
 });
 
-await test('events: the watchlist schedule is fetched one stock at a time, kept for six hours, retried after a failure, and redraws the list once', async () => {
+await test('events: the watchlist schedule is fetched one stock at a time, kept for thirty minutes, retried after a failure, and redraws the list once', async () => {
   const { c, run } = harness(['loadEvents']);
   const asked = [];
   const fail = new Set(['000660.KS']);
@@ -4316,14 +4321,15 @@ await test('events: the watchlist schedule is fetched one stock at a time, kept 
   assert.equal(run("eventCache.has('000660.KS')"), false, '실패는 기억하지 않는다');
   asked.length = 0;
   await c.loadEvents();
-  assert.deepEqual([...asked], ['000660.KS'], '받아 둔 종목은 6시간 동안 다시 묻지 않고, 실패한 종목만 다시');
+  assert.deepEqual([...asked], ['000660.KS'], '받아 둔 종목은 30분 동안 다시 묻지 않고, 실패한 종목만 다시');
   assert.equal(lists, 1, '새로 받은 것이 없으면 다시 그리지 않는다');
   const realNow = c.Date.now; // FixedDate 는 하네스끼리 같이 쓴다 — 끝에서 되돌린다
-  c.Date.now = () => NOW + 6 * 3600000;
+  // 30분 — 오늘 낸 잠정실적 공시(다음 금융)를 늦지 않게. 네이버 일정은 main 이 6시간 기억한다(2026-10-30)
+  c.Date.now = () => NOW + 30 * 60000;
   asked.length = 0;
   fail.clear();
   await c.loadEvents();
-  assert.deepEqual([...asked], ['005930.KS', '000660.KS'], '6시간이 지나면 다시');
+  assert.deepEqual([...asked], ['005930.KS', '000660.KS'], '30분이 지나면 다시');
   assert.equal(lists, 2);
   c.Date.now = realNow;
   // 받는 중에 또 부르면(30초 갱신이 겹치면) 그냥 돌아간다

@@ -213,7 +213,7 @@ export const CHECKS = [
     ],
   },
   {
-    name: '일정 (실적 · 배당락)', source: '네이버 종목 상세',
+    name: '일정 (실적 · 배당락)', source: '네이버 종목 상세 · 다음 공시 목록',
     call: async (h) => ({ kr: await h['naver:events']({}, '005930.KS'), us: await h['naver:events']({}, 'AAPL') }),
     verify: (r) => [...okOf(r.kr).map((m) => `005930: ${m}`), ...okOf(r.us).map((m) => `AAPL: ${m}`),
       ...need(r.kr && Array.isArray(r.kr.events) && r.us && Array.isArray(r.us.events), '일정이 배열이 아님')],
