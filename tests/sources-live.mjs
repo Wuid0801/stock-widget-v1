@@ -59,6 +59,9 @@ const series = (r, label, minBars, days) => [
     ...need(Array.isArray(r.times) && recent(r.times.at(-1), days), `${label}: 마지막 봉이 ${days}일보다 오래됨`),
   ] : []),
 ];
+// 지금 한국 날짜 'YYYYMMDD' · 시각 HHMM(숫자)
+const kstToday = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
+const kstHm = () => Number(new Date(Date.now() + 9 * 3600000).toISOString().slice(11, 16).replace(':', ''));
 const yahooCalled = (calls) => need(!calls.some((c) => c.url.includes('finance.yahoo.com')), '네이버 대신 야후로 그렸다(네이버 응답을 못 씀)');
 
 // 점검 항목. call 은 IPC 처리기를 부르고, verify(결과, 그동안의 요청) 는 문제 목록(빈 배열이면 통과)을 낸다.
@@ -95,6 +98,10 @@ export const CHECKS = [
       ...need(Array.isArray(r.kospiDays) && r.kospiDays.length && recent(r.kospiDays.at(-1).date, 7), '코스피 일봉이 7일보다 오래됨'),
       ...need(Array.isArray(r.futDays) && r.futDays.length >= 10, '코스피200 선물 일별 종가가 10일 미만'),
       ...need(Array.isArray(r.k200Days) && r.k200Days.length >= 10 && r.k200Days.every((d) => pos(d.close)), '코스피200 현물 일별 종가가 10일 미만'),
+      // 오늘 1분 종가 — 오늘이 거래일(일봉에 오늘이 있다)이고 09:10 이 지났으면 비면 안 된다(베이시스를 선물 시각에 못 맞춘다)
+      ...need(Array.isArray(r.k200Min) && r.k200Min.every((m) => num(m.t) && pos(m.close)), '코스피200 현물 1분 종가 모양이 다름'),
+      ...need(!(Array.isArray(r.k200Days) && r.k200Days.length && r.k200Days.at(-1).date === kstToday() && kstHm() >= 910)
+        || (Array.isArray(r.k200Min) && r.k200Min.length > 0), '오늘 장중인데 코스피200 현물 1분 종가가 비었음'),
       ...need(Array.isArray(r.spotFlows) && r.spotFlows.some((f) => f.final && num(f.foreign)), '외국인 현물 수급(확정일)이 없음'),
       ...need(Array.isArray(r.futFlows) && r.futFlows.some((f) => f.final && num(f.foreign)), '외국인 선물 수급(확정일)이 없음'),
       ...need(Array.isArray(r.hyOas) && r.hyOas.length >= 6 && r.hyOas.every((d) => num(d.value)), 'HY OAS 가 6개 미만'),

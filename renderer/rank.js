@@ -90,11 +90,32 @@ function marketRow(key) {
   };
 }
 
+// 코스피200 현물의 t 시각 값 { t, v } — t 앞의 마지막 것: 오늘 1분 종가(market:extras 의 k200Min) · 지수 줄의 현물(그 거래 시각) ·
+// t 가 그날 장 시작(09:00) 앞이면 전일 종가. t 앞의 1분 종가가 5분 넘게 비었는데 현물은 그 뒤에도 거래됐으면(분봉을 아직 못
+// 받았거나 낡았다) 모르는 것으로 null — 엉뚱한 시각의 현물과 빼지 않는다.
+function k200At(t, spot, mins) {
+  if (!Number.isFinite(t) || !spot) return null;
+  const spotAt = Date.parse(spot.tradedAt || '');
+  const samples = (mins || []).map((m) => ({ t: m.t, v: m.close, kind: 'min' }));
+  if (Number.isFinite(spotAt)) {
+    samples.push({ t: spotAt, v: spot.value, kind: 'now' });
+    const open = Math.floor((spotAt + 9 * 3600000) / 86400000) * 86400000; // 그날 09:00 KST(= 00:00 UTC)
+    // 전일 종가는 그날 0시(KST)부터 장 시작까지의 값 — 선물만 열린 08:45~09:00 도 그 앞이다
+    if (spot.change != null && t < open) samples.push({ t: open - 9 * 3600000, v: spot.value - spot.change, kind: 'prev' });
+  }
+  let best = null;
+  for (const s of samples) if (s.t <= t && (!best || s.t >= best.t)) best = s;
+  if (!best) return null;
+  if (best.kind === 'min' && Number.isFinite(spotAt) && spotAt > t && t - best.t > 5 * 60000) return null;
+  return { t: best.t, v: best.v };
+}
+
 // 지표 화면에만 있는 줄 — 차트가 없어 누를 수 없다(symbol null). market:extras 를 아직 못 받았거나 그 부분이 실패했으면 null.
 //  - FUT 코스피200 선물 · KPI200 코스피200 현물: 값 · 등락률은 지수 줄과 함께 받은 것(선물은 20분 늦다), 5일 변화는 그 일봉의
 //    6번째 앞 종가 대비.
-//  - BASIS 베이시스: 선물 - 현물(포인트). 오늘 등락은 둘의 전일 대비 차(선물 등락 - 현물 등락 = 어제 종가끼리의 베이시스에서 바뀐 만큼),
-//    5일 변화 · 미니 선은 날마다의 베이시스(같은 날 선물 종가 - 현물 종가). 장중에는 선물이 20분 늦어 그만큼 어긋난다.
+//  - BASIS 베이시스: 선물 - 현물(포인트). 선물은 네이버가 20분 늦게 줘서 지금 현물과 빼면 그 20분 동안 움직인 만큼이 섞였다(오르는
+//    장에서 콘탱고가 백워데이션으로 보였다, 2026-10-30) — 선물 시각의 현물(k200At)과 뺀다. 장중엔 20분 전 베이시스이고 메모에 그 시각.
+//    오늘 등락은 어제 베이시스(같은 날 종가끼리) 대비, 5일 변화 · 미니 선은 날마다의 베이시스에 지금 값을 이은 것.
 //  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(네이버 표기 그대로 — 네이버 화면도 단위를 적지 않는다),
 //    5일 변화 자리에 확정일 끝에서 같은 부호가 이어진 날 수, 18:00 전 오늘 값은 잠정이라 메모에 따로.
 //  - HYOAS 미국 HY OAS: 마지막 값(%), 오늘 등락은 앞 줄 · 5일 변화는 다섯 줄 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다).
@@ -115,20 +136,28 @@ function marketExtraRow(key) {
     const spot = indexItems.find((i) => i.code === 'KPI200');
     if (!fut || !spot || !(fut.value > 0) || !(spot.value > 0)) return null;
     const pt = (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
-    const value = fut.value - spot.value;
-    const change = fut.change != null && spot.change != null ? fut.change - spot.change : null;
-    // 날마다의 베이시스 — 두 일봉에 같은 날이 있는 날만
+    const futAt = Date.parse(fut.tradedAt || '');
+    const hm = Number.isFinite(futAt) ? new Date(futAt + 9 * 3600000).toISOString().slice(11, 16) : null;
+    const at = k200At(futAt, spot, x && x.k200Min);
+    const value = at ? fut.value - at.v : null;
+    // 날마다의 베이시스(같은 날 선물 종가 - 현물 종가) — 선물 시각의 날짜 앞까지. 그날은 지금 값(맞춘 것)을 잇는다.
+    const today = hm ? new Date(futAt + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, '') : null;
     const spotOn = new Map(((x && x.k200Days) || []).map((d) => [d.date, d.close]));
-    const daily = ((x && x.futDays) || []).filter((d) => spotOn.has(d.date)).map((d) => d.close - spotOn.get(d.date));
-    const base = daily.length >= 6 ? daily[daily.length - 6] : null;
+    const hist = ((x && x.futDays) || []).filter((d) => spotOn.has(d.date) && (!today || d.date < today))
+      .map((d) => d.close - spotOn.get(d.date));
+    const prev = hist.length ? hist[hist.length - 1] : null;
+    const change = value != null && prev != null ? value - prev : null;
+    const base = hist.length >= 5 ? hist[hist.length - 5] : null;
     return { key, name: MARKET_EXTRA_NAMES.BASIS, symbol: null, value, pct: null, change,
-      d5: base == null ? null : value - base, d5Unit: 'pt', valueText: pt(value), dayText: change == null ? '—' : pt(change), dayTone: change,
-      d5Text: base == null ? '—' : pt(value - base), note: '선물 − 현물 · 선물 20분 지연',
-      title: `베이시스 = 코스피200 선물 − 코스피200 현물 (${pt(value)}pt, 현물의 ${pt((value / spot.value) * 100)}%). `
+      d5: value != null && base != null ? value - base : null, d5Unit: 'pt', valueText: value == null ? '—' : pt(value),
+      dayText: change == null ? '—' : pt(change), dayTone: change,
+      d5Text: value != null && base != null ? pt(value - base) : '—', note: value == null ? '현물 분봉 기다리는 중' : `${hm} 기준`,
+      title: `베이시스 = 코스피200 선물 − 코스피200 현물${value == null ? '' : ` (${pt(value)}pt, 현물의 ${pt((value / at.v) * 100)}%)`}. `
         + '선물이 현물보다 비싸면(+, 콘탱고) 앞으로 오를 쪽에, 싸면(−, 백워데이션) 내릴 쪽에 돈이 몰린 것으로 본다. '
         + '금리 · 배당 때문에 평소엔 조금 + 이고, 만기(3 · 6 · 9 · 12월 둘째 목요일)에 가까울수록 0 에 붙는다. '
-        + '장중에는 선물 값이 20분 늦어 그만큼 어긋난다 — 5일 변화 · 미니 선은 날마다의 종가(선물 15:45 · 현물 15:30)로 센다',
-      spark: daily.length >= 2 ? daily.slice(-20) : null };
+        + `선물 값이 20분 늦어 같은 시각${hm ? `(${hm})` : ''}의 현물과 뺀다 — 장중엔 20분 전 베이시스다. `
+        + '오늘 등락은 어제 베이시스(종가끼리, 선물 15:45 · 현물 15:30) 대비, 5일 변화 · 미니 선은 날마다의 베이시스',
+      spark: hist.length + (value != null ? 1 : 0) >= 2 ? [...hist.slice(-19), ...(value != null ? [value] : [])] : null };
   }
   if (key === 'SPOT' || key === 'FUTFLOW') {
     const flows = x && (key === 'SPOT' ? x.spotFlows : x.futFlows);
@@ -267,7 +296,7 @@ async function loadMarket() {
   const prev = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
   let next = d && d.ok ? { ...d } : prev || d || { ok: false, error: '응답 없음' };
   if (d && d.ok && prev) {
-    for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
+    for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
   }
   marketExtras = { at: Date.now(), d: next };
   renderRank();

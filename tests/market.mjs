@@ -43,7 +43,7 @@ const fakeFetch = async (url) => {
   url = String(url);
   calls.push(url);
   const route = url.includes('/chart/domestic/index/KOSPI/day') ? 'kospiDay' : url.includes('/chart/domestic/index/FUT/day') ? 'futDay'
-    : url.includes('/chart/domestic/index/KPI200/day') ? 'k200Day'
+    : url.includes('/chart/domestic/index/KPI200/day') ? 'k200Day' : url.includes('/chart/domestic/index/KPI200/minute') ? 'k200Min'
     : url.includes('/api/index/KOSPI/trend') ? 'spot' : url.includes('/api/index/FUT/trend') ? 'fut'
       : url.includes('fred.stlouisfed.org') ? 'fred' : 'other';
   const date = (/bizdate=(\d{8})/.exec(url) || [])[1];
@@ -65,6 +65,9 @@ const base = () => ({
   kospiDay: [day('20261023', 5550.3), day('20261026', 5469.47), day('20261027', 5641.17)],
   futDay: [day('20261023', 863.3), day('20261026', 850), day('20261027', 883.7)],
   k200Day: [day('20261023', 860.3), day('20261026', 848.6), day('20261027', 881.2)],
+  // 오늘 1분봉 — 네이버 응답 순서가 섞여도 시각 순으로, 값이 없는 줄은 뺀다
+  k200Min: [{ localDateTime: '20261027131600', currentPrice: 886.5 }, { localDateTime: '20261027131000', currentPrice: 885 },
+    { localDateTime: '20261027131700', currentPrice: null }],
   spot: (d) => trend(d, SPOT[d]),
   fut: (d) => trend(d, FUT[d]),
   fred: FRED,
@@ -87,6 +90,10 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
     && r.futDays?.length === 3 && r.ok === true && typeof r.at === 'string', JSON.stringify(r).slice(0, 200));
   check('코스피200 현물 일별 종가(베이시스용)', same(r.k200Days?.map((d) => [d.date, d.close]), [['20261023', 860.3], ['20261026', 848.6], ['20261027', 881.2]]),
     JSON.stringify(r.k200Days));
+  check('코스피200 현물 오늘 1분 종가 — 시각(ms) 순, 빈 값은 뺀다(베이시스를 선물 시각에 맞출 때)',
+    same(r.k200Min, [{ t: kst('2026-10-27T13:10'), close: 885 }, { t: kst('2026-10-27T13:16'), close: 886.5 }]), JSON.stringify(r.k200Min));
+  check('분봉은 오늘 하루를 묻는다', calls.some((u) => u.includes('/index/KPI200/minute?startDateTime=202610270000&endDateTime=202610272359')),
+    calls.filter((u) => u.includes('minute')).join(' '));
 }
 
 // --- 2. final 은 한국 18:00 — 지난 날 · 확정된 오늘은 다시 묻지 않는다 -------------------------------------
