@@ -2927,7 +2927,7 @@ await test('market panel: 지표 lists every index item in three groups and pick
   assert.equal(h.elements.get('rankTabs').hidden, true, '지표 화면은 탭 줄이 없다');
   const html = h.elements.get('rankList').innerHTML;
   assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
-    ['국내', '코스피 장중 수급 · 현물 억 · 선물 계약 · 30분', '미국', '위험 · 자금']);
+    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분', '미국', '위험 · 자금']);
   const order = [...html.matchAll(/data-sym="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(order, ['^KS11', '^KQ11', '^IXIC', '^GSPC', 'NQ=F', '^SOX', '^VIX', '^TNX', 'KRW=X', 'CL=F'], '묶음 안 순서');
   assert.match(rowOf(html, '^TNX'), /4\.970/);
@@ -3218,7 +3218,7 @@ await test('market panel: a part that fails on refresh keeps its previous value'
   assert.equal(h.run('marketExtras.d.intraday.program'), -419, '장중 수급도 실패하면 있던 값을 둔다');
 });
 
-// 장중 수급(다음 금융, main 의 market:extras intraday) — 주체별 한 줄: 코스피 현물 누적(억) · 코스피200 선물 누적(계약, 부호 색) ·
+// 장중 수급(다음 금융, main 의 market:extras intraday) — 주체별 한 줄: 코스피 현물 누적(억) · 코스피200 선물 누적(억, 부호 색) ·
 // 최근 30분 현물 변화 · 오늘 현물 흐름 미니 선. 프로그램은 현물 값 하나뿐이다. 누를 수 없다. 2026-10-30 사용자 요청(주체별 한 줄을 고름).
 const kstMs = (s) => Date.parse(`${s}+09:00`);
 const INTRADAY = (day) => `marketExtras = { at: Date.now(), d: { ok: true, intraday: {
@@ -3233,7 +3233,7 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   h.run(INTRADAY('2026-09-10')); // 하네스의 오늘(2026-09-10 18:30 KST)
   let html = h.c.marketHtml();
   assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
-    ['국내', '코스피 장중 수급 · 현물 억 · 선물 계약 · 30분 (14:25)', '미국', '위험 · 자금'], '국내 다음 묶음 — 제목에 단위와 마지막 현물 시각');
+    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분 (14:25)', '미국', '위험 · 자금'], '국내 다음 묶음 — 제목에 단위와 마지막 현물 시각');
   const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(keys.slice(keys.indexOf('FUTFLOW') + 1, keys.indexOf('FUTFLOW') + 7),
     ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']);
@@ -3241,10 +3241,10 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   assert.match(html, /<div class="rrow mrow mfix" data-key="INTRA_FOREIGN" title="[^"]+">/, '누를 수 없다');
   assert.match(fr, /<span class="mname">외국인<\/span>/);
   assert.match(fr, /<span class="mval">-13,737<\/span>/, '현물 누적(억, 반올림)');
-  assert.match(fr, /<span class="rpct" style="color:#e24b4a">\+203<\/span>/, '선물 누적(계약) — 사면 빨강');
+  assert.match(fr, /<span class="rpct" style="color:#e24b4a">\+203<\/span>/, '선물 누적(억) — 사면 빨강');
   assert.match(fr, /<span class="md5" title="최근 30분 현물 순매수 변화\(억\)">-1,237<\/span>/, '14:25 − 13:55');
   assert.match(fr, /class="mspark"/, '오늘 현물 흐름');
-  assert.match(html, /data-key="INTRA_FOREIGN" title="외국인 장중 누적 순매수 — 코스피 현물 -13,737억\(14:25\) · 코스피200 선물 \+203계약\(14:24\)\. /);
+  assert.match(html, /data-key="INTRA_FOREIGN" title="외국인 장중 누적 순매수 — 코스피 현물 -13,737억\(14:25\) · 코스피200 선물 \+203억\(14:24\)\. /);
   assert.match(keyRow(html, 'INTRA_INST'), /<span class="rpct" style="color:#[0-9a-f]{6}">-541<\/span>/);
   assert.match(html, /data-key="INTRA_INST" title="기관 [^"]*연기금 포함/);
   assert.match(html, /data-key="INTRA_CORP" title="기타법인 [^"]*자사주/, '자사주 매입은 기타법인에 섞인다');
@@ -3258,11 +3258,11 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   assert.match(keyRow(h.c.marketHtml(), 'INTRA_FOREIGN'), /<span class="md5"[^>]*>—<\/span>/);
   // 오늘이 아니면(장 전 · 휴장) 제목에 날짜
   h.run(INTRADAY('2026-09-09'));
-  assert.match(h.c.marketHtml(), /코스피 장중 수급 · 현물 억 · 선물 계약 · 30분 \(09\/09 14:25\)/);
+  assert.match(h.c.marketHtml(), /코스피 장중 수급 · 현물 · 선물 억 · 30분 \(09\/09 14:25\)/);
   // 받은 적이 없으면 여섯 줄 모두 — 로 남는다
   h.run('marketExtras = null;');
   html = h.c.marketHtml();
-  assert.match(html, /class="qhint rnote mgroup">코스피 장중 수급 · 현물 억 · 선물 계약 · 30분</);
+  assert.match(html, /class="qhint rnote mgroup">코스피 장중 수급 · 현물 · 선물 억 · 30분</);
   for (const k of ['INTRA_FOREIGN', 'INTRA_PROGRAM']) assert.match(keyRow(html, k), /<span class="mval">—<\/span>/, k);
 });
 

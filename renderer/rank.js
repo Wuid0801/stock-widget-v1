@@ -118,8 +118,8 @@ function k200At(t, spot, mins) {
 //  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(네이버 표기 그대로 — 네이버 화면도 단위를 적지 않는다),
 //    5일 변화 자리에 확정일 끝에서 같은 부호가 이어진 날 수, 18:00 전 오늘 값은 잠정이라 메모에 따로.
 //  - HYOAS 미국 HY OAS: 마지막 값(%), 오늘 등락은 앞 줄 · 5일 변화는 다섯 줄 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다).
-//  - INTRA_* 장중 수급(다음 금융, main 의 intraday): 값 = 코스피 현물 누적 순매수(억), 오늘 등락 자리 = 코스피200 선물 누적(계약,
-//    부호 색), 5일 변화 자리 = 최근 30분 현물 변화(그 시각 또는 그 앞의 마지막 값 대비 — 없으면 —), 미니 선 = 오늘 현물 누적.
+//  - INTRA_* 장중 수급(다음 금융, main 의 intraday): 값 = 코스피 현물 누적 순매수(억), 오늘 등락 자리 = 코스피200 선물 누적(억 —
+//    처음엔 계약이었는데 현물과 견주기 어려웠다, 부호 색), 5일 변화 자리 = 최근 30분 현물 변화(그 시각 또는 그 앞의 마지막 값 대비 — 없으면 —), 미니 선 = 오늘 현물 누적.
 //    프로그램은 현물 값 하나뿐이다(선물 · 30분 · 미니 선 없음).
 function marketExtraRow(key) {
   const x = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
@@ -205,7 +205,7 @@ function marketExtraRow(key) {
       valueText: eok(value), dayText: fut == null ? '—' : eok(fut), dayTone: fut,
       d5Text: d30 == null ? '—' : eok(d30), d5Title: '최근 30분 현물 순매수 변화(억)',
       title: `${name} 장중 누적 순매수 — 코스피 현물 ${eok(value)}억(${hm(last.t)})`
-        + `${fut == null ? '' : ` · 코스피200 선물 ${eok(fut)}계약(${hm(futRow.t)})`}. ${note}`
+        + `${fut == null ? '' : ` · 코스피200 선물 ${eok(fut)}억(${hm(futRow.t)})`}. ${note}`
         + '30분은 최근 30분 동안의 현물 순매수 변화, 미니 선은 오늘 09:00 부터의 현물 누적. 다음 금융 — 장 마감 전은 잠정치',
       spark: spot.map((r) => r[field]) };
   }
@@ -219,7 +219,7 @@ function intradayTitle() {
   const kst = (t) => new Date(t + 9 * 3600000).toISOString();
   const at = last ? kst(last.t) : null;
   const day = at && at.slice(0, 10) !== kst(Date.now()).slice(0, 10) ? `${at.slice(5, 7)}/${at.slice(8, 10)} ` : '';
-  return `${INTRADAY_GROUP} · 현물 억 · 선물 계약 · 30분${at ? ` (${day}${at.slice(11, 16)})` : ''}`;
+  return `${INTRADAY_GROUP} · 현물 · 선물 억 · 30분${at ? ` (${day}${at.slice(11, 16)})` : ''}`;
 }
 
 // 데드캣 점검의 입력 — market:extras 의 다섯 부분과, SOX · 원/달러 · VIX · 미국채의 { now(지수 줄 실시간, 없으면 받은 시세),

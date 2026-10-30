@@ -193,12 +193,12 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
 
 // --- 8. 장중 수급(다음 금융) — 지표 화면의 '코스피 장중 수급' 묶음, 2026-10-30 사용자 요청 ---------------------------------
 // 네이버 수급은 날짜마다 값 하나라 장중 흐름이 없다. 응답 모양은 2026-10-30 브라우저 실측에서 쓰는 필드만 옮겼다 — 현물은 원(최신이 앞),
-// 선물은 계약, 프로그램은 코스피(KGG01P)의 지금 값 하나.
+// 선물도 금액(type=PRICE, 원 — 처음에는 계약수였는데 현물과 단위가 달라 견주기 어려웠다, 사용자 요청), 프로그램은 코스피(KGG01P)의 지금 값 하나.
 const spotRow = (t, i, f, inst, corp, pension, etcForeign = 0) => ({ date: `2026-10-30 ${t}:00`, time: `${t}:00`,
   individualStraightPurchasePrice: i * 1e8, foreignStraightPurchasePrice: f * 1e8, institutionStraightPurchasePrice: inst * 1e8,
   details: { ETC_CORPORATION: corp * 1e8, PENSION_FUND: pension * 1e8, ETC_FOREIGN: etcForeign * 1e8, BANK: 0 } });
-const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, privateSettlement: p, foreignSettlement: f,
-  institutionalSettlement: inst, etcCorporationSettlement: corp, pensionFundInvestment: pension });
+const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, privateSettlement: p * 1e8, foreignSettlement: f * 1e8,
+  institutionalSettlement: inst * 1e8, etcCorporationSettlement: corp * 1e8, pensionFundInvestment: pension * 1e8 });
 {
   NOW = kst('2026-10-30T14:30');
   reply = {
@@ -214,7 +214,7 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   let r = await extras();
   check('다음 금융 세 주소를 묻는다 — 현물은 그날 하루치(세부 포함), 선물도 하루치', [
     'finance.daum.net/api/investor/KOSPI/times?market=KOSPI&page=1&perPage=400&details=true&pagination=true',
-    'finance.daum.net/api/investor/future/times?page=1&perPage=400&terms=times&pagination=true',
+    'finance.daum.net/api/investor/future/times?page=1&perPage=400&terms=times&pagination=true&type=PRICE',
     'finance.daum.net/api/domestic/quotes?summary=true&changeStatistics=true'].every((u) => calls.some((c) => c.endsWith(u))),
   calls.filter((c) => c.includes('daum')).join(' '));
   check('브라우저처럼 Referer 를 붙인다(없으면 막힌다)', ['daumSpot', 'daumFut', 'daumQuotes']
@@ -222,7 +222,7 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   check('현물: 억 원 · 시각 오름차순 · 빈 줄(합이 어긋난 줄)과 날짜 없는 줄은 뺀다', same(r.intraday?.spot, [
     { t: kst('2026-10-30T13:55'), individual: 8000, foreign: -12500, institution: 2500, pension: 3000, corp: 1990 },
     { t: kst('2026-10-30T14:25'), individual: 7761, foreign: -13737, institution: 3670, pension: 4853, corp: 2306 }]), JSON.stringify(r.intraday?.spot));
-  check('선물: 계약 · 시각 오름차순', same(r.intraday?.fut, [
+  check('선물: 억 원 · 시각 오름차순', same(r.intraday?.fut, [
     { t: kst('2026-10-30T08:45'), individual: 5, foreign: -5, institution: 0, pension: 0, corp: 0 },
     { t: kst('2026-10-30T14:25'), individual: 434, foreign: 203, institution: -541, pension: 130, corp: -96 }]), JSON.stringify(r.intraday?.fut));
   check('프로그램: 코스피의 지금 값(억 원)', r.intraday?.program === -419, JSON.stringify(r.intraday?.program));

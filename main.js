@@ -703,9 +703,10 @@ async function fredHyOas(now) {
 // 장중 수급(지표 화면의 '코스피 장중 수급' 묶음, 2026-10-30 사용자 요청) — 다음 금융. 네이버 수급(trend?bizdate=)은 날짜마다 값 하나라
 // 장중 흐름이 없다. 2026-10-30 브라우저에서 확인한 주소 셋을 함께 받는다(하나가 실패하면 그것만 null, 셋 다면 실패):
 //  - 코스피 현물 시간별(investor/KOSPI/times) — 그날 09:01 부터 1~2분 간격 누적 순매수(원, 최신이 앞), 세부(details)에 연기금 · 기타법인
-//  - 코스피200 선물 시간별(investor/future/times) — 08:45 부터 누적 순매수(계약 — 다음 화면의 기본값이 계약수)
+//  - 코스피200 선물 시간별(investor/future/times&type=PRICE) — 08:45 부터 누적 순매수(원). 기본값은 계약수인데 1계약이 약 2.2억 원이라
+//    현물(억 원)과 나란히 놓으면 작아 보여 견주기 어려웠다(사용자 요청으로 금액 — 15:12 외국인 705계약 = 1,590.7억)
 //  - 프로그램(domestic/quotes?summary=true) — 코스피(KGG01P)의 지금 누적 순매수(원) 하나. 장중 흐름은 없다
-// 현물은 억 원으로 바꾸고, 둘 다 시각 오름차순. 순매수는 모두 더하면 0 이라(산 만큼 판다) 합이 총량의 5% 넘게 어긋난 줄은 뺀다 —
+// 모두 억 원으로 바꾸고 시각 오름차순. 순매수는 모두 더하면 0 이라(산 만큼 판다) 합이 총량의 5% 넘게 어긋난 줄은 뺀다 —
 // 한 칸이 0 으로 빈 줄이 섞여 왔다(2026-10-30 14:01 개인 0, 외국인 -12,854억). Referer 가 없으면 막는 곳이라 브라우저처럼 붙인다.
 const DAUM_API = 'https://finance.daum.net/api';
 const daumJson = async (url) => {
@@ -719,27 +720,27 @@ async function daumIntraday() {
   const list = (a) => { if (!Array.isArray(a)) throw new Error('모양이 다른 응답'); return a; };
   const parts = await Promise.allSettled([
     daumJson(`${DAUM_API}/investor/KOSPI/times?market=KOSPI&page=1&perPage=400&details=true&pagination=true`).then((j) => list(j?.data)),
-    daumJson(`${DAUM_API}/investor/future/times?page=1&perPage=400&terms=times&pagination=true`).then((j) => list(j?.data)),
+    daumJson(`${DAUM_API}/investor/future/times?page=1&perPage=400&terms=times&pagination=true&type=PRICE`).then((j) => list(j?.data)),
     daumJson(`${DAUM_API}/domestic/quotes?summary=true&changeStatistics=true`).then(list),
   ]);
   if (parts.every((p) => p.status === 'rejected')) throw parts[0].reason;
   const [spotRows, futRows, quotes] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
   const at = (r) => Date.parse(`${String(r?.date ?? '').replace(' ', 'T')}+09:00`);
   const fin = (v) => (Number.isFinite(v) ? v : null);
-  // 줄 → { t, individual, foreign, institution, pension, corp }. v 는 개인 · 외국인 · 기관 · 기타법인(· 기타외국인) — 합이 0 이어야 한다
+  // 줄 → { t, individual, foreign, institution, pension, corp }(억 원). v 는 개인 · 외국인 · 기관 · 기타법인(· 기타외국인) — 합이 0 이어야 한다
   const series = (rows, pick) => (rows ? rows.map((r) => {
     const t = at(r);
     const p = pick(r);
     return Number.isFinite(t) && p.v.every(Number.isFinite) && balanced(p.v)
-      ? { t, individual: p.v[0] / p.unit, foreign: p.v[1] / p.unit, institution: p.v[2] / p.unit, pension: p.pension == null ? null : p.pension / p.unit,
-        corp: p.v[3] / p.unit } : null;
+      ? { t, individual: p.v[0] / 1e8, foreign: p.v[1] / 1e8, institution: p.v[2] / 1e8, pension: p.pension == null ? null : p.pension / 1e8,
+        corp: p.v[3] / 1e8 } : null;
   }).filter(Boolean).sort((a, b) => a.t - b.t) : null);
   const spot = series(spotRows, (r) => {
     const d = r?.details || {};
-    return { unit: 1e8, pension: fin(d.PENSION_FUND), v: [r?.individualStraightPurchasePrice, r?.foreignStraightPurchasePrice,
+    return { pension: fin(d.PENSION_FUND), v: [r?.individualStraightPurchasePrice, r?.foreignStraightPurchasePrice,
       r?.institutionStraightPurchasePrice, d.ETC_CORPORATION, d.ETC_FOREIGN ?? 0] };
   });
-  const fut = series(futRows, (r) => ({ unit: 1, pension: fin(r?.pensionFundInvestment),
+  const fut = series(futRows, (r) => ({ pension: fin(r?.pensionFundInvestment),
     v: [r?.privateSettlement, r?.foreignSettlement, r?.institutionalSettlement, r?.etcCorporationSettlement] }));
   const kospi = quotes ? quotes.find((q) => q?.symbolCode === 'KGG01P') : null;
   const program = fin(kospi?.investorSummary?.programStraightPurchasePrice);
