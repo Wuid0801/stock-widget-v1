@@ -1347,6 +1347,31 @@ await test('metrics: shareholders — major holders table, foreign stake and fre
   assert.doesNotMatch(html('005930.KS', null), /주주 구성/, '주주 구성이 없으면(ETF · 실패) 단락이 없다');
 });
 
+// 거래원(다음 금융, 2026-10-30 사용자 요청) — 오늘 매도 · 매수 상위 10개사(주), 외국계 표시, 목록 안 외국계 합과 그 차이(외국인
+// 매매를 어림한 것 — 종목의 장중 투자자별 수급은 무료 출처에 없다).
+await test('metrics: brokers — today\'s top sellers and buyers side by side, foreign brokers marked, foreign sums and the estimated net', () => {
+  const { c, run } = harness(METRICS_FNS);
+  run(helpers());
+  run("quotes['005930.KS'] = { price: 219000, currency: 'KRW' };");
+  const T = { date: '20261030',
+    buy: [{ name: '한국증권', volume: 1718002, foreign: false }, { name: '골드만', volume: 458984, foreign: true }, { name: 'JP모간', volume: 331515, foreign: true }],
+    sell: [{ name: 'BNK증권', volume: 1535498, foreign: false }, { name: '<i>x</i>', volume: 999036, foreign: true }], foreignBuy: 790499, foreignSell: 999036 };
+  const holders = { date: '2026-10-27', common: null, foreign: 46.1, float: 74.98, rows: [{ name: '국민연금공단', pct: 7.84 }] };
+  const html = (traders) => { c.D = { ...KR_DETAIL, traders, holders }; return run("metricsHtml({ symbol: '005930.KS', name: '삼성전자' }, D, quotes['005930.KS'])"); };
+  const h = html(T);
+  assert.match(h, /<h5>거래원 <span>\(10\/30 상위 10개사 · 주\)<\/span><\/h5>/);
+  assert.match(h, /<tr><th>매도 상위<\/th><th><\/th><th class="nm">매수 상위<\/th><th><\/th><\/tr>/);
+  assert.match(h, /<tr><td>BNK증권<\/td><td>154만<\/td><td class="nm">한국증권<\/td><td>172만<\/td><\/tr>/, '같은 순위끼리 한 줄, 수량은 만 주');
+  assert.match(h, /<td>&lt;i&gt;x&lt;\/i&gt;\(외\)<\/td><td>100만<\/td><td class="nm">골드만\(외\)<\/td><td>46만<\/td>/, '외국계는 (외), 이름은 이스케이프');
+  assert.match(h, /<tr><td><\/td><td><\/td><td class="nm">JP모간\(외\)<\/td><td>33만<\/td><\/tr>/, '한쪽이 짧으면 빈칸');
+  assert.match(text(h), /외국계 매수 79만 · 매도 100만 · 순매수 -21만 주 \(추정\)/);
+  assert.match(h, /순매수 <b style="color:#185fa5">-21만 주<\/b>/, '파는 쪽이면 파랑');
+  assert.match(h, /<p title="[^"]*상위 10개사 안의 외국계[^"]*">외국계 매수/, '추정의 한계를 툴팁에');
+  assert.ok(h.indexOf('투자자별 순매수') < h.indexOf('<h5>거래원') && h.indexOf('<h5>거래원') < h.indexOf('주주 구성'), '매매동향 다음, 주주 구성 앞');
+  assert.doesNotMatch(html(null), /거래원/, '없으면(미국 · 실패) 단락이 없다');
+  assert.doesNotMatch(text(html({ ...T, foreignBuy: null })), /외국계 매수/, '합이 없으면 그 줄은 없다');
+});
+
 // 기법 점검 — 받아 둔 일봉으로 추세 추종 · 모멘텀 · 적립식 · 보유 비중 · 반등 점검 · 코스톨라니 달걀(계산은 tests/techniques.mjs).
 // 셀 수 없는 줄은 빠지고, 줄마다 툴팁에 규칙이 있다. 2026-10-29 사용자 요청.
 await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its watchlist rank, DCA, holding weight, rebound and the egg', () => {

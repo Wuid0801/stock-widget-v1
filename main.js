@@ -957,9 +957,29 @@ async function krHolders(code) {
   }
 }
 
+// 거래원(국내, 지표 보기 — 2026-10-30 사용자 요청) — 다음 금융 trader/ranks: 오늘 매수 · 매도 상위 10개 증권사(주)와 그 목록 안
+// 외국계의 합. 종목의 장중 투자자별 수급은 무료 출처에 없어(네이버 · 다음 모두 날짜별) 외국계 창구로 외국인 매매를 어림한다.
+// 줄마다 반대쪽 수량도 오지만 목록 밖이면 0 으로 와서(2026-10-30 실측 JP모간 매도 0) 그쪽 수량만 쓰고 0 은 뺀다. 실패하면 null.
+async function krTraders(code) {
+  try {
+    const j = await daumJson(`${DAUM_API}/trader/ranks?symbolCode=A${code}&BidFieldName=bidAccTradeVolume&BidOrder=desc`
+      + '&AskFieldName=askAccTradeVolume&AskOrder=desc&intervalType=TODAY&limit=10');
+    const side = (s, k) => (Array.isArray(s?.data) ? s.data.map((r) => ({ name: String(r?.traderName ?? ''), volume: Number(r?.[k]),
+      foreign: r?.isForeignInvestor === true })).filter((r) => r.name && r.volume > 0) : null);
+    const buy = side(j?.BID, 'bidAccTradeVolume');
+    const sell = side(j?.ASK, 'askAccTradeVolume');
+    if (!buy || !sell) return null;
+    const sum = (s) => (Number.isFinite(s?.foreignInvestorAskBidSum) ? s.foreignInvestorAskBidSum : null);
+    return { date: String(j?.baseDate ?? '').slice(0, 10).replace(/-/g, ''), buy, sell, foreignBuy: sum(j.BID), foreignSell: sum(j.ASK) };
+  } catch {
+    return null;
+  }
+}
+
 async function krDetail(code) {
-  // 주주 구성은 따로 받는다 — 이것만으로는 지표 화면이 되지 않아 '전부 실패' 판정(settleAll)에 넣지 않는다
+  // 주주 구성 · 거래원은 따로 받는다 — 이것만으로는 지표 화면이 되지 않아 '전부 실패' 판정(settleAll)에 넣지 않는다
   const holders = krHolders(code);
+  const traders = krTraders(code);
   const [I, trend, quarter, rt] = await settleAll([
     `https://m.stock.naver.com/api/stock/${code}/integration`,
     `https://m.stock.naver.com/api/stock/${code}/trend?pageSize=20`,
@@ -1001,6 +1021,7 @@ async function krDetail(code) {
       dividendYield: detailNum(etfKey.dividendYieldTtm),
     } : null,
     holders: await holders,
+    traders: await traders,
   };
 }
 

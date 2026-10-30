@@ -170,6 +170,23 @@ function metricsHtml(item, d, q) {
     parts.push(sec('투자자별 순매수', '<p class="mxmute">투자자별 매매동향은 국내 종목만 있습니다</p>'));
   }
 
+  // 거래원(다음 금융, 2026-10-30) — 오늘 매도 · 매수 상위 10개사를 같은 순위끼리 한 줄에. 종목의 장중 투자자별 수급은 무료 출처에 없어
+  // 목록 안 외국계 합의 차이로 외국인 매매를 어림한다(추정 — 한계는 툴팁).
+  const tr = d.traders;
+  if (tr) {
+    const name = (r) => (r ? `${esc(r.name)}${r.foreign ? '(외)' : ''}` : '');
+    const vol = (r) => (r ? fmtVol(r.volume) : '');
+    const rows = Array.from({ length: Math.max(tr.sell.length, tr.buy.length) }, (_, i) =>
+      `<tr><td>${name(tr.sell[i])}</td><td>${vol(tr.sell[i])}</td><td class="nm">${name(tr.buy[i])}</td><td>${vol(tr.buy[i])}</td></tr>`).join('');
+    const net = tr.foreignBuy != null && tr.foreignSell != null ? tr.foreignBuy - tr.foreignSell : null;
+    const tip = '외국계 증권사 창구의 오늘 매수 · 매도 — 상위 10개사 안의 외국계만 더한 값이라 실제 외국인 순매수(투자자별, 장 마감 뒤 확정)와 다르다. '
+      + '외국인이 국내 증권사로 낸 주문은 빠지고, 외국계 창구로 낸 국내 기관 주문은 들어간다. 다음 금융, 장중 실시간';
+    parts.push(sec(`거래원 <span>(${mmdd(tr.date)} 상위 10개사 · 주)</span>`,
+      `<table class="mxt"><tr><th>매도 상위</th><th></th><th class="nm">매수 상위</th><th></th></tr>${rows}</table>`
+      + (net == null ? '' : `<p title="${esc(tip)}">외국계 매수 <b>${fmtVol(tr.foreignBuy)}</b> · 매도 <b>${fmtVol(tr.foreignSell)}</b> · `
+        + `순매수 ${colored(`${signedVol(net)} 주`, net)} <span class="mxmute">(추정)</span></p>`)));
+  }
+
   // 주주 구성(국내 주식) — 공시된 주요주주와 외국인 지분율 · 유동비율. 우선주는 회사(보통주) 값이다.
   const h = d.holders;
   if (h && h.rows && h.rows.length) {

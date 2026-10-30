@@ -697,6 +697,8 @@
   .mxt th, .mxt td { padding: 1px 3px; text-align: right; font-weight: 400; white-space: nowrap; }
   .mxt th, .mxt td:first-child { color: var(--mute); }
   .mxt th:first-child, .mxt td:first-child { text-align: left; }
+  /* 거래원 표의 매수 쪽 이름 칸 — 첫 칸(매도 쪽 이름)처럼 */
+  .mxt th.nm, .mxt td.nm { text-align: left; color: var(--mute); padding-left: 10px; }
   .mxt tr.sum td { font-weight: 600; }
   /* 덧그림(이동평균 · 보조 지표 · 기준선)이 보이면 또렷하게, 차트만 보기로 껐으면 흐리게 */
   #plainChart.on { opacity: 1; color: var(--text); border-color: var(--text-3); }

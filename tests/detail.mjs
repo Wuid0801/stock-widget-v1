@@ -50,11 +50,24 @@ const route = (url) => {
   if (m) return Object.values(FX).find((f) => f.search?.result.items[0].code === m[1])?.search ?? { result: { items: [] } };
   m = /api\.stock\.naver\.com\/stock\/([\w.]+)\/(basic|integration|finance\/quarter)/.exec(url);
   if (m) return FX[m[1]]?.[{ basic: 'basic', integration: 'integration', 'finance/quarter': 'quarter' }[m[2]]];
+  m = /finance\.daum\.net\/api\/trader\/ranks\?symbolCode=A(\w+)&/.exec(url);
+  if (m) return TRADERS[m[1]];
   return undefined;
+};
+// 다음 금융 거래원(trader/ranks) — 2026-10-30 브라우저 실측에서 쓰는 필드만. BID 는 매수 상위, ASK 는 매도 상위(각 10개사, 주),
+// foreignInvestorAskBidSum 은 그 목록 안 외국계의 합. 목록에 든 반대쪽 수량은 0 으로 오기도 한다(한화투자 매도 0).
+const trader = (traderName, bid, ask, foreign = false) => ({ traderName, bidAccTradeVolume: bid, askAccTradeVolume: ask,
+  netSales: bid - ask, isForeignInvestor: foreign, isLeftStock: false });
+const TRADERS = {
+  '005930': { baseDate: '2026-10-30 00:00:00',
+    BID: { data: [trader('한국증권', 1718002, 1167012), trader('골드만', 458984, 999036, true), trader('JP모간', 331515, 0, true)],
+      foreignInvestorAskBidSum: 790499 },
+    ASK: { data: [trader('BNK증권', 1670805, 1535498), trader('골드만', 458984, 999036, true), trader('한화투자', 996251, 0)],
+      foreignInvestorAskBidSum: 999036 } },
 };
 const fakeFetch = async (url, opt = {}) => {
   url = String(url);
-  calls.push({ url, signal: !!opt.signal });
+  calls.push({ url, signal: !!opt.signal, referer: opt.headers && opt.headers.Referer });
   if (blocked.some((b) => url.includes(b))) throw new Error('막힌 요청');
   const body = route(url);
   if (body === undefined) return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
@@ -78,8 +91,20 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   const d = await detail('005930.KS');
   check('성공', d.ok === true, d.error);
   check('국내 · 주식', d.market === 'kr' && d.kind === 'stock');
-  check('다섯 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 · 기업정보), 모두 시간 제한을 건다',
-    calls.length === 5 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
+  check('여섯 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 · 기업정보 · 다음 거래원), 모두 시간 제한을 건다',
+    calls.length === 6 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
+  // 거래원(2026-10-30 사용자 요청) — 종목의 장중 투자자별 수급은 무료 출처에 없어 외국계 창구로 외국인 매매를 어림한다
+  const daum = calls.find((c) => c.url.includes('finance.daum.net'));
+  check('거래원은 다음 금융 — 오늘 매수 · 매도 상위 10개사, 브라우저처럼 Referer', daum?.url === 'https://finance.daum.net/api/trader/ranks?'
+    + 'symbolCode=A005930&BidFieldName=bidAccTradeVolume&BidOrder=desc&AskFieldName=askAccTradeVolume&AskOrder=desc&intervalType=TODAY&limit=10'
+    && daum.referer === 'https://finance.daum.net/', JSON.stringify(daum));
+  check('거래원 — 매수 · 매도 상위(그쪽 수량, 0 은 뺀다) · 외국계 표시 · 목록 안 외국계 합 · 기준일', same(d.traders, {
+    date: '20261030',
+    buy: [{ name: '한국증권', volume: 1718002, foreign: false }, { name: '골드만', volume: 458984, foreign: true },
+      { name: 'JP모간', volume: 331515, foreign: true }],
+    sell: [{ name: 'BNK증권', volume: 1535498, foreign: false }, { name: '골드만', volume: 999036, foreign: true }],
+    foreignBuy: 790499, foreignSell: 999036,
+  }), JSON.stringify(d.traders));
   check('매매동향은 20일치를 묻는다', calls.some((c) => /\/trend\?pageSize=20$/.test(c.url)));
   // 거래량은 KRX 실시간(야후 일봉 거래량 · 매매동향의 날짜별 거래량과 같은 기준). 종목 상세의 거래량은 NXT 포함이라 따로 둔다.
   check('오늘 거래량은 KRX 실시간과 그 시각', d.today.volume === 11822115 && d.today.at === '2026-10-16T13:30:41.947981+09:00', JSON.stringify(d.today));
@@ -175,6 +200,13 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   blocked = ['/integration'];
   d = await detail('005930.KS');
   check('종목 상세가 실패해도 나머지는 쓴다', d.ok && d.valuation.length === 0 && d.trend.length === 20 && d.today.volume === 11822115);
+  blocked = ['finance.daum.net'];
+  d = await detail('005930.KS');
+  check('거래원이 실패하면 그 칸만 비운다', d.ok && d.traders === null && d.trend.length === 20, JSON.stringify(d.traders));
+  blocked = [];
+  calls.length = 0;
+  d = await detail('AAPL');
+  check('미국 종목은 거래원을 묻지 않는다(국내만)', d.ok && !calls.some((c) => c.url.includes('daum')) && !d.traders, calls.map((c) => c.url).join(' '));
   blocked = ['naver.com'];
   d = await detail('005930.KS');
   // 기업정보(wisereport.co.kr)는 막히지 않았지만 주주 구성만으로는 지표 화면이 되지 않는다

@@ -178,7 +178,7 @@ export const CHECKS = [
       ...series(r.futMax, '^KS200F 전체(월봉)', 60, 40), ...yahooCalled(calls)],
   },
   {
-    name: '종목 지표 (국내)', source: '네이버 종목 상세 · 매매동향 · 분기 실적, WiseReport 주주',
+    name: '종목 지표 (국내)', source: '네이버 종목 상세 · 매매동향 · 분기 실적, WiseReport 주주, 다음 거래원',
     call: (h) => h['naver:detail']({}, '005930.KS'),
     verify: (r) => [...okOf(r), ...(r && r.ok ? [
       ...need(r.today && num(r.today.volume), '오늘 거래량 없음'),
@@ -187,6 +187,9 @@ export const CHECKS = [
       ...need(r.quarters && Array.isArray(r.quarters.cols) && r.quarters.cols.length >= 4, '분기 실적이 4분기 미만'),
       ...need(r.holders && Array.isArray(r.holders.rows) && r.holders.rows.length >= 1, '주주 구성(WiseReport)이 없음'),
       ...need(r.consensus && pos(r.consensus.target), '컨센서스 목표가가 없음'),
+      // 거래원(다음 금융, 2026-10-30) — 장 전에도 오늘(또는 마지막 거래일) 목록이 오는지는 아직 모른다
+      ...need(r.traders && Array.isArray(r.traders.buy) && r.traders.buy.length >= 5 && Array.isArray(r.traders.sell) && r.traders.sell.length >= 5
+        && r.traders.buy.every((t) => t.name && pos(t.volume)), '거래원(다음 금융)이 5개사 미만'),
     ] : [])],
   },
   {
