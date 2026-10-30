@@ -83,7 +83,7 @@ function techHtml(item) {
   if (tf) {
     out.push(line('추세 추종', `${FOLLOW_MA}일선 ${money(tf.ma, cur)} ${tf.above ? '위' : '아래'} · <b>${tf.above ? '보유' : '현금'} 구간 ${tf.days}일째</b>`,
       `종가가 ${FOLLOW_MA}일선 위면 보유, 아래면 현금으로 보는 규칙 — 큰 하락을 피하는 데 강점이 있고 횡보장에서는 자주 바뀝니다. `
-      + '일수는 그 상태가 이어진 거래일(오늘 포함)'));
+      + `일수는 그 상태가 이어진 거래일(오늘 포함)\n${FOLLOW_EVIDENCE}`));
   }
   const mom = momentum(d.times, d.closes);
   if (mom != null) {

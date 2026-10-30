@@ -148,7 +148,7 @@ function renderDetail() {
   // 툴팁에 일봉 · 주봉 RSI 를 함께 — 주봉은 이번 주가 진행 중인 값이다(최근 상장이라 15주가 안 되면 없다)
   badge.title = q && q.rsi != null
     ? `일봉 RSI ${q.rsi.toFixed(1)}${q.rsiWeek != null ? ` · 주봉 RSI ${q.rsiWeek.toFixed(1)} (이번 주 진행 중)` : ''}\n`
-      + `15:30 정규장 종가 기준, ${q.rsiWeek != null ? '오늘 · 이번 주는' : '오늘은'} 지금 가격 · 과열도는 일봉 RSI`
+      + `15:30 정규장 종가 기준, ${q.rsiWeek != null ? '오늘 · 이번 주는' : '오늘은'} 지금 가격 · 과열도는 일봉 RSI\n${RSI_EVIDENCE}`
     : '';
   badge.style.color = lv.color;
   badge.style.background = q && q.rsi != null ? hexA(lv.color, 0.16) : cssVar('--chip');

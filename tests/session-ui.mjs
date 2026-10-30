@@ -1383,6 +1383,9 @@ await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its
   assert.equal(`${egg.prev} → ${egg.phase} · 다음 ${egg.next}`, 'B1 → B3 · 다음 A1', JSON.stringify(egg));
   assert.ok(t.includes(`코스톨라니 B1 → B3 · ${egg.days}일째 · 투매 · 다음 A1 (해석)`), '직전 → 지금 · 일수 · 다음');
   assert.equal((html.match(/<p title="[^"]+"><span class="mxmute">/g) || []).length, 6, '여섯 줄 모두 툴팁에 규칙');
+  const follow = run('FOLLOW_EVIDENCE');
+  assert.match(follow, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): 200일선 위에서만 보유하면 최대 낙폭이 평균 −55\.9% → −43\.3%/);
+  assert.ok(html.includes(`일수는 그 상태가 이어진 거래일(오늘 포함)\n${follow}"><span class="mxmute">추세 추종`), '추세 추종 툴팁 끝에 과거 검증 한 줄(2026-10-30)');
   assert.match(html, /title="코스톨라니 달걀\(해석\) B3\(투매\)\n지금 20일선이 60일선 아래\(하락\) · 거래량 20일 평균이 60일 평균의 1\.39배 · RSI 54/);
   assert.ok(html.includes(`B1(꼭대기 뒤 하락 초기)에서 B3로 바뀐 지 ${egg.days}거래일째(오늘 포함)`), '툴팁에 바뀐 때');
   assert.ok(html.includes('다음은 A1(바닥 뒤 상승 초기) — 20일선이 다시 60일선 위로 올라서면'), '툴팁에 다음 칸으로 가는 조건');
@@ -3339,10 +3342,13 @@ await test('RSI badge tooltip shows daily and weekly RSI; the badge itself stays
   c.renderDetail();
   const b = elements.get('badge');
   assert.equal(b.textContent, '중립 · RSI 39', '배지는 일봉 RSI');
-  assert.equal(b.title, '일봉 RSI 39.1 · 주봉 RSI 43.5 (이번 주 진행 중)\n15:30 정규장 종가 기준, 오늘 · 이번 주는 지금 가격 · 과열도는 일봉 RSI');
+  const evidence = run('RSI_EVIDENCE');
+  assert.equal(b.title, `일봉 RSI 39.1 · 주봉 RSI 43.5 (이번 주 진행 중)\n15:30 정규장 종가 기준, 오늘 · 이번 주는 지금 가격 · 과열도는 일봉 RSI\n${evidence}`);
+  assert.match(evidence, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): RSI 30 이하\(과매도\) 뒤 20거래일은 평소보다 \+1\.9%p.*RSI 70 이상\(과열\)은 팔 신호가 아니었다/,
+    '과거 검증 한 줄(2026-10-30)');
   run("quotes['005930.KS'].rsiWeek = null;");
   c.renderDetail();
-  assert.equal(b.title, '일봉 RSI 39.1\n15:30 정규장 종가 기준, 오늘은 지금 가격 · 과열도는 일봉 RSI', '주봉이 모자라면(최근 상장) 일봉만');
+  assert.equal(b.title, `일봉 RSI 39.1\n15:30 정규장 종가 기준, 오늘은 지금 가격 · 과열도는 일봉 RSI\n${evidence}`, '주봉이 모자라면(최근 상장) 일봉만');
   run("quotes['005930.KS'].rsi = null;");
   c.renderDetail();
   assert.equal(b.title, '', 'RSI 가 없으면 툴팁도 없다');
