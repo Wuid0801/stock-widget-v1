@@ -16,7 +16,9 @@ const electron = {
   app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
   BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
   ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
+  net: { fetch: (url, opt) => { netCalls.push(String(url)); return fakeFetch(url, opt); } }, // Electron net.fetch(Chromium) — FRED 만
 };
+const netCalls = [];
 const modules = {
   electron,
   'electron-store': class { get() {} set() {} },
@@ -127,6 +129,10 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   const r = await extras();
   check('기억이 지나 FRED 를 새로 받았다', calls.some((u) => u.includes('fred')));
   check('FRED 빈 값 · 점은 건너뛴다', same(r.hyOas, [{ date: '20261021', value: 3.27 }, { date: '20261024', value: 3.4 }]), JSON.stringify(r.hyOas));
+  // Electron 44 의 Node fetch 는 FRED 에서 답이 없고(20초), net.fetch 에 User-Agent 를 바꿔 달면 HTTP2 오류다(2026-11-02 실측)
+  check('FRED 는 Electron net.fetch 로, 다른 출처는 Node fetch 로', netCalls.length > 0 && netCalls.every((u) => u.includes('fred.stlouisfed.org')),
+    netCalls.join(' '));
+  check('FRED 요청은 User-Agent 를 바꾸지 않는다', !JSON.stringify(headersOf.fred || {}).includes('User-Agent'), JSON.stringify(headersOf.fred));
   calls.length = 0;
   const fetchedAt = NOW;
   NOW = fetchedAt + 5 * 3600000;

@@ -23,6 +23,8 @@ export function loadHandlers(fetchImpl) {
     app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
     BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
     ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
+    // 앱은 FRED 만 Electron net.fetch 로 받는다 — 여기서는 받은 fetch 로 대신해 주소 · 응답 모양만 본다(Electron 에서만 막히는 것은 못 본다)
+    net: { fetch: fetchImpl },
   };
   const modules = {
     electron,

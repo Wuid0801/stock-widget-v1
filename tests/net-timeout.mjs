@@ -19,7 +19,9 @@ const electron = {
   app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
   BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
   ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
+  net: { fetch: (url, opt) => netImpl(url, opt) }, // Electron net.fetch(FRED) — 아래에서 끼운 fetch 와 같은 것
 };
+let netImpl;
 const modules = {
   electron,
   'electron-store': class { get() {} set() {} },
@@ -39,6 +41,7 @@ const hang = (_url, opt = {}) => new Promise((_, reject) => {
 const limits = [];
 const FastAbortSignal = { timeout: (ms) => { limits.push(ms); return AbortSignal.timeout(10); } };
 
+netImpl = hang;
 new Function('require', 'process', 'fetch', 'AbortSignal', src)(
   require, { env: {}, platform: 'test' }, hang, FastAbortSignal);
 
@@ -85,6 +88,7 @@ check('제한 시간은 8초다', limits.length > 0 && limits.every((ms) => ms =
 // 원인 코드(cause.code)는 상황마다 달라(DNS 실패 ENOTFOUND, 연결 거부는 없음) 한 문구로 묶는다.
 for (const cause of [{ code: 'ENOTFOUND' }, undefined]) {
   const offline = async () => { throw new TypeError('fetch failed', cause ? { cause } : undefined); };
+  netImpl = offline;
   new Function('require', 'process', 'fetch', 'AbortSignal', src)(
     require, { env: {}, platform: 'test' }, offline, AbortSignal);
   const off = await Promise.all(Object.entries(CALLS).map(async ([name, args]) => [name, await handlers[name]({}, ...args)]));
@@ -105,6 +109,7 @@ for (const cause of [{ code: 'ENOTFOUND' }, undefined]) {
     json: () => new Promise((_, reject) => (opt.signal?.aborted ? reject(opt.signal.reason)
       : opt.signal?.addEventListener('abort', () => reject(opt.signal.reason)))),
   });
+  netImpl = slowBody;
   new Function('require', 'process', 'fetch', 'AbortSignal', src)(
     require, { env: {}, platform: 'test' }, slowBody, FastAbortSignal);
   const keepAlive = setTimeout(() => {}, GUARD); // AbortSignal.timeout 의 타이머는 프로세스를 붙잡지 않는다

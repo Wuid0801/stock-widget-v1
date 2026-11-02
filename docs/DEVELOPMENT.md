@@ -191,7 +191,7 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 | 장중 수급(시장 지표) | 다음 금융 | 코스피 현물 시간별(주체 · 세부, 원) · 코스피200 선물 시간별(금액, 원) · 코스피 프로그램 지금 값 — 지표 화면이 열려 있을 때만(1분) 세 건, Referer 필요(`daumIntraday`) |
 | 외국인 현물 · 선물 수급(시장 지표) | Naver 모바일 지수 수급 | `m.stock.naver.com/api/index/{KOSPI · FUT}/trend?bizdate=` 날짜마다 1회, 최근 10거래일. 지난 날 · 20:30 뒤의 오늘은 기억. 지표 화면이 열려 있을 때만(1분) |
 | 코스피 · 선물 일별 종가(시장 지표) | Naver 지수 일봉 | `api.stock.naver.com/chart/domestic/index/{KOSPI · FUT}/day` 최근 30일 — 수급을 물을 거래일도 여기서 |
-| 미국 HY OAS(시장 지표) | FRED CSV | `fredgraph.csv?id=BAMLH0A0HYM2`(키 없음), 6시간 기억. 1~2영업일 늦다 |
+| 미국 HY OAS(시장 지표) | FRED CSV | `fredgraph.csv?id=BAMLH0A0HYM2`(키 없음), 6시간 기억. 1~2영업일 늦다. **이것만 Electron `net.fetch`(Chromium 네트워크), User-Agent 는 그대로** — Electron 44(10/29 올림) 안의 Node fetch 는 FRED 앞단(Akamai)에서 답이 없어(20초, 헤더를 브라우저처럼 채워도 같다) 줄이 — 였고, `net.fetch` 에 `Mozilla/5.0` 을 달면 HTTP2 프로토콜 오류다(2026-11-02 실측 — PC 의 Node 22 는 0.2초에 받는다). 주간 출처 점검은 Node fetch 로 대신 불러 이것은 못 잡는다 |
 | 나스닥 · S&P 500 · VIX · SOX | Naver 해외 지수 실시간 | `.IXIC` · `.INX` · `.VIX` · `.SOX` 1회 요청(지수 줄과 함께 — VIX · SOX 는 시장 지표 화면에만). 차트는 Yahoo `^IXIC` · `^GSPC` · `^VIX` · `^SOX` |
 | 나스닥 100 선물 · WTI(지수 줄) | Naver 해외 선물 · 시장지표 | `NQcv1`(`/worldstock/futures/`) · `CLcv1`(`/marketindex/energy/`) 각 1회, 지수 줄과 함께. 거래소(CME · NYMEX)가 **10분 늦게** 준다 — 야후도 같다. 1D 차트는 Naver 하루 차트(아래), 1W · 일봉은 Yahoo `NQ=F` · `CL=F` |
 | 미국채 10년(지수 줄) | Naver 시장지표 | `US10YT=RR` 상세(`api.stock.naver.com/marketindex/bond/` — 폴링 주소는 404) 1회, 지수 줄과 함께. 실시간. 1D 차트는 Naver 하루 차트(최근 24시간), 1W · 일봉은 Yahoo `^TNX` — 미국 정규장(한국 21:20~04:00)만 움직인다 |

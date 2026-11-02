@@ -2,7 +2,7 @@
 // 역할: 프레임리스/반투명/항상위 위젯 창 생성, 창 상태 저장·복원,
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu, dialog, session, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
@@ -44,7 +44,8 @@ const netError = (e) => {
   if (e instanceof TypeError && e.message === 'fetch failed') return new Error('네트워크 연결 실패');
   return e;
 };
-const netFetch = (url, opt = {}) => rawFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT), ...opt })
+// via 는 보낼 fetch — 기본은 Node fetch, FRED 만 Electron net.fetch(fredHyOas).
+const netFetch = (url, opt = {}, via = rawFetch) => via(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT), ...opt })
   .then((res) => {
     for (const k of ['json', 'text']) {
       const read = res[k];
@@ -629,7 +630,7 @@ async function usdKrwItem() {
 //   0 을 줘서(2026-10-27 실측 10/25 토 · 10/28) 코스피 일봉에 있는 날만 묻는다. 지난 날과 20:30 뒤의 오늘은 확정이라 기억한다.
 // - 코스피 · 코스피200 선물 · 코스피200 현물 일별 종가: 네이버 지수 일봉(최근 30일) — 장중에는 오늘 행이 있다.
 // - 코스피200 현물 오늘 1분 종가: 네이버 지수 분봉 — 20분 늦은 선물과 같은 시각의 현물로 베이시스를 낸다.
-// - 미국 HY OAS(ICE BofA US High Yield OAS, %): FRED CSV(키 없음, 최근 3년, 1~2영업일 늦다) — 6시간 기억한다.
+// - 미국 HY OAS(ICE BofA US High Yield OAS, %): FRED CSV(키 없음, 최근 3년, 1~2영업일 늦다, Electron net.fetch) — 6시간 기억한다.
 // - 장중 수급: 다음 금융(daumIntraday, 아래).
 // 이때부터 오늘 수급을 확정으로 본다(장중 값은 잠정치). 예전 18:00 — 2026-09-14 KRX 애프터마켓(16:00~20:00)이 생긴 뒤 그날
 // 투자자별 값이 20:00 까지 바뀌는지 확인하지 못해, 어느 쪽이든 틀리지 않게 20:30 으로 늦췄다(2026-11-02 사용자 결정)
@@ -688,10 +689,12 @@ async function naverMinuteCloses(path, now) {
 }
 
 // 미국 HY OAS — FRED CSV 'observation_date,BAMLH0A0HYM2' 아래 '날짜,값'. 휴일은 값이 비고(또는 '.') 건너뛴다. 최근 60개.
+// Electron net.fetch(Chromium 네트워크)로 받고 User-Agent 는 그대로 둔다. Electron 44(10/29 올림) 안의 Node fetch 는 FRED(앞단
+// Akamai)에서 답이 없어(20초 — PC 의 Node 22 는 0.2초, 헤더를 브라우저처럼 채워도 같다) 줄이 — 였고(10/27 Electron 43 에서는
+// 보였다), net.fetch 에 'Mozilla/5.0' 을 달면 HTTP2 프로토콜 오류다(2026-11-02 실측).
 async function fredHyOas(now) {
   if (hyOasCache && now - hyOasCache.at < HYOAS_TTL) return hyOasCache.rows;
-  const res = await netFetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2',
-    { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  const res = await netFetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2', {}, (u, o) => net.fetch(u, o));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const rows = (await res.text()).split(/\r?\n/).map((line) => line.split(','))
     .filter(([d, v]) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && /^-?\d+(\.\d+)?$/.test((v || '').trim()))
