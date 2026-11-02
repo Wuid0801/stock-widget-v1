@@ -5,33 +5,11 @@
 // 국내는 야후가 15:30 까지만 줘서 네이버 NXT 분봉(프리 08:00~08:50 · 애프터 15:40~20:00)을 5분봉으로
 // 묶어 붙인다. 응답 모양은 2026-10-14 실측(SOXL · 삼성전자)에서 쓰는 필드만 옮겼다.
 // 국내 정규장은 네이버 KRX 분봉(실시간)으로 그리고 실패하거나 비면 야후다(6번). 2~5번은 KRX 분봉이 비어 야후로 그린다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+import { loadMain } from './_main.mjs';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron,
-  'electron-store': class { get() {} set() {} },
-  fs,
-  path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 let NOW = 0;
 class FixedDate extends Date {
@@ -94,8 +72,7 @@ const fakeFetch = async (url) => {
   return { ok: true, status: 200, json: async () => yahooBody };
 };
 
-new Function('require', 'process', 'fetch', 'AbortSignal', 'Date', src)(
-  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal, FixedDate);
+const handlers = loadMain({ globals: { fetch: fakeFetch, AbortSignal, Date: FixedDate } });
 
 const oneDay = (symbol, extended = true) => handlers['yf:chart']({}, { symbol, range: '1d', interval: '5m', extended });
 const runs = (r) => (r.ext || []).map((e, i) => `${hm(r.times[i])}${e ? `:${e}` : ''}`).join(' ');

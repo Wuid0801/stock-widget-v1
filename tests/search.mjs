@@ -4,30 +4,13 @@
 // 검색(front-api/search)은 이름 중간 글자로도 찾는다. 다른 나라 종목이 섞여 오므로 국내 · 미국만 남긴다.
 // 응답은 2026-10-20 실측(tests/fixtures/naver-search-20261020.json, 쓰는 필드만)이다.
 import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
+import { loadMain } from './_main.mjs';
 
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const FX = JSON.parse(fs.readFileSync(new URL('fixtures/naver-search-20261020.json', import.meta.url), 'utf8'));
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron, 'electron-store': class { get() {} set() {} }, fs, path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 // 질의(q)로 고정 데이터를 고른다. 없는 질의는 빈 결과, 'http500' 은 서버 오류, 'down' 은 연결 실패.
 const calls = [];
@@ -40,7 +23,7 @@ const fakeFetch = async (url) => {
   const body = FX[q] ?? { result: { query: q, totalCount: 0, items: [] } };
   return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) };
 };
-new Function('require', 'process', 'fetch', src)(require, { env: {}, platform: 'test' }, fakeFetch);
+const handlers = loadMain({ globals: { fetch: fakeFetch } });
 const search = (q) => handlers['yf:search']({}, q);
 
 // 고정 데이터에서 국내 · 미국만 앱 기호로 — 기대값

@@ -5,9 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+import { loadMain } from './_main.mjs';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -43,21 +41,8 @@ const dialog = {
   showOpenDialog: async (...a) => { dialogs.push(['open', a.at(-1)]); return nextOpen; },
   showMessageBox: async (...a) => { dialogs.push(['box', a.at(-1)]); return { response: nextAnswer }; },
 };
-const handlers = {};
-const electron = {
-  app: { getPath: (k) => (k === 'documents' ? docs : dir), whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {}, Menu: {}, dialog,
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron, 'electron-store': FakeStore, fs, path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
-new Function('require', 'process', src)(require, { env: {}, platform: 'test' });
+const handlers = loadMain({ store: FakeStore, electron: { Menu: {}, dialog,
+  app: { getPath: (k) => (k === 'documents' ? docs : dir), whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true } } });
 
 const p2 = (n) => String(n).padStart(2, '0');
 const today = (() => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; })();

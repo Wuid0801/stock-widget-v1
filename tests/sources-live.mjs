@@ -1,7 +1,7 @@
 // 데이터 출처 점검 — 앱이 쓰는 비공식 주소(네이버 · 야후 · FRED · WiseReport)를 실제로 불러, 앱의 받기 · 해석 코드(main.js 의
 // IPC 처리기)가 지금도 쓸 만한 값을 내는지 본다. 주소가 막히거나 응답 모양이 바뀌면 그 항목이 FAIL 이고 종료 코드가 1 이다.
 //
-// 앱을 띄우지 않는다 — tests/extended-chart.mjs 처럼 가짜 electron 으로 main.js 를 읽되 fetch 만 진짜를 끼운다. 그래서 주소뿐
+// 앱을 띄우지 않는다 — 다른 스위트처럼 가짜 electron 으로 main.js 를 읽되(tests/_main.mjs) fetch 만 진짜를 끼운다. 그래서 주소뿐
 // 아니라 해석 코드까지 같이 본다. 항목마다 그동안 나간 요청을 기록해, 결과는 멀쩡해도 요청 하나가 실패했으면(네이버가 막혀
 // 야후로 대신 그린 경우 등) FAIL 이다 — 앱은 조용히 대체 경로로 넘어가 화면만 봐서는 모른다.
 //
@@ -9,38 +9,14 @@
 // (.github/workflows/sources.yml). 손으로는 `npm run check:sources`. 시세 · 장 상태에 따라 값은 달라지니 모양만 본다(있는지 ·
 // 숫자인지 · 그럴듯한 범위 · 최근 날짜). 국내 장중(평일 09:00~15:30)에 돌려야 분봉 · 실시간 항목이 비지 않는다.
 // 판정 로직(CHECKS 의 verify)은 tests/sources.mjs 가 네트워크 없이 고정 값으로 본다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+import { loadMain } from './_main.mjs';
 
 // main.js 를 읽어 IPC 처리기를 꺼낸다. fetch 는 받은 것을, Electron net.fetch 자리는 netImpl(없으면 같은 fetch)을 쓴다.
+// 앱은 FRED 만 Electron net.fetch 로 받는다 — 이 파일만 돌리면 Node fetch 로 대신해 주소 · 응답 모양만 본다(Electron 에서만
+// 막히는 것은 못 본다 — tests/sources-electron.mjs 가 진짜 net.fetch 를 넘긴다)
 export function loadHandlers(fetchImpl, netImpl = fetchImpl) {
-  const handlers = {};
-  const electron = {
-    app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-    BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-    ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-    // 앱은 FRED 만 Electron net.fetch 로 받는다 — 이 파일만 돌리면 Node fetch 로 대신해 주소 · 응답 모양만 본다(Electron 에서만
-    // 막히는 것은 못 본다 — tests/sources-electron.mjs 가 진짜 net.fetch 를 넘긴다)
-    net: { fetch: netImpl },
-  };
-  const modules = {
-    electron,
-    'electron-store': class { get() {} set() {} },
-    fs,
-    path,
-    './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-  };
-  const require = (m) => {
-    if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-    return modules[m];
-  };
-  new Function('require', 'process', 'fetch', 'AbortSignal', 'Date', src)(
-    require, { env: {}, platform: 'check' }, fetchImpl, AbortSignal, Date);
-  return handlers;
+  return loadMain({ globals: { fetch: fetchImpl }, electron: { net: { fetch: netImpl } }, platform: 'check' });
 }
 
 const DAY = 86400000;

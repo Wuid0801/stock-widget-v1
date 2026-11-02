@@ -4,35 +4,10 @@
 // 그동안 자동 갱신도 ↻ 도 돌지 않는다. 시간 제한이 없으면 Node 기본값으로 최대 5분이다.
 // 여기서는 fetch 를 "영원히 답하지 않는 서버"로 바꿔 끼우고, 모든 핸들러가 제한 시간에
 // 포기하고 { ok:false } 로 끝나는지 본다. 제한 시간은 8초 대신 10ms 로 줄여 돌린다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+import { loadMain } from './_main.mjs';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
-
-// electron 은 필요한 만큼만 흉내 낸다. 창은 만들지 않는다(whenReady 가 끝나지 않는다).
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-  net: { fetch: (url, opt) => netImpl(url, opt) }, // Electron net.fetch(FRED) — 아래에서 끼운 fetch 와 같은 것
-};
-let netImpl;
-const modules = {
-  electron,
-  'electron-store': class { get() {} set() {} },
-  fs,
-  path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 // 연결은 되지만 답이 오지 않는 서버. 신호가 끊겨야만 실패로 끝난다.
 const hang = (_url, opt = {}) => new Promise((_, reject) => {
@@ -41,9 +16,8 @@ const hang = (_url, opt = {}) => new Promise((_, reject) => {
 const limits = [];
 const FastAbortSignal = { timeout: (ms) => { limits.push(ms); return AbortSignal.timeout(10); } };
 
-netImpl = hang;
-new Function('require', 'process', 'fetch', 'AbortSignal', src)(
-  require, { env: {}, platform: 'test' }, hang, FastAbortSignal);
+// main.js 를 불러 처리기를 꺼낸다 — Electron net.fetch(FRED)도 끼운 fetch 를 따른다(loadMain)
+let handlers = loadMain({ globals: { fetch: hang, AbortSignal: FastAbortSignal } });
 
 // 네트워크를 쓰는 핸들러 전부. 새로 추가하면 여기에도 넣어야 아래 검사가 통과한다.
 const CALLS = {
@@ -88,9 +62,7 @@ check('제한 시간은 8초다', limits.length > 0 && limits.every((ms) => ms =
 // 원인 코드(cause.code)는 상황마다 달라(DNS 실패 ENOTFOUND, 연결 거부는 없음) 한 문구로 묶는다.
 for (const cause of [{ code: 'ENOTFOUND' }, undefined]) {
   const offline = async () => { throw new TypeError('fetch failed', cause ? { cause } : undefined); };
-  netImpl = offline;
-  new Function('require', 'process', 'fetch', 'AbortSignal', src)(
-    require, { env: {}, platform: 'test' }, offline, AbortSignal);
+  handlers = loadMain({ globals: { fetch: offline, AbortSignal } });
   const off = await Promise.all(Object.entries(CALLS).map(async ([name, args]) => [name, await handlers[name]({}, ...args)]));
   const english = off.filter(([, o]) => JSON.stringify(o).includes('fetch failed'));
   const tag = cause ? cause.code : '원인 코드 없음';
@@ -109,9 +81,7 @@ for (const cause of [{ code: 'ENOTFOUND' }, undefined]) {
     json: () => new Promise((_, reject) => (opt.signal?.aborted ? reject(opt.signal.reason)
       : opt.signal?.addEventListener('abort', () => reject(opt.signal.reason)))),
   });
-  netImpl = slowBody;
-  new Function('require', 'process', 'fetch', 'AbortSignal', src)(
-    require, { env: {}, platform: 'test' }, slowBody, FastAbortSignal);
+  handlers = loadMain({ globals: { fetch: slowBody, AbortSignal: FastAbortSignal } });
   const keepAlive = setTimeout(() => {}, GUARD); // AbortSignal.timeout 의 타이머는 프로세스를 붙잡지 않는다
   const out = await Promise.all(Object.entries(CALLS).map(async ([name, args]) => [name, await handlers[name]({}, ...args)]));
   clearTimeout(keepAlive);

@@ -1,35 +1,12 @@
 // 시장 지표 화면의 데이터(main.js market:extras) — 앱을 띄우지 않고 가짜 electron 으로 main.js 를 불러 본다.
 // 외국인 현물 · 선물 수급(네이버 모바일 지수 수급, 날짜별), 코스피 · 코스피200 선물 일별 종가(네이버 지수 일봉),
 // 미국 HY OAS(FRED CSV). 응답 모양은 2026-10-27 실측에서 쓰는 필드만 옮겼다.
-import fs from 'node:fs';
-import path from 'node:path';
 import { createRequire } from 'node:module';
-
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+import { loadMain } from './_main.mjs';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-  net: { fetch: (url, opt) => { netCalls.push(String(url)); return fakeFetch(url, opt); } }, // Electron net.fetch(Chromium) — FRED 만
-};
-const netCalls = [];
-const modules = {
-  electron,
-  'electron-store': class { get() {} set() {} },
-  fs,
-  path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 let NOW = 0;
 class FixedDate extends Date {
@@ -59,8 +36,9 @@ const fakeFetch = async (url, opt) => {
   return { ok: true, status: 200, json: async () => body, text: async () => String(body ?? '') };
 };
 
-new Function('require', 'process', 'fetch', 'AbortSignal', 'Date', src)(
-  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal, FixedDate);
+const netCalls = []; // Electron net.fetch(Chromium)로 나간 주소 — FRED 만
+const handlers = loadMain({ globals: { fetch: fakeFetch, AbortSignal, Date: FixedDate },
+  electron: { net: { fetch: (url, opt) => { netCalls.push(String(url)); return fakeFetch(url, opt); } } } });
 
 const day = (d, close) => ({ localDate: d, closePrice: close, openPrice: close, highPrice: close, lowPrice: close });
 const trend = (date, foreign) => ({ bizdate: date, personalValue: '+1', foreignValue: foreign, institutionalValue: '' });

@@ -3,33 +3,11 @@
 // 야후는 국내 종목 일봉을 가끔 하루 통째로 비워 준다(종가 · 거래량 null). 2025-09-19 와 2026-10-12 는
 // 모든 국내 종목이 비었고, 1년이 지나도 채워지지 않았다(2026-10-13 확인). 그대로 두면 차트에서 그날이
 // 빠지고 이동평균 · RSI · 추세 점검이 그날 없이 계산된다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+import { loadMain } from './_main.mjs';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron,
-  'electron-store': class { get() {} set() {} },
-  fs,
-  path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 // 지금 = 2026-10-13 10:00 KST. 야후 국내 일봉 시각은 그날 09:00 KST(00:00 UTC)다.
 const NOW = Date.parse('2026-10-13T01:00:00Z');
@@ -73,8 +51,7 @@ const fakeFetch = async (url, opt = {}) => {
   return { ok: true, status: 200, json: async () => yahooBody };
 };
 
-new Function('require', 'process', 'fetch', 'AbortSignal', 'Date', src)(
-  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal, FixedDate);
+const handlers = loadMain({ globals: { fetch: fakeFetch, AbortSignal, Date: FixedDate } });
 
 const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, range: '1mo', interval });
 

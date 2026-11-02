@@ -5,10 +5,8 @@
 // 응답은 2026-10-16 실측(tests/fixtures/naver-detail-20261016.json, 쓰는 필드만)이고, 주주 구성은 네이버 금융
 // 기업정보 페이지 2026-10-28 실측(tests/fixtures/wisereport-holders-20261028.json, 쓰는 부분만 잘라 둠)이다.
 import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
+import { loadMain } from './_main.mjs';
 
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const FX = JSON.parse(fs.readFileSync(new URL('fixtures/naver-detail-20261016.json', import.meta.url), 'utf8'));
 const HOLD = JSON.parse(fs.readFileSync(new URL('fixtures/wisereport-holders-20261028.json', import.meta.url), 'utf8'));
 // 삼성전자우 · SK텔레콤은 주주 구성만 본다 — 나머지 네이버 응답은 삼성전자 것을 빌린다
@@ -17,24 +15,6 @@ const BORROW = { '005935': '005930', '017670': '005930' };
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron,
-  'electron-store': class { get() {} set() {} },
-  fs,
-  path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 // 주소로 고정 데이터를 고른다. blocked 에 든 조각이 주소에 있으면 그 요청은 실패한다.
 const calls = [];
@@ -86,7 +66,7 @@ class ShiftDate extends RealDate {
   constructor(...a) { super(...(a.length ? a : [RealDate.now() + SHIFT])); }
   static now() { return RealDate.now() + SHIFT; }
 }
-new Function('require', 'process', 'fetch', 'Date', src)(require, { env: {}, platform: 'test' }, fakeFetch, ShiftDate);
+const handlers = loadMain({ globals: { fetch: fakeFetch, Date: ShiftDate } });
 const detail = (symbol) => handlers['naver:detail']({}, symbol);
 
 // --- 1. 국내 주식(삼성전자) ------------------------------------------------------------

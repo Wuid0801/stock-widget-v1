@@ -4,32 +4,10 @@
 // 국내 분류도 어색했다(삼성전자 Consumer Electronics, 한화오션 Aerospace & Defense). 네이버 업종을 먼저 쓴다:
 // 국내는 네이버 업종 79개(삼성전자 반도체와반도체장비), 미국은 네이버 해외 업종(애플 전화 및 소형 장치).
 // 네이버에 없으면 야후 영어를 그대로 쓴다(2026-10-14 실측).
-import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+import { loadMain } from './_main.mjs';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
-
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron,
-  'electron-store': class { get() {} set() {} },
-  fs,
-  path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 // 실제 응답 모양(2026-10-14) 중 쓰는 필드만. 없는 주소는 404.
 const NAVER = {
@@ -77,8 +55,7 @@ const fakeFetch = async (url) => {
   return reply(true, { quotes: YAHOO[q] ? [YAHOO[q]] : [] });
 };
 
-new Function('require', 'process', 'fetch', 'AbortSignal', 'Date', src)(
-  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal, FakeDate);
+const handlers = loadMain({ globals: { fetch: fakeFetch, AbortSignal, Date: FakeDate } });
 const sector = (symbol) => handlers['yf:sector']({}, symbol);
 const yahooAsked = () => calls.filter((u) => u.includes('yahoo')).length;
 

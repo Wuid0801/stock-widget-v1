@@ -5,10 +5,8 @@
 // 2) quote:indices 가 지수 헤더에 필요한 값(전일 대비 · 시 · 고 · 저 · 장 상태 · 시각)을 꺼낸다.
 //    저장해 둔 네이버 응답(2026-10-02 15:37, 장 마감 직후 — 코스피 상승 · 코스닥 하락)을 쓴다.
 import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
+import { loadMain } from './_main.mjs';
 
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/naver-index-20261002.json', import.meta.url), 'utf8'));
 
 let fails = 0;
@@ -16,24 +14,6 @@ const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : '
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // electron 은 필요한 만큼만 흉내 낸다. 창은 만들지 않는다(whenReady 가 끝나지 않는다).
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron,
-  'electron-store': class { get() {} set() {} },
-  fs,
-  path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
-
 // 지수 주소면 픽스처, 아니면 봉 하나짜리 야후 차트를 돌려준다. 받은 주소를 기록한다.
 // 미국 지수(네이버 해외 지수)와 원/달러(야후 KRW=X)는 처음엔 비어 있다 — 아래에서 채워 본다.
 // 선물 · 유가 · 국채(extras)도 비어 있다가(야후 차트 모양이 와서 항목이 없다) 아래에서 채운다.
@@ -58,8 +38,7 @@ const fakeFetch = async (url) => {
   return { ok: true, status: 200, json: async () => body };
 };
 
-new Function('require', 'process', 'fetch', 'AbortSignal', src)(
-  require, { env: {}, platform: 'test' }, fakeFetch, AbortSignal);
+const handlers = loadMain({ globals: { fetch: fakeFetch, AbortSignal } });
 
 // --- 차트 요청의 기호 ---------------------------------------------------------
 for (const symbol of ['^KS11', '^KQ11', '005930.KS', 'AAPL', 'BRK-B', '^IXIC', '^GSPC', 'KRW=X', 'NQ=F', 'CL=F', '^TNX']) {

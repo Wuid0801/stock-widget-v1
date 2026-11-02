@@ -5,31 +5,14 @@
 // 미국은 일반 주식만 · 시총 3억 달러 이상. 응답은 2026-10-16 실측(tests/fixtures/naver-rank-20261016.json,
 // 목록마다 상위 50줄 · 쓰는 필드만)이다. 업종 · 테마는 2026-10-21 실측(tests/fixtures/naver-groups-20261021.json).
 import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
+import { loadMain } from './_main.mjs';
 
-const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const FX = JSON.parse(fs.readFileSync(new URL('fixtures/naver-rank-20261016.json', import.meta.url), 'utf8'));
 const GX = JSON.parse(fs.readFileSync(new URL('fixtures/naver-groups-20261021.json', import.meta.url), 'utf8'));
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-const handlers = {};
-const electron = {
-  app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
-  BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
-  ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-};
-const modules = {
-  electron, 'electron-store': class { get() {} set() {} }, fs, path,
-  './quote-session.cjs': createRequire(import.meta.url)('../quote-session.cjs'),
-};
-const require = (m) => {
-  if (!(m in modules)) throw new Error(`main.js 가 예상하지 못한 모듈을 부른다: ${m}`);
-  return modules[m];
-};
 
 const calls = [];
 let blocked = [];
@@ -53,7 +36,7 @@ const fakeFetch = async (url, opt = {}) => {
   if (body === undefined) return { ok: false, status: 404, json: async () => ({}) };
   return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) };
 };
-new Function('require', 'process', 'fetch', src)(require, { env: {}, platform: 'test' }, fakeFetch);
+const handlers = loadMain({ globals: { fetch: fakeFetch } });
 const rank = (market, kind, no) => handlers['naver:rank']({}, no === undefined ? { market, kind } : { market, kind, no });
 const desc = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] >= x);
 const asc = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] <= x);
