@@ -115,8 +115,9 @@ function k200At(t, spot, mins) {
 //  - BASIS 베이시스: 선물 - 현물(포인트). 선물은 네이버가 20분 늦게 줘서 지금 현물과 빼면 그 20분 동안 움직인 만큼이 섞였다(오르는
 //    장에서 콘탱고가 백워데이션으로 보였다, 2026-10-30) — 선물 시각의 현물(k200At)과 뺀다. 장중엔 20분 전 베이시스이고 메모에 그 시각.
 //    오늘 등락은 어제 베이시스(같은 날 종가끼리) 대비, 5일 변화 · 미니 선은 날마다의 베이시스에 지금 값을 이은 것.
-//  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(네이버 표기 그대로 — 네이버 화면도 단위를 적지 않는다),
-//    5일 변화 자리에 확정일 끝에서 같은 부호가 이어진 날 수, 18:00 전 오늘 값은 잠정이라 메모에 따로.
+//  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(억 원 — 네이버 화면은 단위를 적지 않지만 10/23 선물
+//    +4,514 가 다음 금융 금액 4,514억(계약으로는 2,177)과 같았다, 2026-11-02 확인), 5일 변화 자리에 확정일 끝에서 같은 부호가 이어진
+//    날 수, 18:00 전 오늘 값은 잠정이라 메모에 따로.
 //  - HYOAS 미국 HY OAS: 마지막 값(%), 오늘 등락은 앞 줄 · 5일 변화는 다섯 줄 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다).
 //  - INTRA_* 장중 수급(다음 금융, main 의 intraday): 값 = 코스피 현물 누적 순매수(억), 오늘 등락 자리 = 코스피200 선물 누적(억 —
 //    처음엔 계약이었는데 현물과 견주기 어려웠다, 부호 색), 5일 변화 자리 = 최근 30분 현물 변화(그 시각 또는 그 앞의 마지막 값 대비 — 없으면 —), 미니 선 = 오늘 현물 누적.
@@ -146,8 +147,10 @@ function marketExtraRow(key) {
       dayText: change == null ? '—' : pt(change), dayTone: change,
       d5Text: value != null && base != null ? pt(value - base) : '—', note: value == null ? '현물 분봉 기다리는 중' : `${hm} 기준`,
       title: `베이시스 = 코스피200 선물 − 코스피200 현물${value == null ? '' : ` (${pt(value)}pt, 현물의 ${pt((value / at.v) * 100)}%)`}. `
-        + '선물이 현물보다 비싸면(+, 콘탱고) 앞으로 오를 쪽에, 싸면(−, 백워데이션) 내릴 쪽에 돈이 몰린 것으로 본다. '
-        + '금리 · 배당 때문에 평소엔 조금 + 이고, 만기(3 · 6 · 9 · 12월 둘째 목요일)에 가까울수록 0 에 붙는다. '
+        + '선물이 현물보다 비싸면 +(콘탱고), 싸면 −(백워데이션). '
+        + '이론 베이시스는 만기까지의 금리 이자 − 받을 배당이라 대개 조금 + 이지만, 만기 전에 큰 배당이 빠지는 기간에는 − 일 수 있다. '
+        + '그 이론값보다 높으면 선물 매수 우위, 낮으면 매도 우위로 흔히 읽는다 — 앱은 이론값을 계산하지 않는다. '
+        + '만기(3 · 6 · 9 · 12월 둘째 목요일)에 가까울수록 0 에 붙는다. '
         + `선물 값이 20분 늦어 같은 시각${hm ? `(${hm})` : ''}의 현물과 뺀다 — 장중엔 20분 전 베이시스다. `
         + '오늘 등락은 어제 베이시스(종가끼리, 선물 15:45 · 현물 15:30) 대비, 5일 변화 · 미니 선은 날마다의 베이시스',
       spark: hist.length + (value != null ? 1 : 0) >= 2 ? [...hist.slice(-19), ...(value != null ? [value] : [])] : null };
@@ -161,10 +164,10 @@ function marketExtraRow(key) {
     for (let i = done.length - 1; i >= 0 && Math.sign(done[i].foreign) === Math.sign(last.foreign) && done[i].foreign !== 0; i--) n++;
     const today = flows[flows.length - 1].final ? null : flows[flows.length - 1];
     return { key, name: MARKET_EXTRA_NAMES[key], symbol: null, value: last.foreign, pct: null, change: null,
-      d5: null, d5Unit: '%', valueText: signed(last.foreign), dayText: '', dayTone: last.foreign,
+      d5: null, d5Unit: '%', valueText: `${signed(last.foreign)}억`, dayText: '', dayTone: last.foreign,
       d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
-      note: today ? `오늘 잠정 ${signed(today.foreign)}` : '',
-      title: `외국인 순매수 ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 — 네이버 표기 그대로(단위 없음), 18:00 전 오늘 값은 잠정`,
+      note: today ? `오늘 잠정 ${signed(today.foreign)}억` : '',
+      title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 · 18:00 전 오늘 값은 잠정`,
       spark: done.slice(-20).map((f) => f.foreign) };
   }
   if (key === 'HYOAS') {
@@ -200,7 +203,9 @@ function marketExtraRow(key) {
     for (const r of spot) if (r.t <= last.t - 30 * 60000) ago = r;
     const d30 = ago && Number.isFinite(ago[field]) ? value - ago[field] : null;
     const note = { INTRA_INST: '기관은 연기금 포함 합계다. ', INTRA_PENSION: '연기금은 기관 안의 일부다. ',
-      INTRA_CORP: '기타법인은 일반 회사다 — 회사가 직접 사는 자사주 매입이 여기에 섞인다(신탁 등을 거치면 다른 분류). ' }[key] || '';
+      // 상장사의 장내 자사주 매입은 기타법인으로 잡힌다(기사 확인). '신탁을 거치면 다른 분류' 는 출처가 없어 뺐다(2026-11-02 점검)
+      INTRA_CORP: '기타법인은 일반 회사 · 창업투자회사 · 투자자문사 등이다 — 상장사가 장내에서 자사주를 사면 여기에 잡혀, '
+        + '기타법인 순매수는 흔히 자사주 매입으로 읽히지만 전부가 그것은 아니다. ' }[key] || '';
     return { key, name, symbol: null, value, pct: null, change: null, d5: null, d5Unit: '%',
       valueText: eok(value), dayText: fut == null ? '—' : eok(fut), dayTone: fut,
       d5Text: d30 == null ? '—' : eok(d30), d5Title: '최근 30분 현물 순매수 변화(억)',

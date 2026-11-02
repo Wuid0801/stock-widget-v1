@@ -19,7 +19,8 @@ const MC_EPS = 1e-9;
 
 const mcNum = (v, d = 2) => v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 const mcSigned = (v, d, unit) => `${v > 0 ? '+' : ''}${v.toFixed(d)}${unit}`;
-const mcFlow = (v) => (v > 0 ? '+' : '') + v.toLocaleString('ko-KR');
+// 네이버 지수 수급은 억 원이다(10/23 외국인 선물 +4,514 = 다음 금융 금액 4,514억, 2026-11-02 확인)
+const mcFlow = (v) => `${v > 0 ? '+' : ''}${v.toLocaleString('ko-KR')}억`;
 const mcDate = (d) => `${d.slice(4, 6)}/${d.slice(6)}`;
 const mcNone = (key) => ({ key, verdict: null, detail: '데이터 부족' });
 const mcFinal = (flows) => (Array.isArray(flows) ? flows.filter((f) => f && f.final && Number.isFinite(f.foreign)) : []);

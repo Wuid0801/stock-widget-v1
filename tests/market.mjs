@@ -282,6 +282,13 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   check('선물: 코스피가 오른 날(10/23) 외국인 선물 순매도면 risk', v({ futFlows: [f('20261023', -1200)], futDays: fut, kospiDays: kospi }, 'futures') === 'risk');
   check('선물: 선물이 내린 날(10/26) 순매수면 neutral', v({ futFlows: [f('20261026', 300)], futDays: fut, kospiDays: kospi }, 'futures') === 'neutral');
   check('선물: 그날 일봉이 없으면 판정 불가', v({ futFlows: [f('20261027', 300)], futDays: fut, kospiDays: kospi }, 'futures') === null);
+  // 네이버 지수 수급의 단위는 억 원이다 — 10/23 외국인 선물 +4,514 가 다음 금융 금액(4,514억, 계약으로는 2,177)과 같고, 현물 -9,811 이
+  // 다음 금액 -9,789억과 거의 같다(2026-11-02 확인). 예전에는 단위를 몰라 '네이버 표기 그대로' 숫자만 적었다.
+  check('수급 근거는 억 원', verdictOf({ spotFlows: [f('20261022', 1000), f('20261023', 2100)], kospiDays: kospi }, 'spot').detail
+    === '확정 10/22 +1,000억 · 10/23 +2,100억 · 10/23 코스피 상승'
+    && verdictOf({ futFlows: [f('20261023', 4514)], futDays: fut, kospiDays: kospi }, 'futures').detail
+      === '10/23 외국인 선물 +4,514억 · 선물 상승 · 코스피 상승',
+  `${verdictOf({ spotFlows: [f('20261022', 1000), f('20261023', 2100)], kospiDays: kospi }, 'spot').detail} | ${verdictOf({ futFlows: [f('20261023', 4514)], futDays: fut, kospiDays: kospi }, 'futures').detail}`);
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');

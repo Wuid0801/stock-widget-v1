@@ -1337,6 +1337,8 @@ await test('metrics: shareholders — major holders table, foreign stake and fre
   assert.ok(h.includes('&lt;i&gt;x&lt;/i&gt; 외 15인') && !h.includes('<i>x</i>'), '이름은 이스케이프한다');
   assert.match(text(h), /외국인 46\.10% · 유동주식 74\.98%/, '외국인 지분율 · 유동비율');
   assert.match(h, /최대주주 · 5% 이상 주주 · 자사주만 공시됩니다 \(기관 · 개인 지분율은 없음\)/, '표에 없는 것을 적는다');
+  // 외국인 · 유동주식은 전체 주식 대비로 따로 잰 비율이라 위 주주와 겹친다 — 더하면 100% 를 넘었다(2026-11-02 사용자 질문, SK하이닉스)
+  assert.match(h, /외국인 · 유동주식은 전체 주식 대비로 따로 잰 비율이라 위 주주와 겹칩니다 \(더하면 100%를 넘을 수 있음\)/);
   assert.ok(h.indexOf('투자자별 순매수') < h.indexOf('주주 구성') && h.indexOf('주주 구성') < h.indexOf('<h5>실적'), '매매동향 다음, 실적 앞');
 
   assert.match(html('005935.KS', { ...H, common: '005930' }), /<h5>주주 구성 <span>\(보통주 기준, 10\/27\)<\/span><\/h5>/,
@@ -1411,6 +1413,11 @@ await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its
   const follow = run('FOLLOW_EVIDENCE');
   assert.match(follow, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): 200일선 위에서만 보유하면 최대 낙폭이 평균 −55\.9% → −43\.3%/);
   assert.ok(html.includes(`일수는 그 상태가 이어진 거래일(오늘 포함)\n${follow}"><span class="mxmute">추세 추종`), '추세 추종 툴팁 끝에 과거 검증 한 줄(2026-10-30)');
+  // 모멘텀도 과거 검증 한 줄 — 우리 검증에서 효과가 거의 0 이었는데 툴팁은 '경향을 봅니다' 만 적었다(2026-11-02 점검)
+  const mEv = run('MOMENTUM_EVIDENCE');
+  assert.match(mEv, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): 12-1개월 모멘텀이 높았을 때\(상위\) 뒤 20거래일은 평소와 거의 같았다\(약 0%p\)/);
+  assert.ok(html.includes(`미국 주식 연구(Jegadeesh · Titman, 1993)`) && html.includes(`관심종목 중 이 값이 있는 종목끼리\n${mEv}"><span class="mxmute">모멘텀`),
+    '모멘텀 툴팁 — 경향의 출처와 우리 검증');
   assert.match(html, /title="코스톨라니 달걀\(해석\) B3\(투매\)\n지금 20일선이 60일선 아래\(하락\) · 거래량 20일 평균이 60일 평균의 1\.39배 · RSI 54/);
   assert.ok(html.includes(`B1(꼭대기 뒤 하락 초기)에서 B3로 바뀐 지 ${egg.days}거래일째(오늘 포함)`), '툴팁에 바뀐 때');
   assert.ok(html.includes('다음은 A1(바닥 뒤 상승 초기) — 20일선이 다시 60일선 위로 올라서면'), '툴팁에 다음 칸으로 가는 조건');
@@ -2952,12 +2959,17 @@ await test('market panel: 위험 · 자금 rows explain what each measure is on 
     const t = titleOf(html, key);
     assert.ok(t && t.startsWith(`${h.run(`MARKET_DESC.${key}`)}\n`) && t.endsWith(' 차트 보기'), `${key}: ${t}`);
   }
-  assert.match(titleOf(html, 'VIX'), /^VIX\(변동성 지수\) — .*공포지수.*20 아래면 차분, 20~30 불안, 30 넘으면 공포/);
+  // 기준 숫자는 실제 기록에서 낸 것(2026-11-02 사용자 질문 "어디서 가져온 정보?") — VIX 는 야후 1990~ 일별 종가 9,278일
+  assert.match(titleOf(html, 'VIX'), /^VIX\(변동성 지수\) — .*공포지수.*1990년부터 일별 종가의 중앙값은 17\.6 · 평균 19\.4이고, 20 아래인 날이 63%, 30 넘는 날은 8%다/);
+  assert.match(titleOf(html, 'VIX'), /2008-11 80\.9 · 2020-03 82\.7 · 2025-04 52\.3/);
   assert.match(titleOf(html, 'US10Y'), /^미국채 10년 금리.*bp\(0\.01%p\)/);
   assert.match(titleOf(html, 'USDKRW'), /^원\/달러 — .*원화 약세/);
   assert.match(titleOf(html, 'WTI'), /^WTI — .*원유 선물/);
   assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'), 'HY OAS 는 누를 수 없는 줄 — 설명만');
   assert.match(titleOf(html, 'HYOAS'), /하이일드.*FRED, 1~2영업일 늦다/);
+  // HY OAS 는 근거 없던 '3~4% 낙관 · 5% 경계' 를 빼고 확인한 숫자로 — FRED 최근 3년 · 20년 평균(2023) · 2008 정점
+  assert.match(titleOf(html, 'HYOAS'), /최근 3년\(2023-11~2026-10\)은 대개 2\.7~3\.5%\(중앙값 3\.0%, 가장 높을 때 2025-04 4\.6%\), 20년 평균은 약 5\.2%\(2023년 기준\), 2008년 위기 때는 약 20%/);
+  assert.doesNotMatch(titleOf(html, 'HYOAS'), /낙관|경계/);
   assert.equal(titleOf(html, 'SPX'), 'S&P 500 차트 보기', '다른 묶음은 그대로');
   h.run('marketExtras = null; indexItems = [];');
   html = h.c.marketHtml();
@@ -3046,9 +3058,11 @@ await test('market panel: flows show the last final day, the streak, and today\'
   const html = h.c.marketHtml();
   const spot = keyRow(html, 'SPOT');
   assert.match(spot, /외국인 현물/);
-  assert.match(spot, /<span class="mval">\+3,300<\/span>/, '마지막 확정일 값 — 단위 없이 네이버 표기 그대로');
+  // 단위는 억 원(네이버 10/23 선물 +4,514 = 다음 금융 금액 4,514억, 2026-11-02 확인) — 예전에는 단위 없이 숫자만
+  assert.match(spot, /<span class="mval">\+3,300억<\/span>/, '마지막 확정일 값(억 원)');
   assert.match(spot, /2일 연속 순매수/);
-  assert.match(spot, /오늘 잠정 \+4,080/);
+  assert.match(spot, /오늘 잠정 \+4,080억/);
+  assert.match(html, /data-key="SPOT" title="외국인 순매수\(억 원\) 10\/26 확정 · 18:00 전 오늘 값은 잠정"/);
   assert.match(keyRow(html, 'FUTFLOW'), /1일 연속 순매도/);
   assert.doesNotMatch(html, /data-sym="[^"]*"[^>]*data-key="SPOT"/, '수급 줄은 누를 수 없다');
 });
@@ -3108,6 +3122,10 @@ await test('market panel: KOSPI 200 spot sits beside the futures, and the basis 
   assert.match(basis, /class="mspark"/, '날마다의 베이시스에 지금 값을 이은 미니 선');
   assert.match(html, /data-key="BASIS" title="베이시스 = 코스피200 선물 − 코스피200 현물 \(\+3\.50pt, 현물의 \+0\.39%\)\. 선물이 현물보다 비싸면/);
   assert.match(html, /선물 값이 20분 늦어 같은 시각\(13:16\)의 현물과 뺀다 — 장중엔 20분 전 베이시스다/, '툴팁에 맞춘 이유');
+  // '+ 면 오를 쪽에 돈이 몰렸다' 는 단순화였다 — 견줄 것은 이론 베이시스(금리 이자 − 배당)이고 앱은 그것을 계산하지 않는다(2026-11-02 점검)
+  assert.match(html, /이론 베이시스는 만기까지의 금리 이자 − 받을 배당이라 대개 조금 \+ 이지만, 만기 전에 큰 배당이 빠지는 기간에는 − 일 수 있다/);
+  assert.match(html, /그 이론값보다 높으면 선물 매수 우위, 낮으면 매도 우위로 흔히 읽는다 — 앱은 이론값을 계산하지 않는다/);
+  assert.doesNotMatch(html, /오를 쪽에 .*돈이 몰린/);
 
   // 분봉을 아직 못 받았으면(지표 화면을 막 열었다) 엉뚱한 현물과 빼지 않고 — 로 둔다. 날마다의 미니 선은 그대로
   h.run('marketExtras.d.k200Min = null;');
@@ -3272,6 +3290,9 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   assert.match(keyRow(html, 'INTRA_INST'), /<span class="rpct" style="color:#[0-9a-f]{6}">-541<\/span>/);
   assert.match(html, /data-key="INTRA_INST" title="기관 [^"]*연기금 포함/);
   assert.match(html, /data-key="INTRA_CORP" title="기타법인 [^"]*자사주/, '자사주 매입은 기타법인에 섞인다');
+  // 상장사의 장내 자사주 매입은 기타법인으로 잡힌다(기사 확인). '신탁을 거치면 다른 분류' 는 출처가 없어 뺐다(2026-11-02 점검)
+  assert.match(html, /기타법인은 일반 회사 · 창업투자회사 · 투자자문사 등이다 — 상장사가 장내에서 자사주를 사면 여기에 잡혀/);
+  assert.doesNotMatch(html, /신탁/);
   assert.match(keyRow(html, 'INTRA_PENSION'), /<span class="mval">\+4,853<\/span><span class="rpct"[^>]*>\+130<\/span>/);
   const prog = keyRow(html, 'INTRA_PROGRAM');
   assert.match(prog, /<span class="mval">-419<\/span><span class="rpct"[^>]*>—<\/span><span class="md5"[^>]*>—<\/span>/, '프로그램은 현물 값 하나');

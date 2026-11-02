@@ -90,8 +90,9 @@ function techHtml(item) {
     const all = state.watchlist.map((w) => { const x = quotes[w.symbol]; return x && x.daily ? momentum(x.daily.times, x.daily.closes) : null; })
       .filter((m) => m != null);
     out.push(line('모멘텀', `12-1개월 ${pct(mom)}${all.length > 1 ? ` · 관심종목 <b>${all.filter((m) => m > mom).length + 1}/${all.length}위</b>` : ''}`,
-      '최근 1개월을 뺀 12개월 수익률(1개월 전 종가 / 12개월 전 종가) — 많이 오른 종목이 한동안 더 오르는 경향을 봅니다. 급반전할 때 크게 잃습니다. '
-      + '순위는 관심종목 중 이 값이 있는 종목끼리'));
+      '최근 1개월을 뺀 12개월 수익률(1개월 전 종가 / 12개월 전 종가) — 많이 오른 종목이 한동안 더 오른다는 경향'
+      + '(미국 주식 연구(Jegadeesh · Titman, 1993))을 쓰는 규칙입니다. 급반전할 때 크게 잃습니다. '
+      + `순위는 관심종목 중 이 값이 있는 종목끼리\n${MOMENTUM_EVIDENCE}`));
   }
   const dca = dcaCost(d.times, d.closes, DCA_MONTHS);
   if (dca) {
@@ -195,7 +196,9 @@ function metricsHtml(item, d, q) {
     const more = [h.foreign != null ? `외국인 ${h.foreign.toFixed(2)}%` : null, h.float != null ? `유동주식 ${h.float.toFixed(2)}%` : null].filter(Boolean);
     parts.push(sec(`주주 구성${basis ? ` <span>(${basis})</span>` : ''}`, `<table class="mxt">${rows}</table>`
       + (more.length ? `<p class="mxmute">${list(more)}</p>` : '')
-      + '<p class="mxmute">최대주주 · 5% 이상 주주 · 자사주만 공시됩니다 (기관 · 개인 지분율은 없음)</p>'));
+      + '<p class="mxmute">최대주주 · 5% 이상 주주 · 자사주만 공시됩니다 (기관 · 개인 지분율은 없음)</p>'
+      // 외국인 · 유동주식은 위 주주와 겹친다 — 더하면 100% 를 넘어 물었다(2026-11-02 사용자, SK하이닉스 20 + 7.32 + 3.5 + 48.72 + 72.36)
+      + (more.length ? '<p class="mxmute">외국인 · 유동주식은 전체 주식 대비로 따로 잰 비율이라 위 주주와 겹칩니다 (더하면 100%를 넘을 수 있음)</p>' : '')));
   }
 
   // 실적 — 발표 일정(국내)과 최근 4분기. 억원은 조 · 억으로, USD 백만은 B · M 으로 줄인다.
