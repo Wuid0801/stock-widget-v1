@@ -16,15 +16,16 @@ import { pathToFileURL } from 'node:url';
 
 const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 
-// main.js 를 읽어 IPC 처리기를 꺼낸다. fetch 는 받은 것을 쓴다.
-export function loadHandlers(fetchImpl) {
+// main.js 를 읽어 IPC 처리기를 꺼낸다. fetch 는 받은 것을, Electron net.fetch 자리는 netImpl(없으면 같은 fetch)을 쓴다.
+export function loadHandlers(fetchImpl, netImpl = fetchImpl) {
   const handlers = {};
   const electron = {
     app: { getPath: () => '', whenReady: () => new Promise(() => {}), on() {}, requestSingleInstanceLock: () => true },
     BrowserWindow: class {}, screen: {}, globalShortcut: {}, Notification: {},
     ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on() {} },
-    // 앱은 FRED 만 Electron net.fetch 로 받는다 — 여기서는 받은 fetch 로 대신해 주소 · 응답 모양만 본다(Electron 에서만 막히는 것은 못 본다)
-    net: { fetch: fetchImpl },
+    // 앱은 FRED 만 Electron net.fetch 로 받는다 — 이 파일만 돌리면 Node fetch 로 대신해 주소 · 응답 모양만 본다(Electron 에서만
+    // 막히는 것은 못 본다 — tests/sources-electron.mjs 가 진짜 net.fetch 를 넘긴다)
+    net: { fetch: netImpl },
   };
   const modules = {
     electron,
@@ -262,13 +263,13 @@ export const CHECKS = [
 ];
 
 // 항목을 차례로 돌린다(동시에 몰아 묻지 않는다 — 출처가 막을 수 있다). 항목마다 그동안 나간 요청을 기록해 실패한 요청도
-// 문제로 넣는다. → [{ name, source, problems, calls }]
-export async function runChecks(fetchImpl, checks = CHECKS) {
+// 문제로 넣는다. netImpl 은 Electron net.fetch 자리(loadHandlers). → [{ name, source, problems, calls }]
+export async function runChecks(fetchImpl, checks = CHECKS, netImpl = fetchImpl) {
   let calls = [];
-  const recorded = async (url, opt) => {
+  const recorded = (impl) => async (url, opt) => {
     const at = String(url);
     try {
-      const res = await fetchImpl(url, opt);
+      const res = await impl(url, opt);
       calls.push({ url: at, status: res.status });
       return res;
     } catch (err) {
@@ -276,7 +277,7 @@ export async function runChecks(fetchImpl, checks = CHECKS) {
       throw err;
     }
   };
-  const handlers = loadHandlers(recorded);
+  const handlers = loadHandlers(recorded(fetchImpl), recorded(netImpl));
   const out = [];
   for (const c of checks) {
     calls = [];

@@ -142,6 +142,7 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 npm test              # 전체 (약 6분)
 npm test -- rsi dock  # 이름에 rsi / dock 이 들어간 스위트만
 npm run check:sources # 데이터 출처 점검 (실제 네트워크, 아래)
+npm run check:sources:electron # 같은 점검을 Electron 안에서 — Electron 을 올릴 때 (아래)
 ```
 
 스위트는 두 갈래입니다.
@@ -175,6 +176,9 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 - `1D RSI 앞 거래일 5분봉` 은 요청이 0개로 나올 수 있습니다 — 앞의 1W 항목이 같은 KRX 분봉을 받았고 main.js 가 지난 날을 기억해 두기 때문입니다. 주소는 1W 가 이미 봤고, 이 항목은 5분봉으로 묶는 해석을 봅니다.
 - 판정 자체는 `tests/sources.mjs` 가 네트워크 없이 봅니다(CI): main.js 의 네트워크 IPC 처리기가 모두 점검에 들어 있는지(처리기를 새로 만들고 점검을 빠뜨리면 실패), 정상 모양은 통과하고 깨진 모양 · 실패한 요청 · HTTP 503 은 실패인지, 출처가 모두 막혀도 점검이 죽지 않는지.
 - GitHub 러너는 미국에 있습니다. 네이버가 해외 접속을 막으면 네이버 항목이 늘 실패하므로, 처음 한 번 Run workflow 로 돌려 확인합니다.
+- **Electron 을 올릴 때는 `npm run check:sources:electron`** 을 돌립니다(`tests/sources-electron.mjs`, 손으로만 — CI · `npm test` 에는 없다). 주간 점검은 일반 Node 로 돌아 **Electron 안에서만 막히는 것**을 못 잡습니다 — Electron 44 로 올린 뒤 FRED 가 앱 안의 Node fetch 에만 답하지 않아 HY OAS 줄이 — 였습니다(2026-11-02, 아래 데이터 소스 표). 항목은 같고(`runChecks`), 네트워크만 앱과 같습니다 — Node fetch 는 Electron 안의 것, `net.fetch` 자리(FRED)는 진짜 `net.fetch`. 창은 뜨지 않습니다.
+  - 항목 결과 뒤에 **출처마다** 요청 수 · 실패 · 가장 느린 것(앱 제한 8초) · 앞단을 적습니다. 앞단은 `server` 머리와 봇 차단의 흔적(Akamai `_abck` · `bm_sz` 쿠키, Cloudflare `cf-ray` 등)입니다 — 흔적이 있는 곳은 지금 받혀도 나중에 막힐 수 있습니다.
+  - 첫 실행(2026-11-02 16:11 KST, Electron 44.10.0 · Node 24.22.1): 19개 항목 모두 통과, 출처 7곳 요청 실패 0, 가장 느린 것 255ms(야후). 봇 차단 흔적은 FRED(Akamai)뿐 — 네이버 `nfront` · 야후 `ATS` · 다음 · WiseReport 는 없었습니다.
 
 > 워크플로는 `TZ: Asia/Seoul` 로 돕니다. `daysAgo` 가 **로컬 자정** 기준으로 달력 일수를 세는데, 러너 기본값인 UTC 로 두면 `cross` 의 "다음 날 00:01 에는 1일" 이 깨집니다. 앱은 보는 사람의 시간대를 쓰는 게 맞으므로 동작은 그대로 두고 CI 쪽을 고정했습니다.
 
@@ -191,7 +195,7 @@ Electron 을 띄우는 나머지 스무 개는 CI 에서 돌리지 않습니다.
 | 장중 수급(시장 지표) | 다음 금융 | 코스피 현물 시간별(주체 · 세부, 원) · 코스피200 선물 시간별(금액, 원) · 코스피 프로그램 지금 값 — 지표 화면이 열려 있을 때만(1분) 세 건, Referer 필요(`daumIntraday`) |
 | 외국인 현물 · 선물 수급(시장 지표) | Naver 모바일 지수 수급 | `m.stock.naver.com/api/index/{KOSPI · FUT}/trend?bizdate=` 날짜마다 1회, 최근 10거래일. 지난 날 · 20:30 뒤의 오늘은 기억. 지표 화면이 열려 있을 때만(1분) |
 | 코스피 · 선물 일별 종가(시장 지표) | Naver 지수 일봉 | `api.stock.naver.com/chart/domestic/index/{KOSPI · FUT}/day` 최근 30일 — 수급을 물을 거래일도 여기서 |
-| 미국 HY OAS(시장 지표) | FRED CSV | `fredgraph.csv?id=BAMLH0A0HYM2`(키 없음), 6시간 기억. 1~2영업일 늦다. **이것만 Electron `net.fetch`(Chromium 네트워크), User-Agent 는 그대로** — Electron 44(10/29 올림) 안의 Node fetch 는 FRED 앞단(Akamai)에서 답이 없어(20초, 헤더를 브라우저처럼 채워도 같다) 줄이 — 였고, `net.fetch` 에 `Mozilla/5.0` 을 달면 HTTP2 프로토콜 오류다(2026-11-02 실측 — PC 의 Node 22 는 0.2초에 받는다). 주간 출처 점검은 Node fetch 로 대신 불러 이것은 못 잡는다 |
+| 미국 HY OAS(시장 지표) | FRED CSV | `fredgraph.csv?id=BAMLH0A0HYM2`(키 없음), 6시간 기억. 1~2영업일 늦다. **이것만 Electron `net.fetch`(Chromium 네트워크), User-Agent 는 그대로** — Electron 44(10/29 올림) 안의 Node fetch 는 FRED 앞단(Akamai)에서 답이 없어(20초, 헤더를 브라우저처럼 채워도 같다) 줄이 — 였고, `net.fetch` 에 `Mozilla/5.0` 을 달면 HTTP2 프로토콜 오류다(2026-11-02 실측 — PC 의 Node 22 는 0.2초에 받는다). 주간 출처 점검은 Node fetch 로 대신 불러 이것은 못 잡는다 — Electron 을 올릴 때 `npm run check:sources:electron` |
 | 나스닥 · S&P 500 · VIX · SOX | Naver 해외 지수 실시간 | `.IXIC` · `.INX` · `.VIX` · `.SOX` 1회 요청(지수 줄과 함께 — VIX · SOX 는 시장 지표 화면에만). 차트는 Yahoo `^IXIC` · `^GSPC` · `^VIX` · `^SOX` |
 | 나스닥 100 선물 · WTI(지수 줄) | Naver 해외 선물 · 시장지표 | `NQcv1`(`/worldstock/futures/`) · `CLcv1`(`/marketindex/energy/`) 각 1회, 지수 줄과 함께. 거래소(CME · NYMEX)가 **10분 늦게** 준다 — 야후도 같다. 1D 차트는 Naver 하루 차트(아래), 1W · 일봉은 Yahoo `NQ=F` · `CL=F` |
 | 미국채 10년(지수 줄) | Naver 시장지표 | `US10YT=RR` 상세(`api.stock.naver.com/marketindex/bond/` — 폴링 주소는 404) 1회, 지수 줄과 함께. 실시간. 1D 차트는 Naver 하루 차트(최근 24시간), 1W · 일봉은 Yahoo `^TNX` — 미국 정규장(한국 21:20~04:00)만 움직인다 |

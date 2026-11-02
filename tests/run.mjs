@@ -75,8 +75,10 @@ const ORDER = [
 ];
 
 const filters = process.argv.slice(2);
-// sources-live 는 앱 테스트가 아니라 바깥 출처 점검이다 — `npm run check:sources` 와 매주 도는 sources.yml 이 돌린다
-const all = fs.readdirSync(HERE).filter((f) => f.endsWith('.mjs') && !f.startsWith('_') && f !== 'run.mjs' && f !== 'sources-live.mjs');
+// sources-live 는 앱 테스트가 아니라 바깥 출처 점검이다 — `npm run check:sources` 와 매주 도는 sources.yml 이 돌린다.
+// sources-electron 은 같은 점검을 Electron 안에서(`npm run check:sources:electron`, Electron 을 올릴 때 손으로)
+const all = fs.readdirSync(HERE).filter((f) => f.endsWith('.mjs') && !f.startsWith('_') && f !== 'run.mjs' && f !== 'sources-live.mjs'
+  && f !== 'sources-electron.mjs');
 const ordered = [...ORDER.filter((f) => all.includes(f)), ...all.filter((f) => !ORDER.includes(f))];
 const suites = filters.length
   ? ordered.filter((f) => filters.some((q) => f.includes(q)))

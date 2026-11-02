@@ -103,6 +103,15 @@ const GOOD = {
   // 요청은 됐지만 HTTP 오류(503)면 결과가 대체 경로로 멀쩡해도 FAIL 이다 — 받은 것은 빈 JSON
   const busy = await runChecks(async () => ({ ok: false, status: 503, json: async () => ({}), text: async () => '' }), CHECKS.slice(0, 1));
   check('HTTP 오류도 FAIL', busy[0].problems.some((p) => p.startsWith('요청 실패 HTTP 503')), busy[0].problems.join(' / '));
+  // Electron 점검(sources-electron.mjs)은 net.fetch 자리에 진짜 net.fetch 를 따로 넘긴다 — FRED(시장 지표)만 그쪽으로 가고,
+  // 그 실패도 적는다
+  const viaNet = [];
+  const market = CHECKS.filter((c) => c.name === '시장 지표');
+  const split = await runChecks(async () => { throw new Error('막힘'); }, market,
+    async (url) => { viaNet.push(String(url)); throw new Error('net 막힘'); });
+  check('net.fetch 자리는 따로 넘긴 것을 쓴다 — FRED 만', viaNet.length === 1 && viaNet[0].includes('fred.stlouisfed.org'), viaNet.join(' '));
+  check('net.fetch 쪽 실패도 적는다', split[0].problems.some((p) => p.startsWith('요청 실패 net 막힘 — https://fred.stlouisfed.org')),
+    split[0].problems.join(' / '));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
