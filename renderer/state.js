@@ -374,10 +374,18 @@ const POLL_CLOSED = 300000; // 장 마감 후 5분 (개장 감지용 최소 확�
 // 과열도 단계 — 셋(2026-11-02 사용자 결정). 예전 다섯 단계(극과열 80 · 과열 70 · 안정 45 · 주의 30 · 과매도)는 2단계 검증에서 30 미만만
 // 20거래일 뒤가 평소와 달라(+1.87%p, 29곳 중 23곳) 45 · 80 경계를 없앴다. 70 이상은 '과열' 이지만 팔 신호는 아니었다(RSI_EVIDENCE).
 // 이 주석의 첫 줄은 tests/session-ui.mjs 가 prelude 를 자르는 표시다.
+// 색은 30 이하 파랑(하락색) · 40~60 초록 · 70 이상 빨강(상승색)이고 30~40 · 60~70 에서 서서히 바뀐다(2026-11-02 사용자 요청).
+// 60~70 은 주황(예전 과열색)을 거친다 — 초록과 빨강을 바로 섞으면 가운데가 탁한 갈색이 된다.
 function levelOf(rsi) {
   if (rsi == null) return { label: '—', color: cssVar('--dot-off') };
-  if (rsi >= 70) return { label: '과열', color: '#e8862a' };
-  if (rsi >= 30) return { label: '보통', color: cssVar('--flat') };
-  return { label: '과매도', color: DOWN };
+  const label = rsi >= 70 ? '과열' : rsi >= 30 ? '보통' : '과매도';
+  const stops = [[30, DOWN], [40, '#2e9e5b'], [60, '#2e9e5b'], [65, '#e8862a'], [70, UP]];
+  const x = Math.min(70, Math.max(30, rsi));
+  const i = Math.max(1, stops.findIndex(([v]) => v >= x)); // x 가 든 칸의 오른쪽 끝
+  const [[a, ca], [b, cb]] = [stops[i - 1], stops[i]];
+  const ch = (c, s) => (parseInt(c.slice(1), 16) >> s) & 255;
+  const color = '#' + [16, 8, 0].map((s) =>
+    Math.round(ch(ca, s) + (ch(cb, s) - ch(ca, s)) * (x - a) / (b - a)).toString(16).padStart(2, '0')).join('');
+  return { label, color };
 }
 

@@ -3494,10 +3494,14 @@ await test('RSI level has three steps: 과매도 under 30, 보통 30~70, 과열 
   c.cssVar = (n) => (n === '--flat' ? '#888888' : n);
   const lv = (x) => run(`JSON.stringify(levelOf(${x}))`);
   assert.equal(lv(29.9), JSON.stringify({ label: '과매도', color: '#185fa5' }));
-  assert.equal(lv(30), JSON.stringify({ label: '보통', color: '#888888' }));
-  assert.equal(lv(69.9), JSON.stringify({ label: '보통', color: '#888888' }));
-  assert.equal(lv(70), JSON.stringify({ label: '과열', color: '#e8862a' }));
-  assert.equal(lv(92), JSON.stringify({ label: '과열', color: '#e8862a' }), '극과열 단계는 없다');
+  assert.equal(lv(69.9).includes('"보통"'), true);
+  assert.equal(lv(92), JSON.stringify({ label: '과열', color: '#e24b4a' }), '극과열 단계는 없다');
+  // 색은 30 이하 파랑(하락색) · 40~60 초록 · 70 이상 빨강(상승색), 30~40 · 60~70 은 서서히(2026-11-02 사용자 요청)
+  const color = (x) => JSON.parse(lv(x)).color;
+  assert.deepEqual([10, 30, 35, 40, 50, 60, 62.5, 65, 67.5, 70, 100].map(color),
+    ['#185fa5', '#185fa5', '#237f80', '#2e9e5b', '#2e9e5b', '#2e9e5b', '#8b9243', '#e8862a', '#e5693a', '#e24b4a', '#e24b4a'],
+    '경계에 다가가면 섞이고, 60~70 은 주황을 거친다(초록과 빨강을 바로 섞으면 가운데가 탁한 갈색)');
+  assert.equal(JSON.parse(lv(30)).label, '보통', '30 은 파랑이지만 단계는 보통');
   assert.equal(lv('null'), JSON.stringify({ label: '—', color: '--dot-off' }));
   assert.match(run('RSI_EVIDENCE'), /\n· 30~70 · 70 이상: 평소와 같음 — 과열도 팔 신호는 아니었다\(그래서 과열도는 세 단계\)\n/, '배지 툴팁에 세 단계의 근거');
 });
