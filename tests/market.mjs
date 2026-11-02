@@ -100,20 +100,22 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
     calls.filter((u) => u.includes('minute')).join(' '));
 }
 
-// --- 2. final 은 한국 18:00 — 지난 날 · 확정된 오늘은 다시 묻지 않는다 -------------------------------------
+// --- 2. final 은 한국 20:30 — 지난 날 · 확정된 오늘은 다시 묻지 않는다 -------------------------------------
+// 예전 18:00 — 2026-09-14 KRX 애프터마켓(16:00~20:00)이 생긴 뒤 그날 투자자별 값이 20:00 까지 바뀌는지 확인하지 못해, 어느 쪽이든
+// 틀리지 않게 20:30 으로 늦췄다(2026-11-02 사용자 결정).
 {
-  NOW = kst('2026-10-27T17:59');
+  NOW = kst('2026-10-27T20:29');
   reply = base();
   calls.length = 0;
   let r = await extras();
-  check('final 은 한국 18:00 — 17:59 의 오늘은 잠정', same(r.spotFlows.map((f) => f.final), [true, true, false]), JSON.stringify(r.spotFlows));
+  check('final 은 한국 20:30 — 20:29 의 오늘은 잠정', same(r.spotFlows.map((f) => f.final), [true, true, false]), JSON.stringify(r.spotFlows));
   check('지난 날은 다시 묻지 않는다(1번에서 확정) · 잠정인 오늘은 묻는다', same(trendDates('KOSPI'), ['20261027']), trendDates('KOSPI').join(' '));
-  NOW = kst('2026-10-27T18:00');
+  NOW = kst('2026-10-27T20:30');
   calls.length = 0;
   r = await extras();
-  check('18:00 이면 오늘도 확정', r.spotFlows.at(-1).final === true && same(trendDates('KOSPI'), ['20261027']), JSON.stringify(r.spotFlows.at(-1)));
+  check('20:30 이면 오늘도 확정', r.spotFlows.at(-1).final === true && same(trendDates('KOSPI'), ['20261027']), JSON.stringify(r.spotFlows.at(-1)));
   calls.length = 0;
-  NOW = kst('2026-10-27T18:01');
+  NOW = kst('2026-10-27T20:31');
   await extras();
   check('확정된 오늘은 다시 묻지 않는다', trendDates('KOSPI').length === 0 && trendDates('FUT').length === 0, calls.join(' '));
 }

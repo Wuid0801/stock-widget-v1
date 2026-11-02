@@ -17,7 +17,7 @@ const mark = (text) => {
   assert.equal(source.indexOf(text, i + 1), -1, `렌더러 표식이 둘 이상: ${text}`);
   return i;
 };
-const prelude = source.slice(0, mark('// 과열도 5단계'));
+const prelude = source.slice(0, mark('// 과열도 단계'));
 // 가격 포맷(fmt · money · curOf …). 화살표 함수라 realFunction 으로 못 꺼내 구획째 넣는다.
 const formatting = source.slice(mark('// --- 포맷'), mark('// 색은 CSS 변수 한 곳에서만'));
 function realFunction(name) {
@@ -1406,6 +1406,12 @@ await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its
   assert.ok(t.includes('비중 보유 2종목 중 84.0% · 균등이면 50.0%'), '2,616 / (2,616 + 499)');
   assert.ok(t.includes(`반등 점검 고점 ${won(289.5)} → 저점 ${won(rb.low)} (${pct(rb.dropPct)}) · ${rb.retrace.toFixed(0)}% 되돌림`));
   assert.ok(t.includes(`20일선 ${rb.aboveMa20 ? '위' : '아래'} · RSI ${rb.rsi.toFixed(0)} · 반등 거래량 하락 때의 ${rb.volRatio.toFixed(1)}배`));
+  // '20일선 위 · RSI 50 위 · 거래량 실린 반등일수록 힘이 있다' 는 검증에서 앞 둘이 반대로 나왔다 — 검증 결과로 바꾼다(2026-11-02 점검 2단계)
+  assert.doesNotMatch(html, /힘이 있다고 봅니다/);
+  const rbEv = run('REBOUND_EVIDENCE');
+  assert.match(rbEv, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): 반등 중인 날 뒤 20거래일은 평소보다 \+0\.8%p\(29곳 중 21곳 나음\)/);
+  assert.match(rbEv, /20일선 위\(\+0\.6%p\) · RSI 50 위\(\+0\.4%p\)는 오히려 그 아래\(\+1\.0 · \+1\.0%p\)보다 작았고, 거래량이 실린 반등\(\+1\.2%p\)만 그렇지 않은 반등\(\+0\.6%p\)보다 컸다/);
+  assert.ok(html.includes(`결론은 내리지 않습니다\n${rbEv}"><span class="mxmute">반등 점검`), '반등 점검 툴팁 끝에 과거 검증');
   // 급락(RSI 30 아래)으로 B3 에 들었고, 반등 중이어도 20일선이 아직 60일선 아래라 B3 — 다음은 A1
   assert.equal(`${egg.prev} → ${egg.phase} · 다음 ${egg.next}`, 'B1 → B3 · 다음 A1', JSON.stringify(egg));
   assert.ok(t.includes(`코스톨라니 B1 → B3 · ${egg.days}일째 · 투매 · 다음 A1 (해석)`), '직전 → 지금 · 일수 · 다음');
@@ -3062,7 +3068,8 @@ await test('market panel: flows show the last final day, the streak, and today\'
   assert.match(spot, /<span class="mval">\+3,300억<\/span>/, '마지막 확정일 값(억 원)');
   assert.match(spot, /2일 연속 순매수/);
   assert.match(spot, /오늘 잠정 \+4,080억/);
-  assert.match(html, /data-key="SPOT" title="외국인 순매수\(억 원\) 10\/26 확정 · 18:00 전 오늘 값은 잠정"/);
+  // 확정은 20:30(예전 18:00 — KRX 애프터마켓 16:00~20:00 뒤로 맞는지 몰라 늦췄다, 2026-11-02 사용자 결정)
+  assert.match(html, /data-key="SPOT" title="외국인 순매수\(억 원\) 10\/26 확정 · 20:30 전 오늘 값은 잠정"/);
   assert.match(keyRow(html, 'FUTFLOW'), /1일 연속 순매도/);
   assert.doesNotMatch(html, /data-sym="[^"]*"[^>]*data-key="SPOT"/, '수급 줄은 누를 수 없다');
 });
@@ -3198,7 +3205,9 @@ await test('market panel: summary counts verdicts and says how many could be jud
   // 툴팁에 판정마다 어느 지표인지(점검 순서대로) — 2026-10-30 사용자 요청
   assert.equal(/class="qhint msum" title="([^"]*)"/.exec(html)[1],
     '긍정: 외국인 현물 · 외국인 선물 · 미국 HY OAS\n중립: SOX\n위험: 원/달러 · 미국채 10년\n판정 불가: VIX\n'
-    + '경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다');
+    + `경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다\n${h.run('DEADCAT_EVIDENCE')}`);
+  // 과거 검증(2026-11-02 점검 2단계) — 일곱 기준 모두 코스피 20거래일 뒤를 우연 이상으로 가르지 못했다
+  assert.match(h.run('DEADCAT_EVIDENCE'), /^과거 검증\(코스피 20거래일 뒤, 2016~2026 — HY OAS 는 2023~\): 일곱 기준 모두 긍정 · 위험 날이 평소와 우연 이상으로 다르지 않았다/);
   assert.doesNotMatch(html, /데드캣(이다|입니다|아님|가능성)/, '결론을 내리지 않는다');
   h.run(CHECKS(['good', 'good', 'neutral', 'risk', 'good', 'good', 'risk']));
   const all = h.c.marketHtml();
@@ -3210,8 +3219,11 @@ await test('market panel: each checked row has a dot with its rule detail in the
   const h = marketHarness();
   h.run(CHECKS(['good', null, 'neutral', 'good', 'risk', null, 'neutral']));
   const html = h.c.marketHtml();
-  assert.match(rowOf(html, '^VIX'), /<span class="mdot risk" title="vix 근거 숫자"><\/span>/);
-  assert.match(rowOf(html, '^SOX'), /<span class="mdot neutral" title="sox 근거 숫자"><\/span>/);
+  // 점 툴팁 = 그날 근거 + 그 기준의 과거 검증(CHECK_EVIDENCE, 2026-11-02)
+  assert.match(rowOf(html, '^VIX'), new RegExp(`<span class="mdot risk" title="vix 근거 숫자\n${h.run('CHECK_EVIDENCE.vix').replace(/[()+.]/g, '\\$&')}"></span>`));
+  assert.match(rowOf(html, '^SOX'), /<span class="mdot neutral" title="sox 근거 숫자\n과거 검증[^"]*"><\/span>/);
+  assert.match(h.run('CHECK_EVIDENCE.sox'), /긍정 날 \+0\.5%p · 위험 날 −0\.3%p/);
+  assert.equal(Object.keys(h.run('CHECK_EVIDENCE')).sort().join(), 'futures,hyoas,sox,spot,us10y,usdkrw,vix', '일곱 기준 모두');
   assert.match(rowOf(html, 'KRW=X'), /<span class="mdot good"/);
   assert.doesNotMatch(rowOf(html, '^KS11'), /mdot/, '점검 대상이 아니면 점이 없다');
   assert.doesNotMatch(rowOf(html, 'CL=F'), /mdot/);
@@ -3319,7 +3331,7 @@ await test('market panel: a row without data stays as — and a checked one gets
   const html = h.c.marketHtml();
   for (const key of ['SPOT', 'FUTFLOW', 'HYOAS']) {
     const row = keyRow(html, key);
-    assert.match(row, /<span class="mdot none" title="데이터 부족"><\/span>/, key);
+    assert.match(row, /<span class="mdot none" title="데이터 부족\n과거 검증[^"]*"><\/span>/, key); // 판정 불가여도 그 기준의 검증은 보인다
     assert.match(row, /<span class="mval">—<\/span>/, key);
   }
   assert.match(keyRow(html, 'HYOAS'), /미국 HY OAS/);
@@ -3462,6 +3474,21 @@ await test('loadQuote keeps a weekly RSI next to the daily one — the same dail
   assert.ok(want > 0 && want < 100, String(want));
   assert.equal(q.rsiWeek, want, '주간 종가에 같은 RSI');
   assert.notEqual(q.rsiWeek, q.rsi, '일봉 RSI 와는 다른 값');
+});
+
+// 과열도는 세 단계 — 2단계 검증(2026-11-02)에서 30 미만만 20거래일 뒤가 평소와 달랐고(+1.87%p, 23/29) 30~45(주의) · 45~70(안정) ·
+// 70~80(과열) · 80 이상(극과열)은 모두 평소 수준이라 45 · 80 경계를 없앴다(사용자 결정). 70 이상은 '과열' 이지만 팔 신호는 아니었다.
+await test('RSI level has three steps: 과매도 under 30, 보통 30~70, 과열 from 70', () => {
+  const { c, run } = harness(['levelOf']);
+  c.cssVar = (n) => (n === '--flat' ? '#888888' : n);
+  const lv = (x) => run(`JSON.stringify(levelOf(${x}))`);
+  assert.equal(lv(29.9), JSON.stringify({ label: '과매도', color: '#185fa5' }));
+  assert.equal(lv(30), JSON.stringify({ label: '보통', color: '#888888' }));
+  assert.equal(lv(69.9), JSON.stringify({ label: '보통', color: '#888888' }));
+  assert.equal(lv(70), JSON.stringify({ label: '과열', color: '#e8862a' }));
+  assert.equal(lv(92), JSON.stringify({ label: '과열', color: '#e8862a' }), '극과열 단계는 없다');
+  assert.equal(lv('null'), JSON.stringify({ label: '—', color: '--dot-off' }));
+  assert.match(run('RSI_EVIDENCE'), /30~70 은 어디나 평소와 같았다/, '배지 툴팁에 세 단계의 근거');
 });
 
 await test('RSI badge tooltip shows daily and weekly RSI; the badge itself stays on daily RSI', () => {

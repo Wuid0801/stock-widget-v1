@@ -117,7 +117,7 @@ function k200At(t, spot, mins) {
 //    오늘 등락은 어제 베이시스(같은 날 종가끼리) 대비, 5일 변화 · 미니 선은 날마다의 베이시스에 지금 값을 이은 것.
 //  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(억 원 — 네이버 화면은 단위를 적지 않지만 10/23 선물
 //    +4,514 가 다음 금융 금액 4,514억(계약으로는 2,177)과 같았다, 2026-11-02 확인), 5일 변화 자리에 확정일 끝에서 같은 부호가 이어진
-//    날 수, 18:00 전 오늘 값은 잠정이라 메모에 따로.
+//    날 수, 20:30 전 오늘 값은 잠정이라 메모에 따로(main FLOW_FINAL).
 //  - HYOAS 미국 HY OAS: 마지막 값(%), 오늘 등락은 앞 줄 · 5일 변화는 다섯 줄 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다).
 //  - INTRA_* 장중 수급(다음 금융, main 의 intraday): 값 = 코스피 현물 누적 순매수(억), 오늘 등락 자리 = 코스피200 선물 누적(억 —
 //    처음엔 계약이었는데 현물과 견주기 어려웠다, 부호 색), 5일 변화 자리 = 최근 30분 현물 변화(그 시각 또는 그 앞의 마지막 값 대비 — 없으면 —), 미니 선 = 오늘 현물 누적.
@@ -167,7 +167,7 @@ function marketExtraRow(key) {
       d5: null, d5Unit: '%', valueText: `${signed(last.foreign)}억`, dayText: '', dayTone: last.foreign,
       d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
       note: today ? `오늘 잠정 ${signed(today.foreign)}억` : '',
-      title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 · 18:00 전 오늘 값은 잠정`,
+      title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 · 20:30 전 오늘 값은 잠정`,
       spark: done.slice(-20).map((f) => f.foreign) };
   }
   if (key === 'HYOAS') {
@@ -280,7 +280,9 @@ function marketHtml() {
         : `<div class="rrow mrow mfix" data-key="${r.key}"${tip ? ` title="${esc(tip)}"` : ''}>`;
       const chk = checkOf.get(r.key);
       if (chk) names.set(chk.key, r.name);
-      const dot = chk ? `<span class="mdot ${chk.verdict || 'none'}" title="${esc(chk.detail)}"></span>` : '<span class="mdsp"></span>';
+      // 점 툴팁 = 그날 근거 + 그 기준의 과거 검증(CHECK_EVIDENCE, 2026-11-02)
+      const dot = chk ? `<span class="mdot ${chk.verdict || 'none'}" title="${esc(`${chk.detail}\n${CHECK_EVIDENCE[chk.key]}`)}"></span>`
+        : '<span class="mdsp"></span>';
       out.push(`${open}${dot}<span class="hname"><span class="mname">${esc(r.name)}</span>${r.note ? `<span class="mnote"${r.noteTitle ? ` title="${esc(r.noteTitle)}"` : ''}>${esc(r.note)}</span>` : ''}</span>`
         + `<span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
         + `<span class="rpct" style="color:${tone(r.dayTone != null ? r.dayTone : bp ? r.change : r.pct)}">${day}</span>`
@@ -293,7 +295,7 @@ function marketHtml() {
   const listOf = (v) => checks.filter((c) => c.verdict === v).map((c) => names.get(c.key)).join(' · ');
   const tip = [['긍정', 'good'], ['중립', 'neutral'], ['위험', 'risk'], ['판정 불가', null]]
     .map(([label, v]) => (listOf(v) ? `${label}: ${listOf(v)}\n` : '')).join('');
-  return `<div class="qhint msum" title="${esc(`${tip}경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다`)}">데드캣 점검 · 긍정 ${count('good')}`
+  return `<div class="qhint msum" title="${esc(`${tip}경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다\n${DEADCAT_EVIDENCE}`)}">데드캣 점검 · 긍정 ${count('good')}`
     + ` · 중립 ${count('neutral')} · 위험 ${count('risk')} (참고용)${judged < checks.length ? ` · 판정 ${judged}/${checks.length}` : ''}</div>`
     + out.join('');
 }

@@ -111,8 +111,8 @@ function techHtml(item) {
       rb.volRatio == null ? null : `반등 거래량 하락 때의 ${rb.volRatio.toFixed(1)}배`].filter(Boolean);
     out.push(line('반등 점검', `고점 ${money(rb.high, cur)} → 저점 ${money(rb.low, cur)} (${pct(rb.dropPct)}) · <b>${rb.retrace.toFixed(0)}%</b> 되돌림`
       + (more.length ? `<br><span class="mxmute">${more.join(' · ')}</span>` : ''),
-      `최근 ${REBOUND_DAYS}거래일 고점에서 ${REBOUND_DROP}% 넘게 빠진 뒤 반등 중일 때만 — 진짜 반등인지(데드캣) 볼 때 흔히 보는 조건입니다. `
-      + '20일선 위 · RSI 50 위 · 하락 때만큼 거래량이 실린 반등일수록 힘이 있다고 봅니다. 결론은 내리지 않습니다'));
+      `최근 ${REBOUND_DAYS}거래일 고점에서 ${REBOUND_DROP}% 넘게 빠진 뒤 반등 중일 때만 — 진짜 반등인지(데드캣) 볼 때 흔히 보는 `
+      + `20일선 · RSI · 반등 거래량을 함께 적습니다. 결론은 내리지 않습니다\n${REBOUND_EVIDENCE}`));
   }
   const egg = eggPhase(d.closes, vols);
   if (egg) {
