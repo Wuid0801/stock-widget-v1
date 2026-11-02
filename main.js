@@ -42,6 +42,8 @@ const FETCH_TIMEOUT = 8000;
 const netError = (e) => {
   if (e?.name === 'TimeoutError') return new Error('응답 시간 초과');
   if (e instanceof TypeError && e.message === 'fetch failed') return new Error('네트워크 연결 실패');
+  // Electron net.fetch(FRED)는 Chromium 오류 코드('net::ERR_INTERNET_DISCONNECTED' 등)로 실패한다 — 원인이 갈리니 코드는 남긴다
+  if (/^net::ERR_/.test(e?.message || '')) return new Error(`네트워크 오류 (${e.message.slice(5)})`);
   return e;
 };
 // via 는 보낼 fetch — 기본은 Node fetch, FRED 만 Electron net.fetch(fredHyOas).
@@ -625,7 +627,8 @@ async function usdKrwItem() {
 }
 
 // --- 시장 지표 화면(market:extras) ---------------------------------------------------------
-// 순위 패널의 '지표' 가 열려 있을 때 1분마다 묻는다. 여덟 부분은 따로 받아 하나가 실패해도 나머지는 온다(실패한 부분은 null).
+// 순위 패널의 '지표' 가 열려 있을 때 1분마다 묻는다. 여덟 부분은 따로 받아 하나가 실패해도 나머지는 온다(실패한 부분은 null,
+// 이유는 errors[부분]).
 // - 외국인 현물 · 선물 수급: 네이버 모바일 지수 수급(trend?bizdate=) — 날짜를 주면 그날 값이다. 휴장일 · 미래 날짜도 오류 없이
 //   0 을 줘서(2026-10-27 실측 10/25 토 · 10/28) 코스피 일봉에 있는 날만 묻는다. 지난 날과 20:30 뒤의 오늘은 확정이라 기억한다.
 // - 코스피 · 코스피200 선물 · 코스피200 현물 일별 종가: 네이버 지수 일봉(최근 30일) — 장중에는 오늘 행이 있다.
@@ -768,8 +771,14 @@ ipcMain.handle('market:extras', async () => {
   if (parts.every((p) => p.status === 'rejected')) {
     return { ok: false, error: parts[0].reason?.message || '시장 지표 조회 실패' };
   }
-  const [spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days, k200Min, intraday] = parts.map((p) => (p.status === 'fulfilled' ? p.value : null));
-  return { ok: true, spotFlows, futFlows, kospiDays, futDays, hyOas, k200Days, k200Min, intraday, at: new Date(now).toISOString() };
+  // 실패한 부분은 null, 그 이유는 errors[부분] — 지표 화면이 빈 줄의 메모에 적는다(2026-11-02)
+  const names = ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday'];
+  const out = { ok: true, errors: {} };
+  parts.forEach((p, i) => {
+    out[names[i]] = p.status === 'fulfilled' ? p.value : null;
+    if (p.status === 'rejected') out.errors[names[i]] = p.reason?.message || '알 수 없는 오류';
+  });
+  return { ...out, at: new Date(now).toISOString() };
 });
 
 // 원/달러 환율. 포트폴리오 합계에서 달러 종목을 원화로 환산할 때만 쓴다.

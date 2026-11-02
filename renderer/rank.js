@@ -223,6 +223,15 @@ function marketExtraRow(key) {
   return null;
 }
 
+// 지표 화면에만 있는 줄이 비었을 때 그 이유 — 그 부분(main 의 market:extras errors)이나 응답 전체가 실패했으면 그 문구, 아니면
+// null(아직 못 받음 · 확정된 날 없음 등). 지수 줄(시세)과 베이시스는 market:extras 의 한 부분이 아니라 없다.
+function marketExtraError(key) {
+  const part = key in INTRADAY_FIELD ? 'intraday' : { SPOT: 'spotFlows', FUTFLOW: 'futFlows', HYOAS: 'hyOas' }[key];
+  const d = part && marketExtras && marketExtras.d;
+  if (!d) return null;
+  return (d.ok ? d.errors && d.errors[part] : d.error) || null;
+}
+
 // 장중 수급 묶음 제목 — 칸의 단위와 마지막 현물 값의 시각. 오늘이 아니면(장 전 · 휴장일 — 마지막 거래일 값이다) 날짜도.
 function intradayTitle() {
   const it = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d.intraday : null;
@@ -271,9 +280,17 @@ function marketHtml() {
   const names = new Map(); // 판정 key → 줄 이름(요약 툴팁에 판정별로 적는다)
   const out = [];
   for (const [title, keys] of MARKET_GROUPS) {
-    // 데이터가 없으면(출처 실패 · 아직 못 받음) 줄을 빼지 않고 — 로 둔다(설계 ④) — 점검 대상이면 점은 테두리만(판정 불가)
-    const rows = keys.map((key) => marketRow(key) || { key, symbol: null, valueText: '—', dayText: '—', d5Text: '—', note: '',
-      name: (INDICES.find((i) => i.code === key) || {}).name || MARKET_EXTRA_NAMES[key] });
+    // 데이터가 없으면(출처 실패 · 아직 못 받음) 줄을 빼지 않고 — 로 둔다(설계 ④) — 점검 대상이면 점은 테두리만(판정 불가).
+    // 받다 실패한 것이면 메모에 이유, 메모 툴팁에 그 시각(2026-11-02 — HY OAS 가 — 로만 남아 왜 비었는지 알 수 없었다)
+    const rows = keys.map((key) => {
+      const row = marketRow(key);
+      if (row) return row;
+      const err = marketExtraError(key);
+      const at = err ? new Date(marketExtras.at + 9 * 3600000).toISOString().slice(11, 16) : '';
+      return { key, symbol: null, valueText: '—', dayText: '—', d5Text: '—', note: err ? `실패 · ${err}` : '',
+        noteTitle: err ? `${at} 에 받지 못했다: ${err}\n지표 화면이 열려 있으면 1분마다 다시 묻는다` : '',
+        name: (INDICES.find((i) => i.code === key) || {}).name || MARKET_EXTRA_NAMES[key] };
+    });
     out.push(`<div class="qhint rnote mgroup">${title === INTRADAY_GROUP ? intradayTitle() : title}</div>`);
     for (const r of rows) {
       const bp = r.d5Unit === 'bp';

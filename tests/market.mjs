@@ -152,11 +152,20 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   let r = await extras();
   check('FRED 가 500 이면 hyOas 만 null', r.ok === true && r.hyOas === null && r.spotFlows?.length === 4 && r.kospiDays?.length === 4,
     JSON.stringify(r).slice(0, 200));
+  // 실패한 부분은 errors 에 이유(한글 문구) — 지표 화면이 빈 줄 메모에 적는다(2026-11-02)
+  check('실패한 부분의 이유를 errors 에', r.errors?.hyOas === 'HTTP 500' && !('spotFlows' in r.errors) && !('kospiDays' in r.errors),
+    JSON.stringify(r.errors));
+  reply = { ...base(), fred: new Error('net::ERR_INTERNET_DISCONNECTED') }; // Electron net.fetch 는 Chromium 오류 코드로 실패한다
+  NOW += 7 * 3600000;
+  r = await extras();
+  check('net.fetch 의 Chromium 오류는 한글로 — 코드는 괄호에', r.errors?.hyOas === '네트워크 오류 (ERR_INTERNET_DISCONNECTED)', JSON.stringify(r.errors));
   reply = { ...base(), kospiDay: new TypeError('fetch failed') };
   NOW += 7 * 3600000;
   r = await extras();
   check('코스피 일봉이 실패하면 수급도 null(거래일을 모른다) — 선물 일봉 · HY OAS 는 온다', r.ok === true && r.spotFlows === null
     && r.futFlows === null && r.kospiDays === null && r.futDays?.length === 3 && r.hyOas?.length === 2, JSON.stringify(r).slice(0, 200));
+  check('수급의 이유는 코스피 일봉의 실패', r.errors?.spotFlows === '네트워크 연결 실패' && r.errors?.futFlows === '네트워크 연결 실패'
+    && r.errors?.kospiDays === '네트워크 연결 실패' && !('hyOas' in r.errors), JSON.stringify(r.errors));
   reply = { kospiDay: new TypeError('fetch failed'), futDay: new TypeError('fetch failed'), spot: new TypeError('x'), fut: new TypeError('x'), fred: { status: 500 } };
   NOW += 7 * 3600000;
   r = await extras();

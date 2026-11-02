@@ -2925,8 +2925,8 @@ const MARKET_ITEMS = `indexItems = [
   { code: 'NQ', name: '나스닥 선물', value: 29358.25, change: -79.5, pct: -0.27 }, { code: 'WTI', name: 'WTI', value: 101.04, change: -0.72, pct: -0.71 },
   { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }, { code: 'USDKRW', name: '원/달러', value: 1323.23, change: -1.94, pct: -0.15 }];`;
 const marketHarness = (extra = []) => {
-  const h = harness(['marketRow', 'marketExtraRow', 'marketHtml', 'marketCheckInput', 'sparkSvg', 'renderRank', 'setRankView', 'rankClick', 'rankHtml',
-    'dailyVolumesOf', 'k200At', 'intradayTitle', ...extra]);
+  const h = harness(['marketRow', 'marketExtraRow', 'marketExtraError', 'marketHtml', 'marketCheckInput', 'sparkSvg', 'renderRank', 'setRankView',
+    'rankClick', 'rankHtml', 'dailyVolumesOf', 'k200At', 'intradayTitle', ...extra]);
   if (!extra.includes('loadMarket')) h.c.loadMarket = async () => {}; // 지표 화면을 열면 market:extras 를 묻는다 — 따로 본다
   h.run(formatting);
   h.run(source.match(/^let indexItems = .*$/m)[0]);
@@ -3348,6 +3348,28 @@ await test('market panel: a row without data stays as — and a checked one gets
   assert.match(keyRow(html, 'HYOAS'), /미국 HY OAS/);
   assert.match(keyRow(html, 'FUT'), /코스피200 선물/, '점검 대상이 아닌 줄도 — 로 남는다');
   assert.match(html, /<div class="rrow mrow mfix" data-key="SPOT"/, '누를 수 없다');
+});
+
+// 빈 줄이 받다 실패한 것이면 이름 아래 메모에 이유, 메모 툴팁에 그 시각 — 예전에는 — 만 남아 HY OAS 가 왜 비었는지 화면으로는
+// 알 수 없었다(2026-11-02, Electron 안에서 FRED 시간 초과). 2026-11-02 사용자 요청.
+await test('market panel: an empty row says why it failed', () => {
+  const h = marketHarness();
+  h.run(`marketExtras = { at: ${kstMs('2026-09-10T16:05')}, d: { ok: true, spotFlows: [{ date: '20260909', foreign: 3300, final: true }],
+    futFlows: null, kospiDays: null, futDays: null, hyOas: null, intraday: null, errors: { hyOas: '응답 시간 초과', intraday: 'HTTP 503' } } };`);
+  let html = h.c.marketHtml();
+  assert.match(keyRow(html, 'HYOAS'), /<span class="mval">—<\/span>/);
+  assert.match(keyRow(html, 'HYOAS'), /<span class="mnote" title="16:05 에 받지 못했다: 응답 시간 초과\n지표 화면이 열려 있으면 1분마다 다시 묻는다">실패 · 응답 시간 초과<\/span>/);
+  for (const k of ['INTRA_FOREIGN', 'INTRA_PROGRAM']) assert.match(keyRow(html, k), />실패 · HTTP 503<\/span>/, k);
+  assert.doesNotMatch(keyRow(html, 'FUTFLOW'), /mnote/, '실패 이유가 없으면(아직 없음 등) 메모도 없다');
+  assert.doesNotMatch(keyRow(html, 'SPOT'), /실패/, '받은 줄');
+  // 응답 전체가 실패(있던 값도 없음) — 지표 화면에만 있는 줄 모두에 그 오류. 지수 줄(시세)과 베이시스는 market:extras 가 아니다
+  h.run(`marketExtras = { at: ${kstMs('2026-09-10T16:06')}, d: { ok: false, error: '네트워크 연결 실패' } }; indexItems = [];`);
+  html = h.c.marketHtml();
+  for (const k of ['SPOT', 'FUTFLOW', 'HYOAS', 'INTRA_FOREIGN']) assert.match(keyRow(html, k), />실패 · 네트워크 연결 실패<\/span>/, k);
+  for (const k of ['VIX', 'FUT', 'BASIS']) assert.doesNotMatch(keyRow(html, k), /실패/, k);
+  // 아직 받지 않았으면 이유도 없다
+  h.run('marketExtras = null;');
+  assert.doesNotMatch(h.c.marketHtml(), /실패 ·/);
 });
 
 await test('choosing an index from a zoomed stock drops every zoom and re-marks the index line', async () => {
