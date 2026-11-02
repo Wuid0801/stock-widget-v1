@@ -349,11 +349,12 @@ let marketExtras = null; // { at, d(market:extras 응답) }
 let marketLoading = false;
 // 관심종목 일정(실적 발표 · 잠정실적 공시 · 배당락). 종목마다 30분 쓴다 — 오늘 낸 잠정실적 공시(다음 금융)를 늦지 않게 보이려고
 // (예전 6시간, 2026-10-30). 네이버 일정은 main 이 6시간 기억해 네이버 요청은 예전과 같다. 종목 수만큼 요청이 나간다.
-const eventCache = new Map(); // symbol -> { at, events: [{ kind: 'ir' | 'irEst' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
+const eventCache = new Map(); // symbol -> { at, events: [{ kind: 'ir' | 'irEst' | 'irPast' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
 let eventsBusy = false;
 const EVENT_TTL = 30 * 60000;
-const EVENT_LABEL = { ir: '실적', irEst: '실적 예상', exdiv: '배당락' }; // 목록 칩의 이름(eventBadge)
+const EVENT_LABEL = { ir: '실적', irEst: '실적 예상', irPast: '실적', exdiv: '배당락' }; // 목록 칩의 이름(eventBadge)
 const EVENT_DAYS = 14; // 이만큼 남았을 때부터 목록에 보인다
+const EVENT_PAST_DAYS = 7; // 지난 잠정실적(irPast)은 다음 날부터 이만큼 '실적 D+3' 으로 보인다(2026-11-02 사용자 요청 — 일주일)
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
 let marketOpen = true;

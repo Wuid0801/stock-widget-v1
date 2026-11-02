@@ -243,6 +243,8 @@ const shiftIso = (iso, days, years = 0) => {
   return d.toISOString().slice(0, 10);
 };
 const prelim = (day, name = '연결재무제표기준영업(잠정)실적(공정공시)') => ({ no: '20261030800916', day, name });
+// 가장 최근에 지난 잠정실적 공시(2026-11-02 사용자 요청) — 날짜만 준다. 얼마나 보일지(일주일)는 렌더러가 정한다(EVENT_PAST_DAYS).
+const past = (date) => ({ kind: 'irPast', title: '잠정실적 공시', date });
 {
   const events = (symbol) => handlers['naver:events']({}, symbol);
   const TODAY = kstIso(RealDate.now());
@@ -271,15 +273,16 @@ const prelim = (day, name = '연결재무제표기준영업(잠정)실적(공정
     prelim(shiftIso(TODAY, -60, -1), '영업(잠정)실적(공정공시)'), prelim(shiftIso(TODAY, -100))];
   e = await events('069500.KS');
   check('작년 공시일 + 1년이 앞으로 30일 안이면 예상 일정(정정 · 지난 날 · 먼 날은 뺀다)', JSON.stringify(e.events) === JSON.stringify([
-    { kind: 'irEst', title: `작년 같은 분기 잠정실적 공시일(${lastYear}) 기준 예상`, date: shiftIso(lastYear, 0, 1) }]), JSON.stringify(e));
+    past(shiftIso(TODAY, -100)), { kind: 'irEst', title: `작년 같은 분기 잠정실적 공시일(${lastYear}) 기준 예상`, date: shiftIso(lastYear, 0, 1) }]), JSON.stringify(e));
   FILINGS['069500'] = [prelim(lastYear), prelim(shiftIso(TODAY, -3))];
   e = await events('069500.KS');
-  check('올해 그 분기를 이미 냈으면(예상일 45일 앞부터 오늘 사이 공시) 예상하지 않는다', e.ok && e.events.length === 0, JSON.stringify(e));
+  check('올해 그 분기를 이미 냈으면(예상일 45일 앞부터 오늘 사이 공시) 예상하지 않는다 — 지난 공시만', JSON.stringify(e.events) === JSON.stringify([past(shiftIso(TODAY, -3))]),
+    JSON.stringify(e));
   // 미리 알린 일정(네이버)이 앞에 있으면 예상하지 않는다 — 삼성전자 10/29 를 아직 앞에 두려고 10/20 로 돌린다
   SHIFT = RealDate.parse('2026-10-20T12:00:00+09:00') - RealDate.now();
   FILINGS['005930'] = [prelim('2025-10-25')];
   e = await events('005930.KS');
-  check('미리 알린 일정이 앞에 있으면 예상 일정은 없다', JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }]),
+  check('미리 알린 일정이 앞에 있으면 예상 일정은 없다', JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }, past('2025-10-25')]),
     JSON.stringify(e));
 
   // 네이버 IR 일정은 그 분기 잠정실적을 아직 내지 않았을 때만 실적이다(2026-11-02 사용자 제보 — 효성중공업이 10/30 잠정실적 뒤
@@ -287,7 +290,7 @@ const prelim = (day, name = '연결재무제표기준영업(잠정)실적(공정
   // 컨퍼런스 · NDR — 대형주 14곳 IR 공시 97건 중 74건) 실적이 아니다. 아래 제목 · 날짜는 그 IR 공시(DART)의 개최목적 · 일시.
   FILINGS['005930'] = [prelim('2026-10-08')];
   e = await events('005930.KS');
-  check('월초 잠정실적 뒤의 컨퍼런스콜은 실적 일정이 아니다(실적 숫자는 이미 나왔다)', e.ok && e.events.length === 0, JSON.stringify(e));
+  check('월초 잠정실적 뒤의 컨퍼런스콜은 실적 일정이 아니다(실적 숫자는 이미 나왔다)', JSON.stringify(e.events) === JSON.stringify([past('2026-10-08')]), JSON.stringify(e));
   SHIFT = RealDate.parse('2026-10-29T12:00:00+09:00') - RealDate.now();
   FILINGS['005930'] = [prelim('2026-10-29')];
   e = await events('005930.KS');
@@ -299,15 +302,17 @@ const prelim = (day, name = '연결재무제표기준영업(잠정)실적(공정
   FX['298040'] = irInfo('2026년 3분기 경영실적 발표 및 질의응답', '2026-11-04');
   FILINGS['298040'] = [prelim('2026-10-30'), { no: '4', day: '2026-10-30', name: '기업설명회(IR)개최(안내공시)' }, prelim('2025-10-31')];
   e = await events('298040.KS');
-  check('효성중공업 — 잠정실적(10/30) 뒤의 기관 미팅(11/4)은 실적 D-2 가 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+  check('효성중공업 — 잠정실적(10/30) 뒤의 기관 미팅(11/4)은 실적 D-2 가 아니다 — 지난 공시(10/30)만', JSON.stringify(e.events) === JSON.stringify([past('2026-10-30')]),
+    JSON.stringify(e));
   FX['000270'] = irInfo('국내기관 방문 IR (Non-Deal Roadshow) 실시', '2026-11-05');
   FILINGS['000270'] = [prelim('2026-10-30'), prelim('2026-10-01', '영업(잠정)실적(공정공시)')];
   e = await events('000270.KS');
-  check('제목에 실적이 없는 IR(NDR · 컨퍼런스)은 실적 일정이 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+  check('제목에 실적이 없는 IR(NDR · 컨퍼런스)은 실적 일정이 아니다', JSON.stringify(e.events) === JSON.stringify([past('2026-10-30')]), JSON.stringify(e));
   SHIFT = RealDate.parse('2026-11-03T12:00:00+09:00') - RealDate.now();
   FILINGS['000270'] = [prelim('2026-10-30'), prelim('2026-11-03', '영업(잠정)실적(공정공시)')];
   e = await events('000270.KS');
-  check('연결 잠정실적을 내는 회사의 매달 별도 잠정실적(기아 · 현대차)은 실적 D-day 가 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+  check('연결 잠정실적을 내는 회사의 매달 별도 잠정실적(기아 · 현대차)은 실적 D-day 가 아니다', JSON.stringify(e.events) === JSON.stringify([past('2026-10-30')]),
+    JSON.stringify(e));
   SHIFT = 0;
   FILINGS['069500'] = [prelim(TODAY, '영업(잠정)실적(공정공시)')];
   e = await events('069500.KS');

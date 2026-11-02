@@ -4320,6 +4320,15 @@ await test('events: list chip counts days by the Korean date, shows the nearest 
   assert.equal(badge('Y', '2026-10-16T10:00:00'), JSON.stringify({ label: '실적 예상 D-3',
     title: '작년 같은 분기 잠정실적 공시일(2025-10-19) 기준 예상 · 10/19', est: true }));
   assert.equal(run("eventChip('Y')"), '<span class="evchip est" title="작년 같은 분기 잠정실적 공시일(2025-10-19) 기준 예상 · 10/19">실적 예상 D-3</span>');
+  // 지난 잠정실적(main 의 irPast, 2026-11-02 사용자 요청) — 공시 다음 날부터 일주일 동안 흐린 칩 '실적 D+3'. 다가올 일정이 14일 안이면 그것이 먼저
+  run(`eventCache.set('Z', { at: 0, events: [{ kind: 'irPast', title: '잠정실적 공시', date: '2026-10-30' }] });`);
+  assert.equal(badge('Z', '2026-11-02T10:00:00'), JSON.stringify({ label: '실적 D+3', title: '잠정실적 공시 · 10/30', past: true }));
+  assert.equal(JSON.parse(badge('Z', '2026-11-06T23:59:00')).label, '실적 D+7', '일주일까지');
+  assert.equal(badge('Z', '2026-11-07T00:01:00'), 'null', '8일째부터는 없다');
+  c.Date.now = () => at('2026-11-02T10:00:00');
+  assert.equal(run("eventChip('Z')"), '<span class="evchip past" title="잠정실적 공시 · 10/30">실적 D+3</span>');
+  run(`eventCache.get('Z').events.push({ kind: 'exdiv', title: '배당락일', date: '2026-11-10' });`);
+  assert.equal(JSON.parse(badge('Z', '2026-11-02T10:00:00')).label, '배당락 D-8', '다가올 일정이 14일 안이면 그것이 먼저');
   c.Date.now = realNow;
   // 목록 줄은 이름 옆에 칩을 둔다(이름은 말줄임, 칩은 늘 보인다)
   assert.match(realFunction('renderList'), /<span class="nrow"><span class="name">\$\{esc\(item\.name\)\}<\/span>\$\{eventChip\(item\.symbol\)\}<\/span>/);

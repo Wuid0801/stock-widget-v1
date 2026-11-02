@@ -1073,7 +1073,7 @@ ipcMain.handle('naver:detail', async (_e, symbol) => {
 // 렌더러가 종목마다 30분마다 부른다. 네이버 부분 — 국내는 종목 상세의 (미리 알린) 실적 발표 일정, 미국은 해외 종목 정보의
 // 배당락일(네이버 해외 응답에는 실적 발표일이 없다) — 은 6시간 기억하고(예전 렌더러 주기), 국내는 다음 금융 공시 목록을 매번 본다
 // (prelimEvents — 오늘 잠정실적을 30분 안에 보이려고). 일정이 없으면 빈 목록(실패가 아니다). 네이버가 실패하면 ok:false.
-// 돌려주는 값: { ok, events: [{ kind: 'ir' | 'irEst' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
+// 돌려주는 값: { ok, events: [{ kind: 'ir' | 'irEst' | 'irPast' | 'exdiv', title, date: 'YYYY-MM-DD' }] }
 const EVENT_NAVER_TTL = 6 * 3600000;
 const naverEventCache = new Map(); // 기호 → { at, events } — 실패는 기억하지 않는다
 
@@ -1103,7 +1103,9 @@ async function daumFilings(code) {
 // 잠정실적 공시로 본 일정(2026-10-30 사용자 제보 — 효성중공업은 실적 발표 일정을 미리 알리지 않고 잠정실적 · IR 안내를 같은 날
 // 공시해(7/31 · 10/30) 네이버 일정이 없었고 D-day 가 뜨지 않았다). 공시 이름에 '영업(잠정)실적'이 든 것(prelimDays).
 //  - 오늘 공시했으면 { kind: 'ir', title: '잠정실적 공시', date: 오늘 } — 칩은 '실적 D-day'
-//  - 아니면, 미리 알린 일정(announced)이 오늘 이후에 없을 때 작년 공시일 + 1년이 앞으로 30일 안이면 { kind: 'irEst' }(추정).
+//  - 아니면 가장 최근에 지난 공시 { kind: 'irPast' } — 렌더러가 다음 날부터 일주일 동안 흐린 '실적 D+3' 으로 보인다
+//    (EVENT_PAST_DAYS, 2026-11-02 사용자 요청 — 효성중공업이 10/30 잠정실적 뒤 11/2 에 +13% 였는데 실적 때문인지 목록에 안 보였다)
+//  - 그리고 미리 알린 일정(announced)이 오늘 이후에 없을 때 작년 공시일 + 1년이 앞으로 30일 안이면 { kind: 'irEst' }(추정).
 //    올해 그 분기를 이미 냈으면(그 날 45일 앞부터 오늘 사이에 공시가 있으면) 뺀다.
 const PRELIM_RE = /영업\(잠정\)실적/;
 
@@ -1139,9 +1141,10 @@ function prelimEvents(rows, announced, now) {
   const today = iso(now + 9 * 3600000);
   const days = prelimDays(rows);
   if (days.includes(today)) return [{ kind: 'ir', title: '잠정실적 공시', date: today }];
-  if (announced.some((e) => e.date >= today)) return [];
+  const last = days.filter((d) => d < today).pop();
+  const out = last ? [{ kind: 'irPast', title: '잠정실적 공시', date: last }] : [];
+  if (announced.some((e) => e.date >= today)) return out;
   const horizon = iso(at(today) + 30 * 86400000);
-  const out = [];
   for (const d of days) {
     const p = iso(Date.UTC(Number(d.slice(0, 4)) + 1, Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))));
     if (p < today || p > horizon) continue;

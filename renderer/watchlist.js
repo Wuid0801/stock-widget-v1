@@ -36,26 +36,34 @@ function candleTag(q, cur) {
 // 목록 이름 옆의 일정 칩 — 가장 가까운 일정이 EVENT_DAYS 안이면 '실적 D-3' · '배당락 D-day'. 지표 화면을 열어야만
 // 보이던 것. 날짜는 한국 날짜로 센다(네이버가 주는 D-day 숫자는 받은 날 기준이라 날을 넘기면 틀린다). 지난 일정은 없다.
 // 작년 잠정실적 공시일로 본 예상 일정(irEst, 2026-10-30)은 '실적 예상 D-3' 이고 칩을 점선으로(est) 구분한다 — 추정이다.
+// 지난 잠정실적 공시(irPast, 2026-11-02)는 다가올 일정이 없을 때만, 다음 날부터 EVENT_PAST_DAYS 동안 흐린 '실적 D+3'(past)이다.
 function eventBadge(symbol, nowMs = Date.now()) {
   const hit = eventCache.get(symbol);
   if (!hit || !hit.events) return null;
   const today = Math.floor((nowMs + 9 * 3600000) / 86400000);
   let best = null;
+  let past = null;
   for (const e of hit.events) {
     const t = Date.parse(`${e.date}T00:00:00Z`);
     if (!Number.isFinite(t)) continue;
     const dd = Math.floor(t / 86400000) - today;
+    if (e.kind === 'irPast') {
+      if (dd < 0 && dd >= -EVENT_PAST_DAYS && (!past || dd > past.dd)) past = { ...e, dd };
+      continue;
+    }
     if (dd < 0 || dd > EVENT_DAYS) continue;
     if (!best || dd < best.dd) best = { ...e, dd };
   }
+  best = best || past;
   if (!best) return null;
-  return { label: `${EVENT_LABEL[best.kind] || '일정'} ${best.dd === 0 ? 'D-day' : `D-${best.dd}`}`,
-    title: `${best.title} · ${best.date.slice(5).replace('-', '/')}`, ...(best.kind === 'irEst' ? { est: true } : {}) };
+  return { label: `${EVENT_LABEL[best.kind] || '일정'} ${best.dd < 0 ? `D+${-best.dd}` : best.dd === 0 ? 'D-day' : `D-${best.dd}`}`,
+    title: `${best.title} · ${best.date.slice(5).replace('-', '/')}`,
+    ...(best.kind === 'irEst' ? { est: true } : {}), ...(best.kind === 'irPast' ? { past: true } : {}) };
 }
 
 function eventChip(symbol) {
   const b = eventBadge(symbol);
-  return b ? `<span class="evchip${b.est ? ' est' : ''}" title="${esc(b.title)}">${b.label}</span>` : '';
+  return b ? `<span class="evchip${b.est ? ' est' : ''}${b.past ? ' past' : ''}" title="${esc(b.title)}">${b.label}</span>` : '';
 }
 
 // 관심종목의 일정을 받는다(main 의 naver:events — 국내 실적 발표일 · 잠정실적 공시 · 미국 배당락일). 갱신마다 부르되 기다리지 않고,
