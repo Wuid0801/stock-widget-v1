@@ -60,11 +60,11 @@ function eventChip(symbol) {
 
 // 관심종목의 일정을 받는다(main 의 naver:events — 국내 실적 발표일 · 잠정실적 공시 · 미국 배당락일). 갱신마다 부르되 기다리지 않고,
 // 30분이 지난 종목만 목록 순서대로 하나씩 받는다(한꺼번에 몰리지 않게). 실패한 종목은 기억하지 않아 다음 갱신에
-// 다시 묻는다. 받는 중에 또 불리면(30초 갱신이 겹치면) 그냥 돌아간다. 새로 받은 것이 있으면 목록을 한 번 다시 그린다.
+// 다시 묻는다. 받는 중에 또 불리면(30초 갱신이 겹치면) 그냥 돌아간다. 칩이 바뀐 종목은 받자마자 목록을 다시 그린다 — 예전에는
+// 모든 종목을 받은 뒤 한 번만 그려 켜고 한참 뒤에야 칩이 한꺼번에 떴다(2026-10-30 사용자 "늦게 뜬다"). 목록은 줄의 내용만 고친다.
 async function loadEvents() {
   if (eventsBusy) return;
   eventsBusy = true;
-  let changed = false;
   try {
     for (const item of [...state.watchlist]) {
       if (isIndex(item.symbol)) continue;
@@ -72,12 +72,14 @@ async function loadEvents() {
       if (hit && Date.now() - hit.at < EVENT_TTL) continue;
       let r = null;
       try { r = await api.events(item.symbol); } catch { /* 다음 갱신에 다시 */ }
-      if (r && r.ok) { eventCache.set(item.symbol, { at: Date.now(), events: r.events || [] }); changed = true; }
+      if (!r || !r.ok) continue;
+      const before = eventChip(item.symbol);
+      eventCache.set(item.symbol, { at: Date.now(), events: r.events || [] });
+      if (eventChip(item.symbol) !== before) renderList();
     }
   } finally {
     eventsBusy = false;
   }
-  if (changed) renderList();
 }
 
 // --- 리스트 -------------------------------------------------------------------

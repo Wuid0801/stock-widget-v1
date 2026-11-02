@@ -4307,29 +4307,30 @@ await test('watchlist: rows are rebuilt only when the stocks or their order chan
   assert.deepEqual(list.kids.map((r) => r.dataset.symbol), ['005930.KS'], '빈 안내 뒤에도 줄을 만든다');
 });
 
-await test('events: the watchlist schedule is fetched one stock at a time, kept for thirty minutes, retried after a failure, and redraws the list once', async () => {
-  const { c, run } = harness(['loadEvents']);
+// 칩은 종목마다 받는 대로 바로 그린다 — 예전에는 모든 종목을 받은 뒤 한 번만 그려, 켜고 한참 뒤에야 칩이 한꺼번에 떴다(2026-10-30 사용자
+// "늦게 뜬다"). 목록은 줄의 내용만 고치므로(renderList) 자주 그려도 깜빡이지 않는다. 칩이 그대로면 다시 그리지 않는다.
+await test('events: the watchlist schedule is fetched one stock at a time, kept for thirty minutes, retried after a failure, and each new chip is drawn at once', async () => {
+  const { c, run } = harness(['loadEvents', 'eventChip', 'eventBadge']);
+  c.esc = String;
   const asked = [];
   const fail = new Set(['000660.KS']);
   let lists = 0;
-  c.api.events = async (s) => { asked.push(s); return fail.has(s) ? { ok: false, error: 'x' } : { ok: true, events: [{ kind: 'ir', title: s, date: '2026-10-29' }] }; };
-  c.renderList = () => { lists++; };
+  c.api.events = async (s) => { asked.push(s); return fail.has(s) ? { ok: false, error: 'x' } : { ok: true, events: [{ kind: 'ir', title: s, date: '2026-09-15' }] }; };
+  c.renderList = () => { lists++; asked.push('그림'); };
   run("state.watchlist.push({ symbol: '^KS11', name: '코스피' });");
   await c.loadEvents();
-  assert.deepEqual([...asked], ['005930.KS', '000660.KS'], '목록 순서대로, 지수는 묻지 않는다');
-  assert.equal(lists, 1, '받은 것이 있으면 목록을 한 번 다시 그린다');
+  assert.deepEqual([...asked], ['005930.KS', '그림', '000660.KS'], '목록 순서대로, 지수는 묻지 않고, 칩이 생긴 종목은 받자마자 그린다');
   assert.equal(run("eventCache.has('000660.KS')"), false, '실패는 기억하지 않는다');
   asked.length = 0;
   await c.loadEvents();
-  assert.deepEqual([...asked], ['000660.KS'], '받아 둔 종목은 30분 동안 다시 묻지 않고, 실패한 종목만 다시');
-  assert.equal(lists, 1, '새로 받은 것이 없으면 다시 그리지 않는다');
+  assert.deepEqual([...asked], ['000660.KS'], '받아 둔 종목은 30분 동안 다시 묻지 않고, 실패한 종목만 다시 — 새 칩이 없으면 그리지 않는다');
   const realNow = c.Date.now; // FixedDate 는 하네스끼리 같이 쓴다 — 끝에서 되돌린다
   // 30분 — 오늘 낸 잠정실적 공시(다음 금융)를 늦지 않게. 네이버 일정은 main 이 6시간 기억한다(2026-10-30)
   c.Date.now = () => NOW + 30 * 60000;
   asked.length = 0;
   fail.clear();
   await c.loadEvents();
-  assert.deepEqual([...asked], ['005930.KS', '000660.KS'], '30분이 지나면 다시');
+  assert.deepEqual([...asked], ['005930.KS', '000660.KS', '그림'], '30분이 지나면 다시 — 칩이 그대로인 종목은 다시 그리지 않는다');
   assert.equal(lists, 2);
   c.Date.now = realNow;
   // 받는 중에 또 부르면(30초 갱신이 겹치면) 그냥 돌아간다
