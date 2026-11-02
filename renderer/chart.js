@@ -16,7 +16,7 @@ function renderPeriod(first, last, rel = null) {
   if (rel) {
     const ex = pct - rel.pct;
     html += `<span style="color:${tone(ex)}"> · 초과 ${ex > 0 ? '+' : ''}${ex.toFixed(2)}%p</span>`;
-    el.title = `같은 기간 ${rel.name} ${fmtPct(rel.pct)} — 종목이 ${Math.abs(ex).toFixed(2)}%p ${ex >= 0 ? '앞섬' : '뒤처짐'}`;
+    el.title = `같은 기간 ${rel.name} ${fmtPct(rel.pct)} — 종목이 ${Math.abs(ex).toFixed(2)}%포인트 ${ex >= 0 ? '앞섬' : '뒤처짐'}`;
   }
   el.innerHTML = html;
   el.style.color = color;

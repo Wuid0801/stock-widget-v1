@@ -82,27 +82,33 @@ function techHtml(item) {
   const tf = trendFollow(d.closes, FOLLOW_MA);
   if (tf) {
     out.push(line('추세 추종', `${FOLLOW_MA}일선 ${money(tf.ma, cur)} ${tf.above ? '위' : '아래'} · <b>${tf.above ? '보유' : '현금'} 구간 ${tf.days}일째</b>`,
-      `종가가 ${FOLLOW_MA}일선 위면 보유, 아래면 현금으로 보는 규칙 — 큰 하락을 피하는 데 강점이 있고 횡보장에서는 자주 바뀝니다. `
-      + `일수는 그 상태가 이어진 거래일(오늘 포함)\n${FOLLOW_EVIDENCE}`));
+      `추세 추종: 종가가 ${FOLLOW_MA}일선 위면 보유, 아래면 현금으로 보는 규칙\n`
+      + '일수는 그 상태가 이어진 거래일(오늘 포함)\n'
+      + `횡보장에서는 자주 바뀐다\n\n${FOLLOW_EVIDENCE}`));
   }
   const mom = momentum(d.times, d.closes);
   if (mom != null) {
     const all = state.watchlist.map((w) => { const x = quotes[w.symbol]; return x && x.daily ? momentum(x.daily.times, x.daily.closes) : null; })
       .filter((m) => m != null);
     out.push(line('모멘텀', `12-1개월 ${pct(mom)}${all.length > 1 ? ` · 관심종목 <b>${all.filter((m) => m > mom).length + 1}/${all.length}위</b>` : ''}`,
-      '최근 1개월을 뺀 12개월 수익률(1개월 전 종가 / 12개월 전 종가) — 많이 오른 종목이 한동안 더 오른다는 경향'
-      + '(미국 주식 연구(Jegadeesh · Titman, 1993))을 쓰는 규칙입니다. 급반전할 때 크게 잃습니다. '
-      + `순위는 관심종목 중 이 값이 있는 종목끼리\n${MOMENTUM_EVIDENCE}`));
+      '모멘텀: 최근 1개월을 뺀 12개월 수익률 (1개월 전 종가 ÷ 12개월 전 종가)\n'
+      + '많이 오른 종목이 한동안 더 오른다는 경향을 쓰는 규칙 — 미국 주식 연구(Jegadeesh · Titman, 1993)\n'
+      + '급반전할 때 크게 잃는다\n'
+      + `순위는 관심종목 중 이 값이 있는 종목끼리\n\n${MOMENTUM_EVIDENCE}`));
   }
   const dca = dcaCost(d.times, d.closes, DCA_MONTHS);
   if (dca) {
     out.push(line('적립식', `${DCA_MONTHS}개월 매달 같은 금액(${dca.buys}회) · 평단 ${money(dca.avg, cur)} · 지금 ${pct(dca.pct)}`,
-      `최근 ${DCA_MONTHS}달(이번 달 포함) 매달 첫 거래일 종가에 같은 금액을 샀다면의 평균 단가와 지금 가격 대비 — 시점을 맞히지 않는 방식`));
+      `적립식: 최근 ${DCA_MONTHS}달(이번 달 포함) 매달 첫 거래일 종가에 같은 금액을 샀다면\n`
+      + '평균 단가와 지금 가격 대비\n'
+      + '사는 시점을 맞히지 않는 방식이다'));
   }
   const w = holdWeight(item.symbol);
   if (w) {
     out.push(line('비중', `보유 ${w.count}종목 중 <b>${w.pct.toFixed(1)}%</b> · 균등이면 ${(100 / w.count).toFixed(1)}%`,
-      '보유 종목 평가금액 합계에서 이 종목의 몫 — 목표 비중 대신 균등 비중과 견줍니다(리밸런싱 참고). 미국 주식은 합계 줄과 같은 환율로 원화 환산'));
+      '비중: 보유 종목 평가금액 합계 중 이 종목의 몫\n'
+      + '목표 비중 대신 균등 비중과 견준다 (리밸런싱 참고)\n'
+      + '미국 주식은 합계 줄과 같은 환율로 원화 환산'));
   }
   const vols = dailyVolumesOf(item.symbol);
   const rb = reboundCheck(d.closes, vols, REBOUND_DAYS, REBOUND_DROP);
@@ -111,8 +117,9 @@ function techHtml(item) {
       rb.volRatio == null ? null : `반등 거래량 하락 때의 ${rb.volRatio.toFixed(1)}배`].filter(Boolean);
     out.push(line('반등 점검', `고점 ${money(rb.high, cur)} → 저점 ${money(rb.low, cur)} (${pct(rb.dropPct)}) · <b>${rb.retrace.toFixed(0)}%</b> 되돌림`
       + (more.length ? `<br><span class="mxmute">${more.join(' · ')}</span>` : ''),
-      `최근 ${REBOUND_DAYS}거래일 고점에서 ${REBOUND_DROP}% 넘게 빠진 뒤 반등 중일 때만 — 진짜 반등인지(데드캣) 볼 때 흔히 보는 `
-      + `20일선 · RSI · 반등 거래량을 함께 적습니다. 결론은 내리지 않습니다\n${REBOUND_EVIDENCE}`));
+      `반등 점검: 최근 ${REBOUND_DAYS}거래일 고점에서 ${REBOUND_DROP}% 넘게 빠진 뒤 반등 중일 때만 보인다\n`
+      + '진짜 반등인지(데드캣) 볼 때 흔히 보는 20일선 · RSI · 반등 거래량을 함께 적는다\n'
+      + `결론은 내리지 않는다\n\n${REBOUND_EVIDENCE}`));
   }
   const egg = eggPhase(d.closes, vols);
   if (egg) {
@@ -180,8 +187,11 @@ function metricsHtml(item, d, q) {
     const rows = Array.from({ length: Math.max(tr.sell.length, tr.buy.length) }, (_, i) =>
       `<tr><td>${name(tr.sell[i])}</td><td>${vol(tr.sell[i])}</td><td class="nm">${name(tr.buy[i])}</td><td>${vol(tr.buy[i])}</td></tr>`).join('');
     const net = tr.foreignBuy != null && tr.foreignSell != null ? tr.foreignBuy - tr.foreignSell : null;
-    const tip = '외국계 증권사 창구의 오늘 매수 · 매도 — 상위 10개사 안의 외국계만 더한 값이라 실제 외국인 순매수(투자자별, 장 마감 뒤 확정)와 다르다. '
-      + '외국인이 국내 증권사로 낸 주문은 빠지고, 외국계 창구로 낸 국내 기관 주문은 들어간다. 다음 금융, 장중 실시간';
+    const tip = '외국계 증권사 창구의 오늘 매수 · 매도 — 상위 10개사 안의 외국계만 더한 값\n'
+      + '실제 외국인 순매수(투자자별, 장 마감 뒤 확정)와 다르다\n'
+      + '· 외국인이 국내 증권사로 낸 주문은 빠진다\n'
+      + '· 외국계 창구로 낸 국내 기관 주문은 들어간다\n\n'
+      + '다음 금융, 장중 실시간';
     parts.push(sec(`거래원 <span>(${mmdd(tr.date)} 상위 10개사 · 주)</span>`,
       `<table class="mxt"><tr><th>매도 상위</th><th></th><th class="nm">매수 상위</th><th></th></tr>${rows}</table>`
       + (net == null ? '' : `<p title="${esc(tip)}">외국계 매수 <b>${fmtVol(tr.foreignBuy)}</b> · 매도 <b>${fmtVol(tr.foreignSell)}</b> · `

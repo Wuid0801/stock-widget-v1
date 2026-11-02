@@ -1124,11 +1124,11 @@ await test('indicators: period badge adds the excess return over the index, with
   run("state.timeframe = '1M'; renderPeriod(100, 105.2, { name: '코스피', pct: 2.1 });");
   assert.equal(el().hidden, false);
   assert.match(el().innerHTML, /^1M \+5\.20%<span style="color:#e24b4a"> · 초과 \+3\.10%p<\/span>$/, el().innerHTML);
-  assert.equal(el().title, '같은 기간 코스피 +2.10% — 종목이 3.10%p 앞섬');
+  assert.equal(el().title, '같은 기간 코스피 +2.10% — 종목이 3.10%포인트 앞섬');
   run("renderPeriod(100, 101, { name: '코스닥', pct: 4 });");
   assert.match(el().innerHTML, /초과 -3\.00%p/);
   assert.match(el().innerHTML, /color:#185fa5/, '뒤처지면 파랑');
-  assert.match(el().title, /3\.00%p 뒤처짐/);
+  assert.match(el().title, /3\.00%포인트 뒤처짐/);
   run('renderPeriod(100, 101);');
   assert.equal(el().innerHTML, '1M +1.00%', '끄면 예전 그대로');
   assert.equal(el().title, '');
@@ -1408,25 +1408,32 @@ await test('metrics: 기법 점검 lists trend following, 12-1 momentum with its
   assert.ok(t.includes(`20일선 ${rb.aboveMa20 ? '위' : '아래'} · RSI ${rb.rsi.toFixed(0)} · 반등 거래량 하락 때의 ${rb.volRatio.toFixed(1)}배`));
   // '20일선 위 · RSI 50 위 · 거래량 실린 반등일수록 힘이 있다' 는 검증에서 앞 둘이 반대로 나왔다 — 검증 결과로 바꾼다(2026-11-02 점검 2단계)
   assert.doesNotMatch(html, /힘이 있다고 봅니다/);
+  // 툴팁 문체(2026-11-02 3단계): 한 줄에 한 생각, 검증은 머리 줄(대상 · 견준 것) 아래 '· ' 목록, %포인트, 말끝 '~다'
+  const head = run('EVIDENCE_HEAD');
+  assert.equal(head, '과거 10년(대형주 25 · 지수 4) 검증 — 20거래일 뒤, 평소 대비 %포인트');
   const rbEv = run('REBOUND_EVIDENCE');
-  assert.match(rbEv, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): 반등 중인 날 뒤 20거래일은 평소보다 \+0\.8%p\(29곳 중 21곳 나음\)/);
-  assert.match(rbEv, /20일선 위\(\+0\.6%p\) · RSI 50 위\(\+0\.4%p\)는 오히려 그 아래\(\+1\.0 · \+1\.0%p\)보다 작았고, 거래량이 실린 반등\(\+1\.2%p\)만 그렇지 않은 반등\(\+0\.6%p\)보다 컸다/);
-  assert.ok(html.includes(`결론은 내리지 않습니다\n${rbEv}"><span class="mxmute">반등 점검`), '반등 점검 툴팁 끝에 과거 검증');
+  assert.equal(rbEv, `${head}\n· 반등 중인 날: +0.8 (29곳 중 21곳 나음)\n`
+    + '· 20일선 위 +0.6 · RSI 50 위 +0.4 — 오히려 그 아래(+1.0 · +1.0)보다 작았다\n'
+    + '· 거래량이 실린 반등 +1.2 — 그렇지 않은 반등(+0.6)보다 컸다\n· 차이는 20거래일 흔들림(±8~10%)에 비해 작다');
+  assert.ok(html.includes(`결론은 내리지 않는다\n\n${rbEv}"><span class="mxmute">반등 점검`), '반등 점검 툴팁 끝에 과거 검증');
   // 급락(RSI 30 아래)으로 B3 에 들었고, 반등 중이어도 20일선이 아직 60일선 아래라 B3 — 다음은 A1
   assert.equal(`${egg.prev} → ${egg.phase} · 다음 ${egg.next}`, 'B1 → B3 · 다음 A1', JSON.stringify(egg));
   assert.ok(t.includes(`코스톨라니 B1 → B3 · ${egg.days}일째 · 투매 · 다음 A1 (해석)`), '직전 → 지금 · 일수 · 다음');
   assert.equal((html.match(/<p title="[^"]+"><span class="mxmute">/g) || []).length, 6, '여섯 줄 모두 툴팁에 규칙');
   const follow = run('FOLLOW_EVIDENCE');
-  assert.match(follow, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): 200일선 위에서만 보유하면 최대 낙폭이 평균 −55\.9% → −43\.3%/);
-  assert.ok(html.includes(`일수는 그 상태가 이어진 거래일(오늘 포함)\n${follow}"><span class="mxmute">추세 추종`), '추세 추종 툴팁 끝에 과거 검증 한 줄(2026-10-30)');
-  // 모멘텀도 과거 검증 한 줄 — 우리 검증에서 효과가 거의 0 이었는데 툴팁은 '경향을 봅니다' 만 적었다(2026-11-02 점검)
+  assert.match(follow, /^과거 10년\(대형주 25 · 지수 4\) 검증 — 200일선 위에서만 보유했다면\n· 가장 크게 빠진 폭: 평균 −55\.9% → −43\.3% \(29곳 중 27곳 덜 빠짐\)/);
+  assert.ok(html.includes(`추세 추종: 종가가 200일선 위면 보유, 아래면 현금으로 보는 규칙\n일수는 그 상태가 이어진 거래일(오늘 포함)\n횡보장에서는 자주 바뀐다\n\n${follow}"><span class="mxmute">추세 추종`),
+    '추세 추종 툴팁 — 규칙 / 일수 / 검증');
+  // 모멘텀도 과거 검증 — 우리 검증에서 효과가 거의 0 이었는데 툴팁은 '경향을 봅니다' 만 적었다(2026-11-02 점검)
   const mEv = run('MOMENTUM_EVIDENCE');
-  assert.match(mEv, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): 12-1개월 모멘텀이 높았을 때\(상위\) 뒤 20거래일은 평소와 거의 같았다\(약 0%p\)/);
-  assert.ok(html.includes(`미국 주식 연구(Jegadeesh · Titman, 1993)`) && html.includes(`관심종목 중 이 값이 있는 종목끼리\n${mEv}"><span class="mxmute">모멘텀`),
-    '모멘텀 툴팁 — 경향의 출처와 우리 검증');
-  assert.match(html, /title="코스톨라니 달걀\(해석\) B3\(투매\)\n지금 20일선이 60일선 아래\(하락\) · 거래량 20일 평균이 60일 평균의 1\.39배 · RSI 54/);
+  assert.equal(mEv, `${head}\n· 12-1개월 모멘텀이 높았을 때(상위): 약 0 — 평소와 거의 같았다\n· 이 종목들에서는 그 경향이 보이지 않았다`);
+  assert.ok(html.includes('많이 오른 종목이 한동안 더 오른다는 경향을 쓰는 규칙 — 미국 주식 연구(Jegadeesh · Titman, 1993)')
+    && html.includes(`관심종목 중 이 값이 있는 종목끼리\n\n${mEv}"><span class="mxmute">모멘텀`), '모멘텀 툴팁 — 경향의 출처와 우리 검증');
+  assert.match(html, /title="코스톨라니 달걀\(해석\): B3 투매\nB1\(꼭대기 뒤 하락 초기\)에서 B3로 바뀐 지 \d+거래일째\(오늘 포함\)\n다음은 A1\(바닥 뒤 상승 초기\) — 20일선이 다시 60일선 위로 올라서면\n\n지금: 20일선이 60일선 아래\(하락\) · 거래량 20일 평균이 60일 평균의 1\.39배 · RSI 54\n/);
   assert.ok(html.includes(`B1(꼭대기 뒤 하락 초기)에서 B3로 바뀐 지 ${egg.days}거래일째(오늘 포함)`), '툴팁에 바뀐 때');
-  assert.ok(html.includes('다음은 A1(바닥 뒤 상승 초기) — 20일선이 다시 60일선 위로 올라서면'), '툴팁에 다음 칸으로 가는 조건');
+  assert.ok(html.includes(`원래 이론에는 숫자 기준이 없어 이 기준은 해석이다\n\n${run('EGG_EVIDENCE')}"`), '해석이라는 줄 뒤에 과거 검증');
+  // 툴팁 말끝은 '~다' — 예전 '~습니다' 가 남지 않게
+  assert.doesNotMatch(html.match(/title="[^"]*"/g).join(''), /습니다|입니다/);
   // 기법 점검은 기간 수익률 다음
   assert.ok(html.indexOf('기간 수익률') < html.indexOf('기법 점검'));
 
@@ -2963,18 +2970,20 @@ await test('market panel: 위험 · 자금 rows explain what each measure is on 
   let html = h.c.marketHtml();
   for (const key of ['VIX', 'US10Y', 'USDKRW', 'WTI']) {
     const t = titleOf(html, key);
-    assert.ok(t && t.startsWith(`${h.run(`MARKET_DESC.${key}`)}\n`) && t.endsWith(' 차트 보기'), `${key}: ${t}`);
+    assert.ok(t && t.startsWith(`${h.run(`MARKET_DESC.${key}`)}\n\n`) && t.endsWith(' 차트 보기'), `${key}: ${t}`);
   }
-  // 기준 숫자는 실제 기록에서 낸 것(2026-11-02 사용자 질문 "어디서 가져온 정보?") — VIX 는 야후 1990~ 일별 종가 9,278일
-  assert.match(titleOf(html, 'VIX'), /^VIX\(변동성 지수\) — .*공포지수.*1990년부터 일별 종가의 중앙값은 17\.6 · 평균 19\.4이고, 20 아래인 날이 63%, 30 넘는 날은 8%다/);
-  assert.match(titleOf(html, 'VIX'), /2008-11 80\.9 · 2020-03 82\.7 · 2025-04 52\.3/);
-  assert.match(titleOf(html, 'US10Y'), /^미국채 10년 금리.*bp\(0\.01%p\)/);
-  assert.match(titleOf(html, 'USDKRW'), /^원\/달러 — .*원화 약세/);
-  assert.match(titleOf(html, 'WTI'), /^WTI — .*원유 선물/);
+  // 기준 숫자는 실제 기록에서 낸 것(2026-11-02 사용자 질문 "어디서 가져온 정보?") — VIX 는 야후 1990~ 일별 종가 9,278일.
+  // 문체는 한 줄에 한 생각(2026-11-02 3단계)
+  assert.match(titleOf(html, 'VIX'), /^VIX\(변동성 지수\) — 흔히 공포지수라고 부른다\n/);
+  assert.match(titleOf(html, 'VIX'), /\n\n1990년부터 일별 종가\(2026-10 기준\)\n· 중앙값 17\.6 · 평균 19\.4\n· 20 아래인 날 63% · 30 넘는 날 8%\n/);
+  assert.match(titleOf(html, 'VIX'), /· 위기 때: 2008-11 80\.9 · 2020-03 82\.7 · 2025-04 52\.3/);
+  assert.match(titleOf(html, 'US10Y'), /\n오늘 등락 · 5일 변화는 bp\(0\.01%포인트\)/);
+  assert.match(titleOf(html, 'USDKRW'), /^원\/달러 — 1달러에 원화 몇 원\n오르면 원화 약세/);
+  assert.match(titleOf(html, 'WTI'), /^WTI — 서부 텍사스산 원유 선물/);
   assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'), 'HY OAS 는 누를 수 없는 줄 — 설명만');
-  assert.match(titleOf(html, 'HYOAS'), /하이일드.*FRED, 1~2영업일 늦다/);
+  assert.match(titleOf(html, 'HYOAS'), /^미국 HY OAS — 투기등급\(하이일드\)[\s\S]*\nICE BofA US High Yield OAS, FRED — 1~2영업일 늦다$/);
   // HY OAS 는 근거 없던 '3~4% 낙관 · 5% 경계' 를 빼고 확인한 숫자로 — FRED 최근 3년 · 20년 평균(2023) · 2008 정점
-  assert.match(titleOf(html, 'HYOAS'), /최근 3년\(2023-11~2026-10\)은 대개 2\.7~3\.5%\(중앙값 3\.0%, 가장 높을 때 2025-04 4\.6%\), 20년 평균은 약 5\.2%\(2023년 기준\), 2008년 위기 때는 약 20%/);
+  assert.match(titleOf(html, 'HYOAS'), /· 최근 3년\(2023-11~2026-10\): 대개 2\.7~3\.5% \(중앙값 3\.0%, 가장 높을 때 2025-04 4\.6%\)\n· 20년 평균 약 5\.2% \(2023년 기준\) · 2008년 위기 때 약 20%/);
   assert.doesNotMatch(titleOf(html, 'HYOAS'), /낙관|경계/);
   assert.equal(titleOf(html, 'SPX'), 'S&P 500 차트 보기', '다른 묶음은 그대로');
   h.run('marketExtras = null; indexItems = [];');
@@ -2994,15 +3003,15 @@ await test('market panel: stock indices note their Kostolany egg phase with the 
   const row = h.c.marketRow('KOSPI');
   // 쉬지 않고 올라 RSI 100 — 처음 셀 수 있는 봉부터 과열(A3), 직전 국면은 없다
   assert.equal(row.note, '달걀 A3 · 다음 B1', '처음 셀 수 있는 봉이라 직전 국면이 없다');
-  assert.match(row.noteTitle, /^코스톨라니 달걀\(해석\) A3\(과열\)\n지금 20일선이 60일선 위\(상승\) · 거래량 20일 평균이 60일 평균의 1\.18배 · RSI 100/);
-  assert.match(row.noteTitle, /다음은 B1\(꼭대기 뒤 하락 초기\) — 20일선이 60일선 아래로 내려가면/);
-  assert.match(row.noteTitle, /순서 A1 → A2 → A3 → B1 → B2 → B3 → 다시 A1\. 한 칸씩 나아가고 되돌아가지 않습니다/);
+  assert.match(row.noteTitle, /^코스톨라니 달걀\(해석\): A3 과열\n다음은 B1\(꼭대기 뒤 하락 초기\) — 20일선이 60일선 아래로 내려가면\n\n/);
+  assert.match(row.noteTitle, /\n지금: 20일선이 60일선 위\(상승\) · 거래량 20일 평균이 60일 평균의 1\.18배 · RSI 100\n/);
+  assert.match(row.noteTitle, /\n순서: A1 → A2 → A3 → B1 → B2 → B3 → 다시 A1 \(한 칸씩, 되돌아가지 않는다\)\n/);
   assert.match(row.noteTitle, /과열 없이 20거래일 넘게 내리면 B1, 투매 없이 그만큼 오르면 A1/, '건너뛰는 규칙도 적는다');
-  // 과거 검증 결과(일반) — 이론을 그대로 믿지 않게. 해석이라는 줄보다 앞, 근거 줄 뒤
-  assert.match(row.noteTitle, /\n과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): .*B3 \+1\.4%p\(29곳 중 22곳 나음\) · B2 −1\.0%p.*A3 \+0\.4%p\(팔 신호가 아니었다\).*종목 하나로는 우연과 구분되지 않는다\n원래 이론에는/,
-    '과거 검증 한 줄');
+  // 과거 검증 결과(일반) — 이론을 그대로 믿지 않게. 해석이라는 줄 뒤, 맨 끝
+  assert.ok(row.noteTitle.endsWith(`원래 이론에는 숫자 기준이 없어 이 기준은 해석이다\n\n${h.run('EGG_EVIDENCE')}`), '과거 검증은 맨 끝');
+  assert.match(h.run('EGG_EVIDENCE'), /\n· B3 \+1\.4 \(29곳 중 22곳 나음\) · B2 −1\.0 \(5곳만 나음\)\n· A3 \+0\.4 — 팔 신호가 아니었다/);
   assert.doesNotMatch(row.noteTitle, /바뀐 지/, '직전 국면이 없으면 바뀐 때도 없다');
-  assert.match(rowOf(h.c.marketHtml(), '^KS11'), /<span class="mnote" title="코스톨라니 달걀\(해석\) A3[^"]*">달걀 A3 · 다음 B1<\/span>/);
+  assert.match(rowOf(h.c.marketHtml(), '^KS11'), /<span class="mnote" title="코스톨라니 달걀\(해석\): A3[^"]*">달걀 A3 · 다음 B1<\/span>/);
   // 100봉 오르다 30봉 내린다(거래량 같음) — A3 에서 20일선이 꺾여 B1, 이어진 급락(RSI 30 아래)으로 B3.
   // 메모는 이름 칸(기본 폭 95px 남짓)에 맞게 일수 없이, 일수는 툴팁에
   const T2 = days('2026-03-01', 130);
@@ -3069,7 +3078,7 @@ await test('market panel: flows show the last final day, the streak, and today\'
   assert.match(spot, /2일 연속 순매수/);
   assert.match(spot, /오늘 잠정 \+4,080억/);
   // 확정은 20:30(예전 18:00 — KRX 애프터마켓 16:00~20:00 뒤로 맞는지 몰라 늦췄다, 2026-11-02 사용자 결정)
-  assert.match(html, /data-key="SPOT" title="외국인 순매수\(억 원\) 10\/26 확정 · 20:30 전 오늘 값은 잠정"/);
+  assert.match(html, /data-key="SPOT" title="외국인 순매수\(억 원\) 10\/26 확정\n20:30 전 오늘 값은 잠정"/);
   assert.match(keyRow(html, 'FUTFLOW'), /1일 연속 순매도/);
   assert.doesNotMatch(html, /data-sym="[^"]*"[^>]*data-key="SPOT"/, '수급 줄은 누를 수 없다');
 });
@@ -3127,11 +3136,11 @@ await test('market panel: KOSPI 200 spot sits beside the futures, and the basis 
   assert.match(basis, /<span class="rpct" style="color:#e24b4a">\+1\.00<\/span>/);
   assert.match(basis, /<span class="md5"[^>]*>\+1\.30<\/span>/);
   assert.match(basis, /class="mspark"/, '날마다의 베이시스에 지금 값을 이은 미니 선');
-  assert.match(html, /data-key="BASIS" title="베이시스 = 코스피200 선물 − 코스피200 현물 \(\+3\.50pt, 현물의 \+0\.39%\)\. 선물이 현물보다 비싸면/);
-  assert.match(html, /선물 값이 20분 늦어 같은 시각\(13:16\)의 현물과 뺀다 — 장중엔 20분 전 베이시스다/, '툴팁에 맞춘 이유');
+  assert.match(html, /data-key="BASIS" title="베이시스 = 코스피200 선물 − 코스피200 현물 \(\+3\.50pt, 현물의 \+0\.39%\)\n선물이 비싸면 \+\(콘탱고\), 싸면 −\(백워데이션\)\n\n읽는 법\n/);
+  assert.match(html, /\n선물 값이 20분 늦어 같은 시각\(13:16\)의 현물과 뺀다 — 장중엔 20분 전 베이시스다\n/, '툴팁에 맞춘 이유');
   // '+ 면 오를 쪽에 돈이 몰렸다' 는 단순화였다 — 견줄 것은 이론 베이시스(금리 이자 − 배당)이고 앱은 그것을 계산하지 않는다(2026-11-02 점검)
-  assert.match(html, /이론 베이시스는 만기까지의 금리 이자 − 받을 배당이라 대개 조금 \+ 이지만, 만기 전에 큰 배당이 빠지는 기간에는 − 일 수 있다/);
-  assert.match(html, /그 이론값보다 높으면 선물 매수 우위, 낮으면 매도 우위로 흔히 읽는다 — 앱은 이론값을 계산하지 않는다/);
+  assert.match(html, /\n· 견줄 것은 이론 베이시스 = 만기까지의 금리 이자 − 받을 배당\n· 이론값은 대개 조금 \+ 이지만, 만기 전에 큰 배당이 빠지는 기간에는 − 일 수 있다\n/);
+  assert.match(html, /\n· 이론값보다 높으면 선물 매수 우위, 낮으면 매도 우위로 흔히 읽는다 \(앱은 이론값을 계산하지 않는다\)\n/);
   assert.doesNotMatch(html, /오를 쪽에 .*돈이 몰린/);
 
   // 분봉을 아직 못 받았으면(지표 화면을 막 열었다) 엉뚱한 현물과 빼지 않고 — 로 둔다. 날마다의 미니 선은 그대로
@@ -3205,9 +3214,10 @@ await test('market panel: summary counts verdicts and says how many could be jud
   // 툴팁에 판정마다 어느 지표인지(점검 순서대로) — 2026-10-30 사용자 요청
   assert.equal(/class="qhint msum" title="([^"]*)"/.exec(html)[1],
     '긍정: 외국인 현물 · 외국인 선물 · 미국 HY OAS\n중립: SOX\n위험: 원/달러 · 미국채 10년\n판정 불가: VIX\n'
-    + `경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다\n${h.run('DEADCAT_EVIDENCE')}`);
+    + `\n경험칙을 숫자로 옮긴 참고용이다 — 매매 판단을 대신하지 않는다\n\n${h.run('DEADCAT_EVIDENCE')}`);
   // 과거 검증(2026-11-02 점검 2단계) — 일곱 기준 모두 코스피 20거래일 뒤를 우연 이상으로 가르지 못했다
-  assert.match(h.run('DEADCAT_EVIDENCE'), /^과거 검증\(코스피 20거래일 뒤, 2016~2026 — HY OAS 는 2023~\): 일곱 기준 모두 긍정 · 위험 날이 평소와 우연 이상으로 다르지 않았다/);
+  assert.equal(h.run('DEADCAT_EVIDENCE'), '과거 10년 검증 — 코스피 20거래일 뒤(HY OAS 는 3년)\n'
+    + '· 일곱 기준 모두 긍정 · 위험 날이 평소와 우연 이상으로 다르지 않았다\n· 지수가 60일 고점에서 10% 넘게 빠졌다 반등 중인 날만 봐도 같았다');
   assert.doesNotMatch(html, /데드캣(이다|입니다|아님|가능성)/, '결론을 내리지 않는다');
   h.run(CHECKS(['good', 'good', 'neutral', 'risk', 'good', 'good', 'risk']));
   const all = h.c.marketHtml();
@@ -3221,8 +3231,9 @@ await test('market panel: each checked row has a dot with its rule detail in the
   const html = h.c.marketHtml();
   // 점 툴팁 = 그날 근거 + 그 기준의 과거 검증(CHECK_EVIDENCE, 2026-11-02)
   assert.match(rowOf(html, '^VIX'), new RegExp(`<span class="mdot risk" title="vix 근거 숫자\n${h.run('CHECK_EVIDENCE.vix').replace(/[()+.]/g, '\\$&')}"></span>`));
-  assert.match(rowOf(html, '^SOX'), /<span class="mdot neutral" title="sox 근거 숫자\n과거 검증[^"]*"><\/span>/);
-  assert.match(h.run('CHECK_EVIDENCE.sox'), /긍정 날 \+0\.5%p · 위험 날 −0\.3%p/);
+  assert.match(rowOf(html, '^SOX'), /<span class="mdot neutral" title="sox 근거 숫자\n과거 10년 검증[^"]*"><\/span>/);
+  assert.equal(h.run('CHECK_EVIDENCE.sox'), '과거 10년 검증 — 코스피 20거래일 뒤, 평소 대비 %포인트\n· 긍정 날 +0.5 · 위험 날 −0.3 — 방향은 맞지만 우연과 구분되지 않는다');
+  assert.match(h.run('CHECK_EVIDENCE.hyoas'), /^과거 3년 검증\(FRED 가 3년치만 준다\)/, 'HY OAS 는 3년');
   assert.equal(Object.keys(h.run('CHECK_EVIDENCE')).sort().join(), 'futures,hyoas,sox,spot,us10y,usdkrw,vix', '일곱 기준 모두');
   assert.match(rowOf(html, 'KRW=X'), /<span class="mdot good"/);
   assert.doesNotMatch(rowOf(html, '^KS11'), /mdot/, '점검 대상이 아니면 점이 없다');
@@ -3296,14 +3307,14 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   assert.match(fr, /<span class="mname">외국인<\/span>/);
   assert.match(fr, /<span class="mval">-13,737<\/span>/, '현물 누적(억, 반올림)');
   assert.match(fr, /<span class="rpct" style="color:#e24b4a">\+203<\/span>/, '선물 누적(억) — 사면 빨강');
-  assert.match(fr, /<span class="md5" title="최근 30분 현물 순매수 변화\(억\)">-1,237<\/span>/, '14:25 − 13:55');
+  assert.match(fr, /<span class="md5" title="최근 30분 현물 순매수 변화\(억 원\)">-1,237<\/span>/, '14:25 − 13:55');
   assert.match(fr, /class="mspark"/, '오늘 현물 흐름');
-  assert.match(html, /data-key="INTRA_FOREIGN" title="외국인 장중 누적 순매수 — 코스피 현물 -13,737억\(14:25\) · 코스피200 선물 \+203억\(14:24\)\. /);
+  assert.match(html, /data-key="INTRA_FOREIGN" title="외국인 장중 누적 순매수\n· 코스피 현물 -13,737억 원 \(14:25\)\n· 코스피200 선물 \+203억 원 \(14:24\)\n\n30분: /);
   assert.match(keyRow(html, 'INTRA_INST'), /<span class="rpct" style="color:#[0-9a-f]{6}">-541<\/span>/);
   assert.match(html, /data-key="INTRA_INST" title="기관 [^"]*연기금 포함/);
   assert.match(html, /data-key="INTRA_CORP" title="기타법인 [^"]*자사주/, '자사주 매입은 기타법인에 섞인다');
   // 상장사의 장내 자사주 매입은 기타법인으로 잡힌다(기사 확인). '신탁을 거치면 다른 분류' 는 출처가 없어 뺐다(2026-11-02 점검)
-  assert.match(html, /기타법인은 일반 회사 · 창업투자회사 · 투자자문사 등이다 — 상장사가 장내에서 자사주를 사면 여기에 잡혀/);
+  assert.match(html, /기타법인은 일반 회사 · 창업투자회사 · 투자자문사 등이다\n상장사가 장내에서 자사주를 사면 여기에 잡혀/);
   assert.doesNotMatch(html, /신탁/);
   assert.match(keyRow(html, 'INTRA_PENSION'), /<span class="mval">\+4,853<\/span><span class="rpct"[^>]*>\+130<\/span>/);
   const prog = keyRow(html, 'INTRA_PROGRAM');
@@ -3331,7 +3342,7 @@ await test('market panel: a row without data stays as — and a checked one gets
   const html = h.c.marketHtml();
   for (const key of ['SPOT', 'FUTFLOW', 'HYOAS']) {
     const row = keyRow(html, key);
-    assert.match(row, /<span class="mdot none" title="데이터 부족\n과거 검증[^"]*"><\/span>/, key); // 판정 불가여도 그 기준의 검증은 보인다
+    assert.match(row, /<span class="mdot none" title="데이터 부족\n과거 \d+년 검증[^"]*"><\/span>/, key); // 판정 불가여도 그 기준의 검증은 보인다
     assert.match(row, /<span class="mval">—<\/span>/, key);
   }
   assert.match(keyRow(html, 'HYOAS'), /미국 HY OAS/);
@@ -3488,7 +3499,7 @@ await test('RSI level has three steps: 과매도 under 30, 보통 30~70, 과열 
   assert.equal(lv(70), JSON.stringify({ label: '과열', color: '#e8862a' }));
   assert.equal(lv(92), JSON.stringify({ label: '과열', color: '#e8862a' }), '극과열 단계는 없다');
   assert.equal(lv('null'), JSON.stringify({ label: '—', color: '--dot-off' }));
-  assert.match(run('RSI_EVIDENCE'), /30~70 은 어디나 평소와 같았다/, '배지 툴팁에 세 단계의 근거');
+  assert.match(run('RSI_EVIDENCE'), /\n· 30~70 · 70 이상: 평소와 같음 — 과열도 팔 신호는 아니었다\(그래서 과열도는 세 단계\)\n/, '배지 툴팁에 세 단계의 근거');
 });
 
 await test('RSI badge tooltip shows daily and weekly RSI; the badge itself stays on daily RSI', () => {
@@ -3504,12 +3515,15 @@ await test('RSI badge tooltip shows daily and weekly RSI; the badge itself stays
   const b = elements.get('badge');
   assert.equal(b.textContent, '중립 · RSI 39', '배지는 일봉 RSI');
   const evidence = run('RSI_EVIDENCE');
-  assert.equal(b.title, `일봉 RSI 39.1 · 주봉 RSI 43.5 (이번 주 진행 중)\n15:30 정규장 종가 기준, 오늘 · 이번 주는 지금 가격 · 과열도는 일봉 RSI\n${evidence}`);
-  assert.match(evidence, /^과거 검증\(국내 · 미국 대형주 25개 · 지수 4개, 10년\): RSI 30 이하\(과매도\) 뒤 20거래일은 평소보다 \+1\.9%p.*RSI 70 이상\(과열\)은 팔 신호가 아니었다/,
-    '과거 검증 한 줄(2026-10-30)');
+  // 한 줄에 한 생각(2026-11-02 3단계): 값 / RSI 뜻 / 단계 — 검증 — 기준
+  const what = 'RSI = 최근 14거래일 오른 폭과 내린 폭의 비율(0~100)\n과열도(일봉 RSI): 30 미만 과매도 · 30~70 보통 · 70 이상 과열\n\n';
+  assert.equal(b.title, `일봉 RSI 39.1 · 주봉 RSI 43.5 (이번 주 진행 중)\n${what}${evidence}\n\n기준: 15:30 정규장 종가 (오늘 · 이번 주는 지금 가격)`);
+  assert.match(evidence, /^과거 10년\(대형주 25 · 지수 4\) 검증 — 20거래일 뒤, 평소 대비 %포인트\n· 30 미만: \+1\.9 \(29곳 중 22곳 나음, 2020년 폭락을 빼도 \+2\.2\)/,
+    '과거 검증(2026-10-30)');
   run("quotes['005930.KS'].rsiWeek = null;");
   c.renderDetail();
-  assert.equal(b.title, `일봉 RSI 39.1\n15:30 정규장 종가 기준, 오늘은 지금 가격 · 과열도는 일봉 RSI\n${evidence}`, '주봉이 모자라면(최근 상장) 일봉만');
+  assert.equal(b.title, `일봉 RSI 39.1\n${what}${evidence}\n\n기준: 15:30 정규장 종가 (오늘은 지금 가격)`, '주봉이 모자라면(최근 상장) 일봉만');
+  assert.ok(b.title.length < 1024, `Windows 툴팁 한도(1024자) 안 — ${b.title.length}자`);
   run("quotes['005930.KS'].rsi = null;");
   c.renderDetail();
   assert.equal(b.title, '', 'RSI 가 없으면 툴팁도 없다');
@@ -4042,26 +4056,30 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
   assert.equal(el.innerHTML, '정배열·20선↑ · 20선>60선 34일째 · 5년: <span>구분 안 됨</span>');
   const tip = el.title.split('\n');
   for (const line of [
-    '20/60 규칙 — 20일선이 60일선 위면 보유, 아래면 정리',
-    '종가로 판단 → 다음 날 종가에 체결 · 왕복 비용 0.25%',
+    '20/60 규칙: 20일선이 60일선 위면 보유, 아래면 정리',
+    '종가로 판단해 다음 날 종가에 사고판다 · 왕복 비용 0.25%',
     '기간 2022-01-04 ~ 2026-09-09',
-    '규칙: 누적 +41.0% · 연 +7.4% · 최대 낙폭 -18.0% · 보유 52%',
-    '그냥 보유: 누적 +63.0% · 연 +10.8% · 최대 낙폭 -39.0%',
-    '시점만 밀어 만든 가짜 타이밍 200개 중 규칙보다 누적이 낮은 것 124개 → 구분 안 됨 (198개 이상이면 나음 · 2개 이하면 못함)',
-    '가짜 타이밍의 최대 낙폭 중앙값 -21.0% (낙폭이 작은 건 덜 들고 있어서일 수 있음)',
-    '진입 12회',
-    '5/20 같은 규칙: 진입 41회 · 비용 합계 약 10% · 누적 +12.0%',
-    '지금: 정배열(5>20>60>120) · 20일선 상승 — 09/09 종가 기준',
-    '같은 상태였던 날 214일 (9구간 · 겹치지 않는 20일 묶음 10개)',
-    '20거래일 뒤 중앙값 +2.1% · 오른 비율 61% (다음 날 종가 매수, 비용 차감)',
-    '평소: +0.8% · 53% → 차이 +1.3%p',
-    '가짜 주가 200개의 차이 범위 -4.4%p ~ +3.6%p 안 → 구분 안 됨',
+    '지난 기간 결과 (최대 낙폭 = 가장 크게 빠진 폭)',
+    '· 규칙대로: 누적 +41.0% · 해마다 +7.4% · 최대 낙폭 -18.0% · 보유한 날 52%',
+    '· 그냥 보유: 누적 +63.0% · 해마다 +10.8% · 최대 낙폭 -39.0%',
+    '· 날짜만 민 가짜 매매 200개 중 규칙보다 누적이 낮은 것 124개 → 구분 안 됨 (198개 이상이면 나음 · 2개 이하면 못함)',
+    '· 가짜 매매의 최대 낙폭 중앙값 -21.0% (덜 빠진 건 덜 들고 있어서일 수 있다)',
+    '· 진입 12회',
+    '· 5/20 같은 규칙: 진입 41회 · 비용 합계 약 10% · 누적 +12.0%',
+    '지금: 정배열(짧은 선이 위: 5>20>60>120일선) · 20일선 상승 — 09/09 종가 기준',
+    '· 같은 상태였던 날 214일 (9구간 · 겹치지 않는 20일 묶음 10개)',
+    '· 그 뒤 20거래일: 중앙값 +2.1% · 오른 비율 61% (다음 날 종가 매수, 비용 차감)',
+    '· 평소: +0.8% · 53% → 차이 +1.3%포인트',
+    '· 가짜 주가 200개의 차이 범위 -4.4 ~ +3.6%포인트 안 → 구분 안 됨',
   ]) assert.ok(tip.includes(line), `툴팁에 "${line}"`);
   // 우연과 예측력 — 2026-10-13 재검증: 효과 없는 규칙에서 판정이 4~5% 나오고, 앞 5년 순위로 뒤 5년 순위를 맞히지 못했다
-  assert.deepEqual(tip.slice(-3), [
-    '나음·못함은 규칙이 쓸모없어도 판정마다 20번에 1번꼴로 우연히 나옵니다',
-    '지난 기간의 설명입니다 — 10년치로 해 보니 앞 5년 결과로 뒤 5년을 맞히지 못했습니다',
-    '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다',
+  assert.deepEqual(tip.slice(-6), [
+    '',
+    '한계',
+    '· 나음 · 못함은 규칙이 쓸모없어도 판정마다 20번에 1번꼴로 우연히 나온다',
+    '· 지난 기간의 설명이다 — 10년치로 해 보니 앞 5년 결과로 뒤 5년을 맞히지 못했다',
+    '· 배당 · 세금 · 환전 제외, 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽다',
+    '· 과거 통계이며 매매 권유가 아니다',
   ]);
 
   // 판정 색 — 나음 빨강(UP), 못함 파랑(DOWN). 새 결과를 보려면 캐시를 비운다.
@@ -4076,39 +4094,39 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
   assert.match(redraw((r) => { r.rule.verdict = 'worse'; r.rule.below = 1; }).innerHTML,
     /5년: <span style="color:#185fa5">못함<\/span>$/);
   // 순위는 개수로 — "상위 99%" 가 못함에도 구분 안 됨에도 나왔다
-  assert.ok(el.title.includes('시점만 밀어 만든 가짜 타이밍 200개 중 규칙보다 누적이 낮은 것 1개 → 못함 (198개 이상이면 나음 · 2개 이하면 못함)'));
+  assert.ok(el.title.includes('· 날짜만 민 가짜 매매 200개 중 규칙보다 누적이 낮은 것 1개 → 못함 (198개 이상이면 나음 · 2개 이하면 못함)'));
   assert.ok(!el.title.includes('상위'));
   assert.ok(redraw((r) => { r.rule.verdict = 'better'; r.rule.below = 200; }).title.includes('낮은 것 200개 → 나음'));
 
   // 표본 부족 · 칸 넓히기 · 범위 밖인데 구분 안 됨
   redraw((r) => { r.rule.verdict = 'few'; r.rule.strat.entries = 4; r.rule.on = false; });
   assert.equal(el.innerHTML, '정배열·20선↑ · 20선<60선 34일째 · 5년: <span>표본 부족</span>');
-  assert.ok(el.title.includes('진입 4회 — 적어서 판정하지 않음'));
-  assert.ok(!el.title.includes('가짜 타이밍'));
+  assert.ok(el.title.includes('· 진입 4회 — 적어서 판정하지 않음'));
+  assert.ok(!el.title.includes('가짜 매매'));
   redraw((r) => { r.regime.verdict = 'few'; r.regime.fallback = true; r.regime.cls = 'mixDown'; r.regime.up = false; });
   assert.ok(el.innerHTML.startsWith('혼조·20선↓ · '));
   assert.ok(el.title.includes('지금: 혼조(20일선이 60일선 아래) · 20일선 하락 — 09/09 종가 기준'));
-  assert.ok(el.title.includes('같은 배열·방향인 날이 적어 배열만으로 봄'));
-  assert.ok(el.title.includes('같은 상태였던 날이 적어 판정하지 않음'));
+  assert.ok(el.title.includes('· 같은 배열 · 방향인 날이 적어 배열만으로 봄'));
+  assert.ok(el.title.includes('· 같은 상태였던 날이 적어 판정하지 않음'));
   assert.ok(!el.title.includes('평소:'));
   // 판정은 빼도 표본이 얼마나 작았는지는 보인다 (스펙: 차이 · 범위 줄만 뺀다)
-  assert.ok(el.title.includes('같은 상태였던 날 214일 (9구간 · 겹치지 않는 20일 묶음 10개)'));
-  assert.ok(el.title.includes('20거래일 뒤 중앙값 +2.1% · 오른 비율 61% (다음 날 종가 매수, 비용 차감)'));
+  assert.ok(el.title.includes('· 같은 상태였던 날 214일 (9구간 · 겹치지 않는 20일 묶음 10개)'));
+  assert.ok(el.title.includes('· 그 뒤 20거래일: 중앙값 +2.1% · 오른 비율 61% (다음 날 종가 매수, 비용 차감)'));
   assert.ok(!el.title.includes('가짜 주가'));
   redraw((r) => { Object.assign(r.regime, { verdict: 'few', days: 0, episodes: 0, windows: 0, med: null, rise: null, diff: null }); });
-  assert.ok(el.title.includes('같은 상태였던 날 0일 (0구간 · 겹치지 않는 20일 묶음 0개)'));
-  assert.ok(!el.title.includes('20거래일 뒤 중앙값'), '하루도 없으면 중앙값이 없다');
+  assert.ok(el.title.includes('· 같은 상태였던 날 0일 (0구간 · 겹치지 않는 20일 묶음 0개)'));
+  assert.ok(!el.title.includes('그 뒤 20거래일'), '하루도 없으면 중앙값이 없다');
   redraw((r) => { r.regime.diff = 0.05; });
-  assert.ok(el.title.includes('밖 → 구분 안 됨 (앞·뒤 절반의 방향이 달라)'));
+  assert.ok(el.title.includes('밖 → 구분 안 됨 (앞 · 뒤 절반의 방향이 달라)'));
 
   // 차이와 범위 끝이 소수 한 자리로 같게 보이면 왜 안/밖인지 안 보인다 — 그때만 둘째 자리까지.
   // 신한지주 2026-10-13: 차이 +3.18%p · 위쪽 끝 +3.21%p 가 둘 다 "+3.2%p" 로 나왔다.
   redraw((r) => { Object.assign(r.regime, { diff: 0.0318, lo: -0.0312, hi: 0.0321 }); });
-  assert.ok(el.title.includes('평소: +0.8% · 53% → 차이 +3.18%p'));
-  assert.ok(el.title.includes('가짜 주가 200개의 차이 범위 -3.12%p ~ +3.21%p 안 → 구분 안 됨'));
+  assert.ok(el.title.includes('· 평소: +0.8% · 53% → 차이 +3.18%포인트'));
+  assert.ok(el.title.includes('· 가짜 주가 200개의 차이 범위 -3.12 ~ +3.21%포인트 안 → 구분 안 됨'));
   redraw((r) => { Object.assign(r.regime, { diff: -0.0438, lo: -0.0442 }); });
-  assert.ok(el.title.includes('평소: +0.8% · 53% → 차이 -4.38%p'));
-  assert.ok(el.title.includes('가짜 주가 200개의 차이 범위 -4.42%p ~ +3.60%p 안 → 구분 안 됨'), '아래쪽 끝도');
+  assert.ok(el.title.includes('· 평소: +0.8% · 53% → 차이 -4.38%포인트'));
+  assert.ok(el.title.includes('· 가짜 주가 200개의 차이 범위 -4.42 ~ +3.60%포인트 안 → 구분 안 됨'), '아래쪽 끝도');
 
   // Windows 의 Chromium 은 툴팁을 1024자에서 자른다(ui/views/corewm/tooltip_state_manager.cc kMaxTooltipLength).
   // 줄이 가장 길어지는 경우(이상 봉 뒤부터 · 배열만으로 봄 · 범위 밖인데 구분 안 됨 · 큰 숫자)에도 끝의 안내까지 보여야 한다.
@@ -4118,7 +4136,7 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
     Object.assign(r.rule.strat, { total: 15.197, cagr: 0.251, mdd: 0.623 });
     Object.assign(r.rule.hold, { total: 17.664, cagr: 0.349, mdd: 0.541 });
   }).title;
-  assert.ok(longest.length <= 1024 && longest.endsWith('매매 권유가 아닙니다'), `툴팁 ${longest.length}자`);
+  assert.ok(longest.length <= 1024 && longest.endsWith('매매 권유가 아니다'), `툴팁 ${longest.length}자`);
 
   // 줄의 기간은 실제로 쓴 기간이다 — 상장 2~5년 종목, 이상 봉 뒤부터 쓴 종목이 "5년" 으로 읽히지 않게
   assert.ok(redraw((r) => { r.rule.from = Date.parse('2024-09-09T00:00:00Z'); }).innerHTML.endsWith(' · 2년: <span>구분 안 됨</span>'));
@@ -4133,7 +4151,7 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
   result = { error: 'data' }; run("delete trendCache['005930.KS'];"); c.renderTrendCheck({ symbol: '005930.KS' });
   assert.equal(el.hidden, false);
   assert.equal(el.textContent, '추세 점검: 데이터 확인 필요');
-  assert.match(el.title, /^하루에 35% 넘게 움직인 봉이 있습니다/);
+  assert.match(el.title, /^하루에 35% 넘게 움직인 봉이 있다\n/);
 });
 
 await test('trend check: recomputes only when the last confirmed bar changes; cost by market', () => {

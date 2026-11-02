@@ -107,8 +107,9 @@ function renderTrendCheck(item) {
   if (!r) return;
   if (r.error) {
     el.textContent = '추세 점검: 데이터 확인 필요';
-    el.title = '하루에 35% 넘게 움직인 봉이 있습니다. 국내 가격제한폭(±30%) 밖이라 액면분할 같은 데이터 이상으로 보고\n'
-      + '그 뒤만 쓰려 했지만 2년(500봉)이 남지 않아 계산하지 않았습니다.';
+    el.title = '하루에 35% 넘게 움직인 봉이 있다\n'
+      + '국내 가격제한폭(±30%) 밖이라 액면분할 같은 데이터 이상으로 보고 그 뒤만 쓰려 했지만\n'
+      + '2년(500봉)이 남지 않아 계산하지 않았다';
     return;
   }
   el.innerHTML = trendCheckText(r);
@@ -142,60 +143,65 @@ function trendCheckText(r) {
 // 툴팁. 모든 숫자를 비교 대상(그냥 보유 · 평소)과 우연의 범위(가짜 타이밍 · 가짜 주가) 옆에 둔다.
 function trendCheckTip(r, symbol) {
   const p = (x) => (x > 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
-  const pp = (x, digits = 1) => (x > 0 ? '+' : '') + (x * 100).toFixed(digits) + '%p';
+  const num = (x, digits = 1) => (x > 0 ? '+' : '') + (x * 100).toFixed(digits); // %포인트의 숫자만
+  const pp = (x, digits = 1) => `${num(x, digits)}%포인트`;
   const ymd = (ms) => {
     const d = new Date(ms);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   const { rule, fast, regime: g } = r;
   const cost = costOf(symbol);
+  // 툴팁 문체(2026-11-02): 규칙 / 지난 기간 결과 / 지금 / 한계 묶음, 목록은 '· '. Windows Chromium 은 1024자에서 자른다(테스트가 본다).
   const lines = [
-    '20/60 규칙 — 20일선이 60일선 위면 보유, 아래면 정리',
-    `종가로 판단 → 다음 날 종가에 체결 · 왕복 비용 ${(cost * 100).toFixed(2)}%${isIndex(symbol) ? ' (지수는 ETF 로 따라간다고 봄)' : ''}`,
+    '20/60 규칙: 20일선이 60일선 위면 보유, 아래면 정리',
+    `종가로 판단해 다음 날 종가에 사고판다 · 왕복 비용 ${(cost * 100).toFixed(2)}%${isIndex(symbol) ? ' (지수는 ETF 로 따라간다고 봄)' : ''}`,
     `기간 ${ymd(rule.from)} ~ ${ymd(rule.to)}${r.cut ? ' (하루 35% 넘게 움직인 봉 뒤부터)' : ''}`,
-    `규칙: 누적 ${p(rule.strat.total)} · 연 ${p(rule.strat.cagr)} · 최대 낙폭 ${p(-rule.strat.mdd)} · 보유 ${Math.round(rule.strat.inShare * 100)}%`,
-    `그냥 보유: 누적 ${p(rule.hold.total)} · 연 ${p(rule.hold.cagr)} · 최대 낙폭 ${p(-rule.hold.mdd)}`,
+    '',
+    '지난 기간 결과 (최대 낙폭 = 가장 크게 빠진 폭)',
+    `· 규칙대로: 누적 ${p(rule.strat.total)} · 해마다 ${p(rule.strat.cagr)} · 최대 낙폭 ${p(-rule.strat.mdd)} · 보유한 날 ${Math.round(rule.strat.inShare * 100)}%`,
+    `· 그냥 보유: 누적 ${p(rule.hold.total)} · 해마다 ${p(rule.hold.cagr)} · 최대 낙폭 ${p(-rule.hold.mdd)}`,
   ];
   if (rule.verdict === 'few') {
-    lines.push(`진입 ${rule.strat.entries}회 — 적어서 판정하지 않음`);
+    lines.push(`· 진입 ${rule.strat.entries}회 — 적어서 판정하지 않음`);
   } else {
     // 순위는 개수로 보인다 — 백분율("상위 99%")은 반올림 때문에 못함에도 구분 안 됨에도 같은 값이 나왔다
     const edge = Math.floor(rule.count * BT_ROT_EDGE);
     lines.push(
-      `시점만 밀어 만든 가짜 타이밍 ${rule.count}개 중 규칙보다 누적이 낮은 것 ${rule.below}개 → ${verdictText(rule.verdict)}`
+      `· 날짜만 민 가짜 매매 ${rule.count}개 중 규칙보다 누적이 낮은 것 ${rule.below}개 → ${verdictText(rule.verdict)}`
         + ` (${rule.count - edge}개 이상이면 나음 · ${edge}개 이하면 못함)`,
-      `가짜 타이밍의 최대 낙폭 중앙값 ${p(-rule.nullMdd)} (낙폭이 작은 건 덜 들고 있어서일 수 있음)`,
-      `진입 ${rule.strat.entries}회`,
+      `· 가짜 매매의 최대 낙폭 중앙값 ${p(-rule.nullMdd)} (덜 빠진 건 덜 들고 있어서일 수 있다)`,
+      `· 진입 ${rule.strat.entries}회`,
     );
   }
-  lines.push(`5/20 같은 규칙: 진입 ${fast.entries}회 · 비용 합계 약 ${(fast.trades * cost * 50).toFixed(0)}% · 누적 ${p(fast.total)}`, '');
+  lines.push(`· 5/20 같은 규칙: 진입 ${fast.entries}회 · 비용 합계 약 ${(fast.trades * cost * 50).toFixed(0)}% · 누적 ${p(fast.total)}`, '');
 
-  const cls = { up: '정배열(5>20>60>120)', down: '역배열(5<20<60<120)',
+  const cls = { up: '정배열(짧은 선이 위: 5>20>60>120일선)', down: '역배열(짧은 선이 아래: 5<20<60<120일선)',
     mixUp: '혼조(20일선이 60일선 위)', mixDown: '혼조(20일선이 60일선 아래)' }[g.cls];
   lines.push(`지금: ${cls} · 20일선 ${g.up ? '상승' : '하락'} — ${ymd(g.at).slice(5).replace('-', '/')} 종가 기준`);
-  if (g.fallback) lines.push('같은 배열·방향인 날이 적어 배열만으로 봄');
+  if (g.fallback) lines.push('· 같은 배열 · 방향인 날이 적어 배열만으로 봄');
   // 표본이 얼마나 작았는지는 판정하지 않을 때도 보인다 — 빼는 것은 차이 · 범위 줄뿐이다.
-  const sample = [`같은 상태였던 날 ${g.days}일 (${g.episodes}구간 · 겹치지 않는 20일 묶음 ${g.windows}개)`];
-  if (g.days) sample.push(`20거래일 뒤 중앙값 ${p(g.med)} · 오른 비율 ${Math.round(g.rise * 100)}% (다음 날 종가 매수, 비용 차감)`);
+  const sample = [`· 같은 상태였던 날 ${g.days}일 (${g.episodes}구간 · 겹치지 않는 20일 묶음 ${g.windows}개)`];
+  if (g.days) sample.push(`· 그 뒤 20거래일: 중앙값 ${p(g.med)} · 오른 비율 ${Math.round(g.rise * 100)}% (다음 날 종가 매수, 비용 차감)`);
   if (g.verdict === 'few') {
-    lines.push('같은 상태였던 날이 적어 판정하지 않음', ...sample);
+    lines.push('· 같은 상태였던 날이 적어 판정하지 않음', ...sample);
   } else {
     const out = g.lo != null && (g.diff < g.lo || g.diff > g.hi);
     // 차이와 범위 끝이 소수 한 자리로 같게 보이면(+3.18 · +3.21 → 둘 다 +3.2) 왜 안/밖인지 안 보인다 — 그때만 둘째 자리까지
-    const d = g.lo != null && (pp(g.diff) === pp(g.lo) || pp(g.diff) === pp(g.hi)) ? 2 : 1;
+    const d = g.lo != null && (num(g.diff) === num(g.lo) || num(g.diff) === num(g.hi)) ? 2 : 1;
     lines.push(
       ...sample,
-      `평소: ${p(g.allMed)} · ${Math.round(g.allRise * 100)}% → 차이 ${pp(g.diff, d)}`,
-      g.lo == null ? '가짜 주가가 모자라 판정하지 않음'
-        : `가짜 주가 ${g.paths}개의 차이 범위 ${pp(g.lo, d)} ~ ${pp(g.hi, d)} ${out ? '밖' : '안'} → ${verdictText(g.verdict)}`
-          + (out && g.verdict === 'same' ? ' (앞·뒤 절반의 방향이 달라)' : ''),
+      `· 평소: ${p(g.allMed)} · ${Math.round(g.allRise * 100)}% → 차이 ${pp(g.diff, d)}`,
+      g.lo == null ? '· 가짜 주가가 모자라 판정하지 않음'
+        : `· 가짜 주가 ${g.paths}개의 차이 범위 ${num(g.lo, d)} ~ ${pp(g.hi, d)} ${out ? '밖' : '안'} → ${verdictText(g.verdict)}`
+          + (out && g.verdict === 'same' ? ' (앞 · 뒤 절반의 방향이 달라)' : ''),
     );
   }
   // 2026-10-13 재검증: 효과 없는 규칙에서도 판정이 4~5% 나왔고, 10년치에서 앞 5년 순위로 뒤 5년 순위를 맞히지 못했다(상관 -0.02)
-  lines.push('',
-    '나음·못함은 규칙이 쓸모없어도 판정마다 20번에 1번꼴로 우연히 나옵니다',
-    '지난 기간의 설명입니다 — 10년치로 해 보니 앞 5년 결과로 뒤 5년을 맞히지 못했습니다',
-    '배당·세금·환전 제외 · 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽습니다 · 과거 통계이며 매매 권유가 아닙니다');
+  lines.push('', '한계',
+    '· 나음 · 못함은 규칙이 쓸모없어도 판정마다 20번에 1번꼴로 우연히 나온다',
+    '· 지난 기간의 설명이다 — 10년치로 해 보니 앞 5년 결과로 뒤 5년을 맞히지 못했다',
+    '· 배당 · 세금 · 환전 제외, 관심종목은 이미 고른 종목이라 결과가 유리하게 나오기 쉽다',
+    '· 과거 통계이며 매매 권유가 아니다');
   return lines.join('\n');
 }
 

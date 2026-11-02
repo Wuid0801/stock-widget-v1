@@ -146,12 +146,14 @@ function marketExtraRow(key) {
       d5: value != null && base != null ? value - base : null, d5Unit: 'pt', valueText: value == null ? '—' : pt(value),
       dayText: change == null ? '—' : pt(change), dayTone: change,
       d5Text: value != null && base != null ? pt(value - base) : '—', note: value == null ? '현물 분봉 기다리는 중' : `${hm} 기준`,
-      title: `베이시스 = 코스피200 선물 − 코스피200 현물${value == null ? '' : ` (${pt(value)}pt, 현물의 ${pt((value / at.v) * 100)}%)`}. `
-        + '선물이 현물보다 비싸면 +(콘탱고), 싸면 −(백워데이션). '
-        + '이론 베이시스는 만기까지의 금리 이자 − 받을 배당이라 대개 조금 + 이지만, 만기 전에 큰 배당이 빠지는 기간에는 − 일 수 있다. '
-        + '그 이론값보다 높으면 선물 매수 우위, 낮으면 매도 우위로 흔히 읽는다 — 앱은 이론값을 계산하지 않는다. '
-        + '만기(3 · 6 · 9 · 12월 둘째 목요일)에 가까울수록 0 에 붙는다. '
-        + `선물 값이 20분 늦어 같은 시각${hm ? `(${hm})` : ''}의 현물과 뺀다 — 장중엔 20분 전 베이시스다. `
+      title: `베이시스 = 코스피200 선물 − 코스피200 현물${value == null ? '' : ` (${pt(value)}pt, 현물의 ${pt((value / at.v) * 100)}%)`}\n`
+        + '선물이 비싸면 +(콘탱고), 싸면 −(백워데이션)\n\n'
+        + '읽는 법\n'
+        + '· 견줄 것은 이론 베이시스 = 만기까지의 금리 이자 − 받을 배당\n'
+        + '· 이론값은 대개 조금 + 이지만, 만기 전에 큰 배당이 빠지는 기간에는 − 일 수 있다\n'
+        + '· 이론값보다 높으면 선물 매수 우위, 낮으면 매도 우위로 흔히 읽는다 (앱은 이론값을 계산하지 않는다)\n'
+        + '· 만기(3 · 6 · 9 · 12월 둘째 목요일)에 가까울수록 0 에 붙는다\n\n'
+        + `선물 값이 20분 늦어 같은 시각${hm ? `(${hm})` : ''}의 현물과 뺀다 — 장중엔 20분 전 베이시스다\n`
         + '오늘 등락은 어제 베이시스(종가끼리, 선물 15:45 · 현물 15:30) 대비, 5일 변화 · 미니 선은 날마다의 베이시스',
       spark: hist.length + (value != null ? 1 : 0) >= 2 ? [...hist.slice(-19), ...(value != null ? [value] : [])] : null };
   }
@@ -167,7 +169,7 @@ function marketExtraRow(key) {
       d5: null, d5Unit: '%', valueText: `${signed(last.foreign)}억`, dayText: '', dayTone: last.foreign,
       d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
       note: today ? `오늘 잠정 ${signed(today.foreign)}억` : '',
-      title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정 · 20:30 전 오늘 값은 잠정`,
+      title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정\n20:30 전 오늘 값은 잠정`,
       spark: done.slice(-20).map((f) => f.foreign) };
   }
   if (key === 'HYOAS') {
@@ -194,24 +196,28 @@ function marketExtraRow(key) {
     const name = MARKET_EXTRA_NAMES[key];
     if (!field) {
       return { key, name, symbol: null, value, pct: null, change: null, d5: null, d5Unit: '%', valueText: eok(value), dayText: '—', d5Text: '—',
-        title: `프로그램 매매 장중 누적 순매수 — 코스피 현물 ${eok(value)}억. 여러 종목을 바구니로 한꺼번에 사고파는 매매(차익 · 비차익 합)다. `
-          + '다음 금융이 지금 값 하나만 줘서 선물 · 30분 · 미니 선은 없다. 장 마감 전은 잠정치' };
+        title: `프로그램 매매 장중 누적 순매수: 코스피 현물 ${eok(value)}억 원\n`
+          + '여러 종목을 바구니로 한꺼번에 사고파는 매매 (차익 · 비차익 합)\n'
+          + '다음 금융이 지금 값 하나만 줘서 선물 · 30분 · 미니 선은 없다\n\n'
+          + '다음 금융 — 장 마감 전은 잠정치' };
     }
     const futRow = it.fut && it.fut.length ? it.fut[it.fut.length - 1] : null;
     const fut = futRow && Number.isFinite(futRow[field]) ? futRow[field] : null;
     let ago = null; // 30분 앞 — 그 시각 또는 그 앞의 마지막 값
     for (const r of spot) if (r.t <= last.t - 30 * 60000) ago = r;
     const d30 = ago && Number.isFinite(ago[field]) ? value - ago[field] : null;
-    const note = { INTRA_INST: '기관은 연기금 포함 합계다. ', INTRA_PENSION: '연기금은 기관 안의 일부다. ',
+    const note = { INTRA_INST: '기관은 연기금 포함 합계다\n', INTRA_PENSION: '연기금은 기관 안의 일부다\n',
       // 상장사의 장내 자사주 매입은 기타법인으로 잡힌다(기사 확인). '신탁을 거치면 다른 분류' 는 출처가 없어 뺐다(2026-11-02 점검)
-      INTRA_CORP: '기타법인은 일반 회사 · 창업투자회사 · 투자자문사 등이다 — 상장사가 장내에서 자사주를 사면 여기에 잡혀, '
-        + '기타법인 순매수는 흔히 자사주 매입으로 읽히지만 전부가 그것은 아니다. ' }[key] || '';
+      INTRA_CORP: '기타법인은 일반 회사 · 창업투자회사 · 투자자문사 등이다\n'
+        + '상장사가 장내에서 자사주를 사면 여기에 잡혀, 기타법인 순매수는 흔히 자사주 매입으로 읽히지만 전부가 그것은 아니다\n' }[key] || '';
     return { key, name, symbol: null, value, pct: null, change: null, d5: null, d5Unit: '%',
       valueText: eok(value), dayText: fut == null ? '—' : eok(fut), dayTone: fut,
-      d5Text: d30 == null ? '—' : eok(d30), d5Title: '최근 30분 현물 순매수 변화(억)',
-      title: `${name} 장중 누적 순매수 — 코스피 현물 ${eok(value)}억(${hm(last.t)})`
-        + `${fut == null ? '' : ` · 코스피200 선물 ${eok(fut)}억(${hm(futRow.t)})`}. ${note}`
-        + '30분은 최근 30분 동안의 현물 순매수 변화, 미니 선은 오늘 09:00 부터의 현물 누적. 다음 금융 — 장 마감 전은 잠정치',
+      d5Text: d30 == null ? '—' : eok(d30), d5Title: '최근 30분 현물 순매수 변화(억 원)',
+      title: `${name} 장중 누적 순매수\n`
+        + `· 코스피 현물 ${eok(value)}억 원 (${hm(last.t)})\n`
+        + `${fut == null ? '' : `· 코스피200 선물 ${eok(fut)}억 원 (${hm(futRow.t)})\n`}${note}\n`
+        + '30분: 최근 30분 동안의 현물 순매수 변화 · 미니 선: 오늘 09:00 부터의 현물 누적\n'
+        + '다음 금융 — 장 마감 전은 잠정치',
       spark: spot.map((r) => r[field]) };
   }
   return null;
@@ -276,7 +282,7 @@ function marketHtml() {
       // 위험 · 자금 줄은 툴팁에 그 지표의 뜻(MARKET_DESC) — 누를 수 있으면 그 아래에 '차트 보기', 값이 없어도 설명은 둔다
       const desc = MARKET_DESC[r.key];
       const tip = r.title || desc;
-      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(`${desc ? `${desc}\n` : ''}${r.name} 차트 보기`)}">`
+      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(`${desc ? `${desc}\n\n` : ''}${r.name} 차트 보기`)}">`
         : `<div class="rrow mrow mfix" data-key="${r.key}"${tip ? ` title="${esc(tip)}"` : ''}>`;
       const chk = checkOf.get(r.key);
       if (chk) names.set(chk.key, r.name);
@@ -295,7 +301,7 @@ function marketHtml() {
   const listOf = (v) => checks.filter((c) => c.verdict === v).map((c) => names.get(c.key)).join(' · ');
   const tip = [['긍정', 'good'], ['중립', 'neutral'], ['위험', 'risk'], ['판정 불가', null]]
     .map(([label, v]) => (listOf(v) ? `${label}: ${listOf(v)}\n` : '')).join('');
-  return `<div class="qhint msum" title="${esc(`${tip}경험칙을 숫자로 옮긴 참고용입니다 — 매매 판단을 대신하지 않습니다\n${DEADCAT_EVIDENCE}`)}">데드캣 점검 · 긍정 ${count('good')}`
+  return `<div class="qhint msum" title="${esc(`${tip}\n경험칙을 숫자로 옮긴 참고용이다 — 매매 판단을 대신하지 않는다\n\n${DEADCAT_EVIDENCE}`)}">데드캣 점검 · 긍정 ${count('good')}`
     + ` · 중립 ${count('neutral')} · 위험 ${count('risk')} (참고용)${judged < checks.length ? ` · 판정 ${judged}/${checks.length}` : ''}</div>`
     + out.join('');
 }

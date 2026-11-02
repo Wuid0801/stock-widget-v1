@@ -47,7 +47,7 @@ function renderMaChips() {
     b.textContent = String(p);
     b.title = fits
       ? `${p}일 이동평균`
-      : `${p}일 이동평균 — ${state.timeframe} 구간에는 너무 길어 지금은 그리지 않습니다`;
+      : `${p}일 이동평균 — ${state.timeframe} 구간에는 너무 길어 지금은 그리지 않는다`;
     if (on) {
       const c = maColor(p);
       b.className = fits ? 'on' : 'on off';
