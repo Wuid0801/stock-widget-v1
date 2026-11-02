@@ -281,6 +281,46 @@ const prelim = (day, name = '연결재무제표기준영업(잠정)실적(공정
   e = await events('005930.KS');
   check('미리 알린 일정이 앞에 있으면 예상 일정은 없다', JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }]),
     JSON.stringify(e));
+
+  // 네이버 IR 일정은 그 분기 잠정실적을 아직 내지 않았을 때만 실적이다(2026-11-02 사용자 제보 — 효성중공업이 10/30 잠정실적 뒤
+  // 11/4~6 기관 대면 미팅(NDR)을 '3분기 경영실적 발표 및 질의응답' 으로 공시해 '실적 D-2' 가 떴다). 제목에 '실적' 이 없으면(증권사
+  // 컨퍼런스 · NDR — 대형주 14곳 IR 공시 97건 중 74건) 실적이 아니다. 아래 제목 · 날짜는 그 IR 공시(DART)의 개최목적 · 일시.
+  FILINGS['005930'] = [prelim('2026-10-08')];
+  e = await events('005930.KS');
+  check('월초 잠정실적 뒤의 컨퍼런스콜은 실적 일정이 아니다(실적 숫자는 이미 나왔다)', e.ok && e.events.length === 0, JSON.stringify(e));
+  SHIFT = RealDate.parse('2026-10-29T12:00:00+09:00') - RealDate.now();
+  FILINGS['005930'] = [prelim('2026-10-29')];
+  e = await events('005930.KS');
+  check('같은 날 낸 잠정실적은 그 일정을 지우지 않는다', JSON.stringify(e.events) === JSON.stringify([
+    { kind: 'ir', title: '2026년 3분기 경영실적 발표', date: '2026-10-29' }, { kind: 'ir', title: '잠정실적 공시', date: '2026-10-29' }]),
+  JSON.stringify(e));
+  SHIFT = RealDate.parse('2026-11-02T12:00:00+09:00') - RealDate.now();
+  const irInfo = (title, irScheduleDate) => ({ integration: { irScheduleInfo: { title, irScheduleDate } } });
+  FX['298040'] = irInfo('2026년 3분기 경영실적 발표 및 질의응답', '2026-11-04');
+  FILINGS['298040'] = [prelim('2026-10-30'), { no: '4', day: '2026-10-30', name: '기업설명회(IR)개최(안내공시)' }, prelim('2025-10-31')];
+  e = await events('298040.KS');
+  check('효성중공업 — 잠정실적(10/30) 뒤의 기관 미팅(11/4)은 실적 D-2 가 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+  FX['000270'] = irInfo('국내기관 방문 IR (Non-Deal Roadshow) 실시', '2026-11-05');
+  FILINGS['000270'] = [prelim('2026-10-30'), prelim('2026-10-01', '영업(잠정)실적(공정공시)')];
+  e = await events('000270.KS');
+  check('제목에 실적이 없는 IR(NDR · 컨퍼런스)은 실적 일정이 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+  SHIFT = RealDate.parse('2026-11-03T12:00:00+09:00') - RealDate.now();
+  FILINGS['000270'] = [prelim('2026-10-30'), prelim('2026-11-03', '영업(잠정)실적(공정공시)')];
+  e = await events('000270.KS');
+  check('연결 잠정실적을 내는 회사의 매달 별도 잠정실적(기아 · 현대차)은 실적 D-day 가 아니다', e.ok && e.events.length === 0, JSON.stringify(e));
+  SHIFT = 0;
+  FILINGS['069500'] = [prelim(TODAY, '영업(잠정)실적(공정공시)')];
+  e = await events('069500.KS');
+  check('연결 공시가 없는 회사(한화)는 별도 잠정실적이 분기 실적', JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '잠정실적 공시', date: TODAY }]),
+    JSON.stringify(e));
+  FILINGS['069500'] = [prelim(TODAY, '[첨부추가]연결재무제표기준영업(잠정)실적(공정공시)')];
+  e = await events('069500.KS');
+  check('[첨부추가] 는 정정이 아니라 원래 공시(LG에너지솔루션 7/7)', JSON.stringify(e.events) === JSON.stringify([{ kind: 'ir', title: '잠정실적 공시', date: TODAY }]),
+    JSON.stringify(e));
+  delete FX['298040'];
+  delete FX['000270'];
+  delete FILINGS['298040'];
+  delete FILINGS['000270'];
   SHIFT = 0;
   blocked = ['finance.daum.net'];
   e = await events('005930.KS');

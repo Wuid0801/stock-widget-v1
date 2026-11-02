@@ -1101,19 +1101,43 @@ async function daumFilings(code) {
 }
 
 // 잠정실적 공시로 본 일정(2026-10-30 사용자 제보 — 효성중공업은 실적 발표 일정을 미리 알리지 않고 잠정실적 · IR 안내를 같은 날
-// 공시해(7/31 · 10/30) 네이버 일정이 없었고 D-day 가 뜨지 않았다). 공시 이름에 '영업(잠정)실적'(연결 · 별도)이 든 것, 정정([기재정정])은
-// 발표가 아니라 뺀다.
+// 공시해(7/31 · 10/30) 네이버 일정이 없었고 D-day 가 뜨지 않았다). 공시 이름에 '영업(잠정)실적'이 든 것(prelimDays).
 //  - 오늘 공시했으면 { kind: 'ir', title: '잠정실적 공시', date: 오늘 } — 칩은 '실적 D-day'
 //  - 아니면, 미리 알린 일정(announced)이 오늘 이후에 없을 때 작년 공시일 + 1년이 앞으로 30일 안이면 { kind: 'irEst' }(추정).
 //    올해 그 분기를 이미 냈으면(그 날 45일 앞부터 오늘 사이에 공시가 있으면) 뺀다.
 const PRELIM_RE = /영업\(잠정\)실적/;
+
+// 잠정실적 공시일. 정정([기재정정] · [첨부정정])은 발표가 아니라 빼고, [첨부추가]는 원래 공시라 센다(LG에너지솔루션 7/7 은
+// '[첨부추가]…' 로만 남아 있었다). 연결 공시를 내는 회사는 연결만 센다 — 현대차 · 기아 · HD현대중공업은 분기 실적(연결) 말고도
+// 연결이 아닌 '영업(잠정)실적' 을 거의 매달 내(2026-11-02 점검) 그날마다 '실적 D-day' 가 떴다. 연결이 없는 회사(한화)는 별도가 분기 실적이다.
+function prelimDays(rows) {
+  const prelim = rows.map((r) => ({ day: String(r?.day ?? ''), name: String(r?.name ?? '') }))
+    .filter((r) => PRELIM_RE.test(r.name) && !/^\[[^\]]*정정/.test(r.name) && /^\d{4}-\d{2}-\d{2}$/.test(r.day));
+  const own = prelim.some((r) => r.name.includes('연결')) ? prelim.filter((r) => r.name.includes('연결')) : prelim;
+  return [...new Set(own.map((r) => r.day))].sort();
+}
+
+// 네이버 IR 일정 중 실적인 것. 그 일정은 회사의 기업설명회(IR) 공시에서 온다(제목 = 개최목적, 날짜 = 일시 — 삼성전자 10/29
+// '2026년 3분기 경영실적 발표' 가 그 공시와 같다). IR 공시 넷 중 셋은 증권사 컨퍼런스 · NDR 이라(대형주 14곳 2026-05~10 의 97건 중
+// 74건, 2026-11-02 점검) 둘 다일 때만 실적으로 둔다(사용자 결정 — 컨퍼런스 · NDR 은 숨긴다):
+//  - 제목에 '실적' 이 있다(컨퍼런스 · NDR · 간담회는 없다)
+//  - 그 분기 잠정실적을 아직 내지 않았다 — 그 날 45일 앞부터 전날 사이에 잠정실적 공시가 없다. 효성중공업은 10/30 잠정실적 뒤
+//    11/4~6 기관 대면 미팅을 '3분기 경영실적 발표 및 질의응답' 으로 공시해 '실적 D-2' 가 떴다(사용자 제보). 삼성전자처럼 월초
+//    잠정실적 뒤의 월말 컨퍼런스콜도 빠진다 — 실적 숫자는 월초에 나왔다.
+// 공시 목록을 받지 못하면(rows null) 제목만 본다.
+function earningsIr(announced, rows) {
+  const days = rows ? prelimDays(rows) : [];
+  const at = (d) => Date.parse(`${d}T00:00:00Z`);
+  return announced.filter((e) => e.kind !== 'ir' || (/실적/.test(e.title)
+    && !days.some((x) => x < e.date && at(x) > at(e.date) - 45 * 86400000)));
+}
+
 function prelimEvents(rows, announced, now) {
   if (!rows) return [];
   const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
   const at = (d) => Date.parse(`${d}T00:00:00Z`);
   const today = iso(now + 9 * 3600000);
-  const days = [...new Set(rows.filter((r) => PRELIM_RE.test(String(r?.name ?? '')) && !String(r.name).startsWith('['))
-    .map((r) => String(r.day)).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
+  const days = prelimDays(rows);
   if (days.includes(today)) return [{ kind: 'ir', title: '잠정실적 공시', date: today }];
   if (announced.some((e) => e.date >= today)) return [];
   const horizon = iso(at(today) + 30 * 86400000);
@@ -1142,7 +1166,9 @@ ipcMain.handle('naver:events', async (_e, symbol) => {
       events = await naverEventsOf(s, kr);
       naverEventCache.set(s, { at: now, events });
     }
-    return { ok: true, events: [...events, ...prelimEvents(await filings, events, now)] };
+    const rows = await filings;
+    const ir = earningsIr(events, rows); // 기억은 네이버 원본 — 공시 목록은 매번 새로 보므로 거르기는 돌려줄 때
+    return { ok: true, events: [...ir, ...prelimEvents(rows, ir, now)] };
   } catch (err) {
     return { ok: false, error: err.message || '일정 조회 실패' };
   }
