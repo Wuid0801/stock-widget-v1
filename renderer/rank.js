@@ -176,7 +176,7 @@ function marketExtraRow(key) {
     return { key, name: MARKET_EXTRA_NAMES.HYOAS, symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
       d5: base == null ? null : last.value - base, d5Unit: 'bp', valueText: `${last.value.toFixed(2)}%`,
       note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 기준`,
-      title: '미국 하이일드 회사채 가산금리(ICE BofA US High Yield OAS, FRED) — 1~2영업일 늦다',
+      title: MARKET_DESC.HYOAS,
       spark: rows.slice(-20).map((r) => r.value) };
   }
   if (key in INTRADAY_FIELD) {
@@ -268,8 +268,11 @@ function marketHtml() {
       const bp = r.d5Unit === 'bp';
       const day = r.dayText != null ? r.dayText : bp ? (r.change != null ? fmtBp(r.change) : '—') : (r.pct != null ? fmtPct(r.pct) : '—');
       const d5 = r.d5Text != null ? r.d5Text : r.d5 == null ? '—' : bp ? fmtBp(r.d5) : fmtPct(r.d5);
-      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(r.name)} 차트 보기">`
-        : `<div class="rrow mrow mfix" data-key="${r.key}"${r.title ? ` title="${esc(r.title)}"` : ''}>`;
+      // 위험 · 자금 줄은 툴팁에 그 지표의 뜻(MARKET_DESC) — 누를 수 있으면 그 아래에 '차트 보기', 값이 없어도 설명은 둔다
+      const desc = MARKET_DESC[r.key];
+      const tip = r.title || desc;
+      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(`${desc ? `${desc}\n` : ''}${r.name} 차트 보기`)}">`
+        : `<div class="rrow mrow mfix" data-key="${r.key}"${tip ? ` title="${esc(tip)}"` : ''}>`;
       const chk = checkOf.get(r.key);
       if (chk) names.set(chk.key, r.name);
       const dot = chk ? `<span class="mdot ${chk.verdict || 'none'}" title="${esc(chk.detail)}"></span>` : '<span class="mdsp"></span>';

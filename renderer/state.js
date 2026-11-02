@@ -237,6 +237,20 @@ const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FU
 // 장중 수급 줄 → market:extras intraday 의 주체 필드. 프로그램은 필드가 아니라 현물 값 하나(intraday.program)다.
 const INTRADAY_FIELD = { INTRA_FOREIGN: 'foreign', INTRA_INDIV: 'individual', INTRA_INST: 'institution', INTRA_PENSION: 'pension',
   INTRA_CORP: 'corp', INTRA_PROGRAM: null };
+// 위험 · 자금 묶음 줄의 툴팁 — 그 지표의 뜻과 흔히 읽는 법(2026-11-02 사용자 요청). 기준 숫자는 흔히 쓰는 경험칙이다.
+const MARKET_DESC = {
+  VIX: 'VIX(변동성 지수) — S&P 500 옵션 값으로 낸 앞으로 30일의 예상 변동성(연 %)으로, 흔히 공포지수라고 부른다. '
+    + '대략 20 아래면 차분, 20~30 불안, 30 넘으면 공포로 본다. 주가가 급락할 때 치솟고, 내려오면 불안이 가라앉는 것으로 읽는다',
+  US10Y: '미국채 10년 금리(%) — 세계 자금의 기준 금리. 오르면 주식(특히 성장주) 값에 부담이고 달러가 강해지기 쉽다. '
+    + '물가 · 경기 기대 · 연준 정책에 따라 움직인다. 오늘 등락 · 5일 변화는 bp(0.01%p)',
+  HYOAS: '미국 HY OAS — 투기등급(하이일드) 회사채가 국채보다 더 얹어 주는 금리(%p, ICE BofA US High Yield OAS). '
+    + '넓어지면(오르면) 부도 걱정에 돈이 위험자산에서 빠진다는 뜻이고, 좁아지면 위험을 감수하는 분위기다. '
+    + '대략 3~4% 는 낙관, 5% 넘으면 경계, 2008 · 2020 위기 때는 10% 를 넘었다. FRED, 1~2영업일 늦다',
+  USDKRW: '원/달러 — 1달러에 원화 몇 원. 오르면 원화 약세 — 외국인에게는 환차손 걱정이라 국내 주식을 팔기 쉽고, '
+    + '수출 기업 실적에는 유리하다. 내리면 반대다',
+  WTI: 'WTI — 서부 텍사스산 원유 선물(배럴당 달러, 근월물, 10분 지연). 오르면 물가 · 금리 부담이 커지고 정유 · 에너지주에 유리하다. '
+    + '크게 내리면 경기 둔화 걱정으로 읽기도 한다',
+};
 // 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
 const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };
 // 코스톨라니 달걀(해석, indicators.js eggPhase)을 메모에 다는 지표 화면 줄 — 거래량이 있는 주가지수만. SOX · 환율 · VIX · 금리는

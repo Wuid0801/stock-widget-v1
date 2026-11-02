@@ -2941,6 +2941,30 @@ await test('market panel: 지표 lists every index item in three groups and pick
   assert.equal(h.elements.get('rankTabs').hidden, false, '국내로 돌아오면 탭 줄이 다시 보인다');
 });
 
+// 위험 · 자금 묶음의 줄에 마우스를 올리면 그 지표의 뜻과 읽는 법(MARKET_DESC, 2026-11-02 사용자 요청 "VIX · HY OAS 등 설명").
+// 누를 수 있는 줄은 그 아래에 '차트 보기'. 받은 적이 없어 — 로 남은 줄도 설명은 보인다.
+await test('market panel: 위험 · 자금 rows explain what each measure is on hover', () => {
+  const h = marketHarness();
+  h.run(`marketExtras = { at: Date.now(), d: { ok: true, hyOas: [{ date: '20261029', value: 3.1 }, { date: '20261030', value: 3.2 }] } };`);
+  const titleOf = (html, key) => (new RegExp(`data-key="${key}" title="([^"]*)"`).exec(html) || [])[1];
+  let html = h.c.marketHtml();
+  for (const key of ['VIX', 'US10Y', 'USDKRW', 'WTI']) {
+    const t = titleOf(html, key);
+    assert.ok(t && t.startsWith(`${h.run(`MARKET_DESC.${key}`)}\n`) && t.endsWith(' 차트 보기'), `${key}: ${t}`);
+  }
+  assert.match(titleOf(html, 'VIX'), /^VIX\(변동성 지수\) — .*공포지수.*20 아래면 차분, 20~30 불안, 30 넘으면 공포/);
+  assert.match(titleOf(html, 'US10Y'), /^미국채 10년 금리.*bp\(0\.01%p\)/);
+  assert.match(titleOf(html, 'USDKRW'), /^원\/달러 — .*원화 약세/);
+  assert.match(titleOf(html, 'WTI'), /^WTI — .*원유 선물/);
+  assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'), 'HY OAS 는 누를 수 없는 줄 — 설명만');
+  assert.match(titleOf(html, 'HYOAS'), /하이일드.*FRED, 1~2영업일 늦다/);
+  assert.equal(titleOf(html, 'SPX'), 'S&P 500 차트 보기', '다른 묶음은 그대로');
+  h.run('marketExtras = null; indexItems = [];');
+  html = h.c.marketHtml();
+  assert.equal(titleOf(html, 'VIX'), h.run('MARKET_DESC.VIX'), '값이 없는 줄(누를 수 없다)도 설명');
+  assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'));
+});
+
 // 코스톨라니 달걀(해석) — 거래량이 있는 주가지수(코스피 · 코스닥 · 나스닥 · S&P 500)만 메모에 국면, 툴팁에 근거. 2026-10-29.
 await test('market panel: stock indices note their Kostolany egg phase with the rule in a tooltip; others do not', () => {
   const h = marketHarness();
