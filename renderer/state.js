@@ -177,6 +177,12 @@ const INDICES = [
   // notTraded: 사고팔 수 있는 것이 아니라 추세 점검(매매 과거 검증)을 하지 않는다.
   { symbol: '^FNG', code: 'FEARGREED', name: 'CNN 공포·탐욕', overseas: true, notTraded: true },
   { symbol: '^HYOAS', code: 'HYOAS', name: '미국 HY OAS', overseas: true, cur: '%', notTraded: true },
+  { symbol: '^T10Y2Y', code: 'CURVE', name: '미국 장단기 금리차', overseas: true, cur: '%', notTraded: true },
+  // 달러 인덱스 · 금 · 구리(2026-11-03 사용자 요청) — 야후 기호로 값(일봉의 마지막 값)과 차트를 받는다. 실시간 값을 줄 네이버 코드를
+  // 확인하지 못해 지수 줄 값(indexItems)은 없다. 늦음은 재 보지 않아 적지 않는다.
+  { symbol: 'DX-Y.NYB', code: 'DXY', name: '달러 인덱스', overseas: true },
+  { symbol: 'GC=F', code: 'GOLD', name: '금', overseas: true },
+  { symbol: 'HG=F', code: 'COPPER', name: '구리', overseas: true },
 ];
 
 function isIndex(symbol) {
@@ -239,10 +245,13 @@ const MARKET_GROUPS = [
   ['국내', ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']],
   [INTRADAY_GROUP, ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']],
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
-  ['위험 · 자금', ['VIX', 'FEARGREED', 'US10Y', 'HYOAS', 'USDKRW', 'WTI', 'BRENT']], // FEARGREED CNN 공포 · 탐욕 · BRENT 브렌트유(2026-11-03)
+  // FEARGREED CNN 공포 · 탐욕 · CURVE 장단기 금리차 · DXY 달러 인덱스 · 원자재 묶음(2026-11-03 — 줄이 늘어 유가를 나눴다)
+  ['위험 · 자금', ['VIX', 'FEARGREED', 'US10Y', 'CURVE', 'HYOAS', 'USDKRW', 'DXY']],
+  ['원자재', ['WTI', 'BRENT', 'GOLD', 'COPPER']],
 ];
 // 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
 const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS', FEARGREED: 'CNN 공포·탐욕',
+  CURVE: '미국 장단기 금리차',
   INTRA_FOREIGN: '외국인', INTRA_INDIV: '개인', INTRA_INST: '기관', INTRA_PENSION: '연기금', INTRA_CORP: '기타법인', INTRA_PROGRAM: '프로그램' };
 // CNN 공포 · 탐욕의 단계(응답의 rating) → 한글. 모르는 값은 그대로 적는다.
 const FEARGREED_LABEL = { 'extreme fear': '극단적 공포', fear: '공포', neutral: '중립', greed: '탐욕', 'extreme greed': '극단적 탐욕' };
@@ -284,6 +293,19 @@ const MARKET_DESC = {
   WTI: 'WTI — 서부 텍사스산 원유 선물(배럴당 달러, 근월물, 10분 지연)\n'
     + '오르면 물가 · 금리 부담이 커지고 정유 · 에너지주에 유리하다\n'
     + '크게 내리면 경기 둔화 걱정으로 읽기도 한다',
+  CURVE: '미국 장단기 금리차 — 국채 10년 금리 − 2년 금리(%포인트)\n'
+    + '보통은 + 다(오래 빌려줄수록 이자가 높다). − (역전)이면 시장이 앞으로 금리 인하 · 경기 둔화를 본다는 뜻으로 읽는다\n'
+    + '1980년 이후 미국 경기 침체 앞에는 대개 역전이 있었다 — 걸린 시간은 몇 달에서 2년 남짓으로 들쭉날쭉하고, 역전이 늘 침체로 이어진 것은 아니다\n\n'
+    + 'FRED T10Y2Y — 하루쯤 늦다\n'
+    + '오늘 등락 · 5일 변화는 bp(0.01%포인트)',
+  DXY: '달러 인덱스(DXY) — 유로 · 엔 · 파운드 · 캐나다 달러 · 크로나 · 프랑 6개 통화에 견준 달러 값\n'
+    + '오르면 달러 강세: 원/달러가 오르기 쉽고 외국인이 신흥국 주식을 팔기 쉽다\n'
+    + '내리면 반대다',
+  GOLD: '금 — 금 선물(온스당 달러, 근월물)\n'
+    + '불안할 때 몰리는 안전자산으로 읽는다 — 달러 · 실질 금리가 내리면 오르기 쉽다',
+  COPPER: '구리 — 구리 선물(파운드당 달러, 근월물)\n'
+    + '전선 · 건설 · 제조에 두루 쓰여 경기 기대를 비추는 값으로 읽는다(흔히 닥터 코퍼)\n'
+    + '오르면 경기 회복 기대, 내리면 둔화 걱정으로 읽기도 한다',
   BRENT: '브렌트유 — 북해산 원유 선물(배럴당 달러, 근월물)\n'
     + '유럽 · 중동 · 아시아 원유 값의 기준으로 많이 쓴다\n'
     + 'WTI 와 함께 움직이고 대개 조금 비싸다\n'

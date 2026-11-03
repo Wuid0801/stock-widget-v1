@@ -85,6 +85,9 @@ export const CHECKS = [
       ...need(Array.isArray(r.futFlows) && r.futFlows.some((f) => f.final && num(f.foreign)), '외국인 선물 수급(확정일)이 없음'),
       ...need(Array.isArray(r.hyOas) && r.hyOas.length >= 6 && r.hyOas.every((d) => num(d.value)), 'HY OAS 가 6개 미만'),
       ...need(Array.isArray(r.hyOas) && r.hyOas.length && recent(r.hyOas.at(-1).date, 10), 'HY OAS 가 10일보다 오래됨'),
+      // 미국 장단기 금리차(FRED T10Y2Y, 2026-11-03) — 역전이면 − 라 부호는 보지 않는다
+      ...need(Array.isArray(r.curve) && r.curve.length >= 6 && r.curve.every((d) => num(d.value)), '장단기 금리차가 6개 미만'),
+      ...need(Array.isArray(r.curve) && r.curve.length && recent(r.curve.at(-1).date, 10), '장단기 금리차가 10일보다 오래됨'),
       // 장중 수급(다음 금융, 2026-10-30) — 장 전 · 휴장일에도 마지막 거래일 값이 오는지는 아직 모른다
       ...need(r.intraday && Array.isArray(r.intraday.spot) && r.intraday.spot.length > 0
         && r.intraday.spot.every((s) => num(s.t) && num(s.foreign) && num(s.individual) && num(s.institution)), '장중 수급 현물(다음 금융)이 없음'),
@@ -153,6 +156,16 @@ export const CHECKS = [
       tnx: await h['yf:chart']({}, { symbol: '^TNX', range: '1d', interval: '5m' }),
     }),
     verify: (r, calls) => [...series(r.nq, 'NQ=F 1D', 10, 4), ...series(r.tnx, '^TNX 1D', 10, 4), ...yahooCalled(calls)],
+  },
+  {
+    // 지표 화면의 달러 인덱스 · 금 · 구리(2026-11-03) — 값도 차트도 야후 일봉이다(실시간 값을 줄 네이버 코드를 확인하지 못했다)
+    name: '달러 인덱스 · 금 · 구리 일봉', source: '야후 차트',
+    call: async (h) => ({
+      dxy: await h['yf:chart']({}, { symbol: 'DX-Y.NYB', range: '1mo', interval: '1d' }),
+      gold: await h['yf:chart']({}, { symbol: 'GC=F', range: '1mo', interval: '1d' }),
+      copper: await h['yf:chart']({}, { symbol: 'HG=F', range: '1mo', interval: '1d' }),
+    }),
+    verify: (r) => [...series(r.dxy, 'DX-Y.NYB 1M', 15, 5), ...series(r.gold, 'GC=F 1M', 15, 5), ...series(r.copper, 'HG=F 1M', 15, 5)],
   },
   {
     // 지표 화면의 코스피200 현물 · 선물 줄을 누르면 그리는 차트(2026-10-30) — 야후에 없어 분봉 · 일봉 모두 네이버다

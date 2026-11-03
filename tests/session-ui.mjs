@@ -3047,7 +3047,7 @@ await test('market panel: 지표 lists every index item in three groups and pick
   assert.equal(h.elements.get('rankTabs').hidden, true, '지표 화면은 탭 줄이 없다');
   const html = h.elements.get('rankList').innerHTML;
   assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
-    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분', '미국', '위험 · 자금']);
+    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분', '미국', '위험 · 자금', '원자재']);
   const order = [...html.matchAll(/data-sym="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(order, ['^KS11', '^KQ11', '^IXIC', '^GSPC', 'NQ=F', '^SOX', '^VIX', '^TNX', 'KRW=X', 'CL=F'], '묶음 안 순서');
   assert.match(rowOf(html, '^TNX'), /4\.970/);
@@ -3241,6 +3241,29 @@ await test('market panel: CNN fear & greed sits under VIX with its score, the ch
   assert.match(failed, /<div class="rrow mrow mfix" data-key="FEARGREED"/, '값이 없으면 누를 수 없다');
 });
 
+// 장단기 금리차 · 달러 인덱스 · 원자재 묶음(2026-11-03 사용자 요청) — 금리차는 FRED 날마다 값(HY OAS 처럼 %p · bp 변화, 메모에 날짜),
+// 누르면 차트(^T10Y2Y). 달러 인덱스 · 금 · 구리는 야후 일봉의 값(지수 줄 값 없음). 줄이 늘어 유가는 금 · 구리와 원자재 묶음으로.
+await test('market panel: the 10y-2y spread, the dollar index and a commodities group', () => {
+  const h = marketHarness();
+  h.run(EXTRAS);
+  h.run(`marketExtras.d.curve = [{ date: '20261027', value: 0.48 }, { date: '20261028', value: 0.5 }, { date: '20261029', value: 0.47 },
+    { date: '20261030', value: 0.52 }, { date: '20261031', value: 0.55 }, { date: '20261103', value: 0.51 }];`);
+  h.run("quotes['DX-Y.NYB'] = { price: 99.5, change: 0.3, pct: 0.3, daily: { times: [1, 2, 3, 4, 5, 6], closes: [98, 98.5, 99, 99.2, 99.2, 99.5] } };");
+  const html = h.c.marketHtml();
+  const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(keys.slice(keys.indexOf('VIX')), ['VIX', 'FEARGREED', 'US10Y', 'CURVE', 'HYOAS', 'USDKRW', 'DXY', 'WTI', 'BRENT', 'GOLD', 'COPPER']);
+  assert.match(html, /class="qhint rnote mgroup">원자재</);
+  assert.match(html, /data-sym="\^T10Y2Y" data-key="CURVE"/, '누르면 차트');
+  const curve = keyRow(html, 'CURVE');
+  assert.match(curve, /<span class="mval">\+0\.51%p<\/span>/);
+  assert.match(curve, /11\/03 기준/);
+  assert.match(curve, /<span class="md5"[^>]*>\+3\.0bp<\/span>/, '다섯 줄 앞(0.48) 대비 bp');
+  assert.match(html, /data-sym="DX-Y\.NYB" data-key="DXY"/);
+  assert.match(keyRow(html, 'DXY'), /99\.50/);
+  h.run("marketExtras.d.curve = [{ date: '20261103', value: -0.21 }];");
+  assert.match(keyRow(h.c.marketHtml(), 'CURVE'), /<span class="mval">-0\.21%p<\/span>/, '역전은 −');
+});
+
 // 코스피200 현물과 베이시스(선물 - 현물) — 현물은 지수 줄 요청에 붙여 받은 KPI200. 선물은 20분 늦어 같은 시각의 현물(오늘 1분 종가)과
 // 뺀다 — 지금 현물과 빼면 그 20분 동안 움직인 만큼이 섞였다. 2026-10-29 · 30 사용자 요청.
 const kst2 = (s) => Date.parse(`${s}+09:00`);
@@ -3429,7 +3452,7 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   h.run(INTRADAY('2026-09-10')); // 하네스의 오늘(2026-09-10 18:30 KST)
   let html = h.c.marketHtml();
   assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
-    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분 (14:25)', '미국', '위험 · 자금'], '국내 다음 묶음 — 제목에 단위와 마지막 현물 시각');
+    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분 (14:25)', '미국', '위험 · 자금', '원자재'], '국내 다음 묶음 — 제목에 단위와 마지막 현물 시각');
   const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(keys.slice(keys.indexOf('FUTFLOW') + 1, keys.indexOf('FUTFLOW') + 7),
     ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']);

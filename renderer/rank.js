@@ -176,16 +176,18 @@ function marketExtraRow(key) {
       title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정\n20:30 전 오늘 값은 잠정`,
       spark: done.slice(-20).map((f) => f.foreign) };
   }
-  if (key === 'HYOAS') {
-    const rows = x && x.hyOas;
+  // HYOAS · CURVE(미국 장단기 금리차 10년 − 2년, %p — 2026-11-03)는 FRED 날마다 값이라 같은 모양
+  if (key === 'HYOAS' || key === 'CURVE') {
+    const rows = x && (key === 'HYOAS' ? x.hyOas : x.curve);
     if (!rows || !rows.length) return null;
     const last = rows[rows.length - 1];
     const prev = rows.length >= 2 ? rows[rows.length - 2].value : null;
     const base = rows.length >= 6 ? rows[rows.length - 6].value : null;
-    return { key, name: MARKET_EXTRA_NAMES.HYOAS, symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
-      d5: base == null ? null : last.value - base, d5Unit: 'bp', valueText: `${last.value.toFixed(2)}%`,
+    return { key, name: MARKET_EXTRA_NAMES[key], symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
+      d5: base == null ? null : last.value - base, d5Unit: 'bp',
+      valueText: key === 'HYOAS' ? `${last.value.toFixed(2)}%` : `${last.value > 0 ? '+' : ''}${last.value.toFixed(2)}%p`,
       note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 기준`,
-      title: MARKET_DESC.HYOAS,
+      title: MARKET_DESC[key],
       spark: rows.slice(-20).map((r) => r.value) };
   }
   // CNN 공포 · 탐욕(0~100): 값은 점수(반올림), 오늘 등락은 전일 종가 대비 · 5일 변화 자리는 1주 전 대비(점수 차), 메모에 단계,
@@ -248,7 +250,7 @@ function marketExtraRow(key) {
 // 지표 화면에만 있는 줄이 비었을 때 그 이유 — 그 부분(main 의 market:extras errors)이나 응답 전체가 실패했으면 그 문구, 아니면
 // null(아직 못 받음 · 확정된 날 없음 등). 지수 줄(시세)과 베이시스는 market:extras 의 한 부분이 아니라 없다.
 function marketExtraError(key) {
-  const part = key in INTRADAY_FIELD ? 'intraday' : { SPOT: 'spotFlows', FUTFLOW: 'futFlows', HYOAS: 'hyOas', FEARGREED: 'fearGreed' }[key];
+  const part = key in INTRADAY_FIELD ? 'intraday' : { SPOT: 'spotFlows', FUTFLOW: 'futFlows', HYOAS: 'hyOas', FEARGREED: 'fearGreed', CURVE: 'curve' }[key];
   const d = part && marketExtras && marketExtras.d;
   if (!d) return null;
   return (d.ok ? d.errors && d.errors[part] : d.error) || null;
@@ -390,7 +392,7 @@ async function loadMarket() {
   const prev = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : null;
   let next = d && d.ok ? { ...d } : prev || d || { ok: false, error: '응답 없음' };
   if (d && d.ok && prev) {
-    for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday', 'fearGreed']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
+    for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday', 'fearGreed', 'curve']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
   }
   marketExtras = { at: Date.now(), d: next };
   renderRank();

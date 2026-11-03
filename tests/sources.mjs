@@ -37,7 +37,8 @@ const GOOD = {
     spotFlows: [{ date: ymd(1), foreign: -1200, final: true }],
     futFlows: [{ date: ymd(1), foreign: 300, final: true }], hyOas: Array.from({ length: 60 }, (_, i) => ({ date: ymd(61 - i), value: 3.2 })),
     fearGreed: { score: 22.7, rating: 'extreme fear', at: new Date(Date.now() - 3600000).toISOString(), prevClose: 22.7, week: 32.9,
-      month: 38.2, year: 32.6, days: Array(30).fill(25) } },
+      month: 38.2, year: 32.6, days: Array(30).fill(25) },
+    curve: Array.from({ length: 60 }, (_, i) => ({ date: ymd(61 - i), value: i % 2 ? 0.5 : -0.1 })) },
   '환율': { ok: true, rate: 1335.6 },
   '일봉 5년': { kr: chart(1220, 1), us: chart(1254, 1), ix: chart(1221, 1) },
   '국내 1D 분봉': chart(70),
@@ -46,6 +47,7 @@ const GOOD = {
   '1D RSI 앞 거래일 5분봉': chart(300),
   '미국 1D 프리 · 애프터': chart(150, 1),
   '선물 · 미국채 1D': { nq: chart(200), tnx: chart(200) },
+  '달러 인덱스 · 금 · 구리 일봉': { dxy: chart(22, 1), gold: chart(22, 1), copper: chart(22, 1) },
   '코스피200 현물 · 선물 차트': { spot: chart(60), fut: chart(70), spotDay: chart(1220, 1), futDay: chart(1220, 1), futMax: chart(360, 20) },
   '종목 지표 (국내)': { ok: true, today: { volume: 11822115 }, valuation: [{}, {}, {}, {}], trend: Array(20).fill({}),
     quarters: { cols: Array(5).fill({}) }, holders: { rows: [{ name: '삼성생명보험', pct: 8.5 }] }, consensus: { target: 495227 },
@@ -107,14 +109,14 @@ const GOOD = {
   // 요청은 됐지만 HTTP 오류(503)면 결과가 대체 경로로 멀쩡해도 FAIL 이다 — 받은 것은 빈 JSON
   const busy = await runChecks(async () => ({ ok: false, status: 503, json: async () => ({}), text: async () => '' }), CHECKS.slice(0, 1));
   check('HTTP 오류도 FAIL', busy[0].problems.some((p) => p.startsWith('요청 실패 HTTP 503')), busy[0].problems.join(' / '));
-  // Electron 점검(sources-electron.mjs)은 net.fetch 자리에 진짜 net.fetch 를 따로 넘긴다 — FRED · CNN(시장 지표)만 그쪽으로 가고,
-  // 그 실패도 적는다
+  // Electron 점검(sources-electron.mjs)은 net.fetch 자리에 진짜 net.fetch 를 따로 넘긴다 — FRED(HY OAS · 장단기 금리차) · CNN(시장
+  // 지표)만 그쪽으로 가고, 그 실패도 적는다
   const viaNet = [];
   const market = CHECKS.filter((c) => c.name === '시장 지표');
   const split = await runChecks(async () => { throw new Error('막힘'); }, market,
     async (url) => { viaNet.push(String(url)); throw new Error('net 막힘'); });
-  check('net.fetch 자리는 따로 넘긴 것을 쓴다 — FRED · CNN 만', viaNet.length === 2 && viaNet.some((u) => u.includes('fred.stlouisfed.org'))
-    && viaNet.some((u) => u.includes('dataviz.cnn.io')), viaNet.join(' '));
+  check('net.fetch 자리는 따로 넘긴 것을 쓴다 — FRED · CNN 만', viaNet.length === 3
+    && viaNet.filter((u) => u.includes('fred.stlouisfed.org')).length === 2 && viaNet.some((u) => u.includes('dataviz.cnn.io')), viaNet.join(' '));
   check('net.fetch 쪽 실패도 적는다', split[0].problems.some((p) => p.startsWith('요청 실패 net 막힘 — https://fred.stlouisfed.org')),
     split[0].problems.join(' / '));
 }

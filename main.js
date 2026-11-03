@@ -643,9 +643,9 @@ async function usdKrwItem() {
 // 투자자별 값이 20:00 까지 바뀌는지 확인하지 못해, 어느 쪽이든 틀리지 않게 20:30 으로 늦췄다(2026-11-02 사용자 결정)
 const FLOW_FINAL = '2030';
 const FLOW_DAYS = 10;        // 수급을 묻는 거래일 수
-const HYOAS_TTL = 6 * 3600000;
+const HYOAS_TTL = 6 * 3600000; // FRED 시리즈(HY OAS · 장단기 금리차)를 다시 묻지 않는 시간
 const flowCache = new Map(); // '경로|YYYYMMDD' → 확정된 그날 수급
-let hyOasCache = null;       // { at, rows }
+const fredCache = new Map(); // FRED 시리즈 id → { at, rows }
 
 // 수급 문자열 → 숫자. '+4,080' → 4080, '-9,811' → -9811, 빈 값 → null.
 function parseFlowValue(v) {
@@ -695,23 +695,27 @@ async function naverMinuteCloses(path, now) {
   }).filter((r) => Number.isFinite(r.t) && r.close > 0).sort((a, b) => a.t - b.t);
 }
 
-// 미국 HY OAS — FRED CSV 'observation_date,BAMLH0A0HYM2' 아래 '날짜,값'. 휴일은 값이 비고(또는 '.') 건너뛴다. 최근 60개
-// (all 이면 받은 전부 — 약 3년, 차트 ^HYOAS).
+// FRED CSV 'observation_date,<id>' 아래 '날짜,값'. 휴일은 값이 비고(또는 '.') 건너뛴다. 최근 60개(all 이면 받은 전부 — 차트).
+// 미국 HY OAS(BAMLH0A0HYM2, 약 3년치) · 장단기 금리차(T10Y2Y — 10년 − 2년, 2026-11-03 사용자 요청)를 같은 길로 받는다.
 // Electron net.fetch(Chromium 네트워크)로 받고 User-Agent 는 그대로 둔다. Electron 44(10/29 올림) 안의 Node fetch 는 FRED(앞단
 // Akamai)에서 답이 없어(20초 — PC 의 Node 22 는 0.2초, 헤더를 브라우저처럼 채워도 같다) 줄이 — 였고(10/27 Electron 43 에서는
 // 보였다), net.fetch 에 'Mozilla/5.0' 을 달면 HTTP2 프로토콜 오류다(2026-11-02 실측).
-async function fredHyOas(now, all = false) {
-  if (!hyOasCache || now - hyOasCache.at >= HYOAS_TTL) {
-    const res = await netFetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2', {}, (u, o) => net.fetch(u, o));
+async function fredSeries(id, now, all = false) {
+  let hit = fredCache.get(id);
+  if (!hit || now - hit.at >= HYOAS_TTL) {
+    const res = await netFetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`, {}, (u, o) => net.fetch(u, o));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const rows = (await res.text()).split(/\r?\n/).map((line) => line.split(','))
       .filter(([d, v]) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && /^-?\d+(\.\d+)?$/.test((v || '').trim()))
       .map(([d, v]) => ({ date: d.replace(/-/g, ''), value: Number(v) }));
     if (!rows.length) throw new Error('빈 응답');
-    hyOasCache = { at: now, rows };
+    hit = { at: now, rows };
+    fredCache.set(id, hit);
   }
-  return all ? hyOasCache.rows : hyOasCache.rows.slice(-60);
+  return all ? hit.rows : hit.rows.slice(-60);
 }
+const fredHyOas = (now, all) => fredSeries('BAMLH0A0HYM2', now, all);
+const fredCurve = (now, all) => fredSeries('T10Y2Y', now, all);
 
 // CNN 공포 · 탐욕 지수(지표 화면, 2026-11-03 사용자 요청) — CNN 웹페이지(edition.cnn.com/markets/fear-and-greed)가 쓰는 데이터라
 // 공식 API 가 아니다(모양이 바뀌면 이 줄만 실패한다). 브라우저(Chromium)에서 열리는 것을 확인했고(2026-11-03), 같은 네트워크 스택인
@@ -743,7 +747,7 @@ const fearGreedDays = async (now) => (await loadFearGreed(now)).rows;
 
 // 지표 화면의 줄 중 날마다 값 하나만 있는 것의 차트(앱이 붙인 기호, 2026-11-03 사용자 요청) — 기호 → 날마다의 { date, value }.
 // 야후 · 네이버에는 없다. 일봉(1M · 3M · 1Y · 3Y)과 전체만 — 분봉이 없다(yf:chart).
-const DAILY_ONLY = { '^FNG': fearGreedDays, '^HYOAS': (now) => fredHyOas(now, true) };
+const DAILY_ONLY = { '^FNG': fearGreedDays, '^HYOAS': (now) => fredHyOas(now, true), '^T10Y2Y': (now) => fredCurve(now, true) };
 
 // 장중 수급(지표 화면의 '코스피 장중 수급' 묶음, 2026-10-30 사용자 요청) — 다음 금융. 네이버 수급(trend?bizdate=)은 날짜마다 값 하나라
 // 장중 흐름이 없다. 2026-10-30 브라우저에서 확인한 주소 셋을 함께 받는다(하나가 실패하면 그것만 null, 셋 다면 실패):
@@ -805,12 +809,13 @@ ipcMain.handle('market:extras', async () => {
     naverIndexCloses('KPI200', now), // 코스피200 현물 일별 종가 — 5일 변화 · 날마다의 베이시스(선물 종가 - 현물 종가)
     naverMinuteCloses('KPI200', now), // 오늘 1분 종가 — 장중 베이시스를 20분 늦은 선물의 시각에 맞춘다
     daumIntraday(), // 장중 수급(현물 · 선물 · 프로그램)
-    cnnFearGreed(now)]);
+    cnnFearGreed(now),
+    fredCurve(now)]); // 미국 장단기 금리차(10년 − 2년)
   if (parts.every((p) => p.status === 'rejected')) {
     return { ok: false, error: parts[0].reason?.message || '시장 지표 조회 실패' };
   }
   // 실패한 부분은 null, 그 이유는 errors[부분] — 지표 화면이 빈 줄의 메모에 적는다(2026-11-02)
-  const names = ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday', 'fearGreed'];
+  const names = ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday', 'fearGreed', 'curve'];
   const out = { ok: true, errors: {} };
   parts.forEach((p, i) => {
     out[names[i]] = p.status === 'fulfilled' ? p.value : null;

@@ -143,6 +143,9 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   const r = await extras();
   check('기억이 지나 FRED 를 새로 받았다', calls.some((u) => u.includes('fred')));
   check('FRED 빈 값 · 점은 건너뛴다', same(r.hyOas, [{ date: '20261021', value: 3.27 }, { date: '20261024', value: 3.4 }]), JSON.stringify(r.hyOas));
+  // 장단기 금리차(T10Y2Y, 2026-11-03)도 같은 FRED 길 — 가짜 네트워크는 FRED 주소에 같은 CSV 를 준다
+  check('장단기 금리차는 FRED T10Y2Y', calls.some((u) => u.includes('fredgraph.csv?id=T10Y2Y'))
+    && same(r.curve, [{ date: '20261021', value: 3.27 }, { date: '20261024', value: 3.4 }]), JSON.stringify(r.curve));
   // Electron 44 의 Node fetch 는 FRED 에서 답이 없고(20초), net.fetch 에 User-Agent 를 바꿔 달면 HTTP2 오류다(2026-11-02 실측)
   check('FRED · CNN 은 Electron net.fetch 로, 다른 출처는 Node fetch 로', netCalls.length > 0
     && netCalls.every((u) => u.includes('fred.stlouisfed.org') || u.includes('dataviz.cnn.io')), netCalls.join(' '));
@@ -336,6 +339,8 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   check('분봉 기간은 없다', r.ok === false && r.error === '일별 값만 있습니다(1M 이상)', JSON.stringify(r));
   r = await chart('^HYOAS', 'max', '1mo');
   check('HY OAS 전체는 받은 날마다 값 전부(60개로 자르지 않는다)', r.ok && same(r.closes, [3.27, 3.4]), JSON.stringify(r).slice(0, 200));
+  r = await chart('^T10Y2Y', 'max', '1mo');
+  check('장단기 금리차 차트(^T10Y2Y)', r.ok && same(r.closes, [3.27, 3.4]), JSON.stringify(r).slice(0, 200));
   NOW = kst('2026-12-01T12:00');
   r = await chart('^HYOAS', '1mo');
   check('기간 안에 값이 없으면 데이터 없음', r.ok === false && r.error === '데이터 없음', JSON.stringify(r));
