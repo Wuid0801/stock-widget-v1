@@ -82,12 +82,15 @@ const SAR_MAX = 0.2;
 const RSI_PERIOD = 14; // RSI(보조 지표) — 과열도 배지와 같은 RSI(14)
 const RSI_SIGNAL = 9;  // 시그널 = RSI 의 이 봉 수 평균(증권사에 따라 6 을 쓰기도 한다)
 const RSI_PANE = 45;   // RSI 칸 높이(px) — 가격 칸 아래 따로 둔다. 켜 두면 차트 상자도 이만큼 커진다(index.html .chartbox.sub)
+const RSI_TALL = 90;   // RSI 크게 보기(#rsiTall) 칸 높이(px) — 상자도 RSI_PANE 대신 이만큼 커진다(.chartbox.sub.tall, 가격 칸 그대로)
+let rsiTall = false;   // RSI 크게 보기 버튼으로 켜고 끈다. 저장하지 않는다(앱을 다시 켜면 꺼짐)
 const RSI_TF = new Set(['1D', '1W', '1M', '3M', '1Y', '3Y']); // 전체(월봉 · 분기봉)는 SAR 처럼 뺀다
 const RSI_WARM_RETRY = 5 * 60000; // 1D 의 앞 거래일 봉을 못 받으면 이만큼 뒤에 다시 묻는다
 const rsiWarmCache = new Map(); // 종목 → { at, times, closes } — 1D RSI 의 앞 거래일 5분봉(closes null = 실패)
 // 차트 상자의 class. RSI 를 켜 두면 그 칸만큼 키운다(sub) — 기간 · 차트만 보기와 상관없이 켜 둔 동안은 같은 높이라 기간을
 // 바꿀 때마다 아래 관심종목 목록이 들썩이지 않는다. RSI 를 그리지 않는 화면(전체 · 차트만 보기)은 가격이 그 칸까지 쓴다.
-const chartBoxClass = (loading) => `chartbox${state.indicators && state.indicators.rsi ? ' sub' : ''}${loading ? ' loading' : ''}`;
+// RSI 크게 보기면 그 칸(RSI_TALL)만큼(tall).
+const chartBoxClass = (loading) => `chartbox${state.indicators && state.indicators.rsi ? (rsiTall ? ' sub tall' : ' sub') : ''}${loading ? ' loading' : ''}`;
 const FOLLOW_MA = 200;    // 기법 점검(지표 화면) — 추세 추종의 장기 이동평균
 const DCA_MONTHS = 12;    //   적립식 기간(달, 이번 달 포함)
 const REBOUND_DAYS = 60;  //   반등 점검 — 이 거래일 안의 최고 종가에서

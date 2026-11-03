@@ -537,6 +537,7 @@ function clearChart() {
   document.getElementById('plainChart').hidden = true;
   document.getElementById('extHours').hidden = true;
   document.getElementById('rsiPane').hidden = true;
+  document.getElementById('rsiTall').hidden = true;
   document.getElementById('zoomReset').hidden = true; // 차트가 없으면 풀 확대도 없다
 }
 
@@ -579,9 +580,10 @@ function drawChart(arg) {
   // RSI 칸 눈금 — 보이는 봉의 RSI · 시그널 최저~최고에 맞춘다(rsiScale). 거래량처럼 확대 중에는 그 구간으로.
   const rsiFit = rsi ? rsiScale(zr ? [...rsi.data.slice(zr.from, zr.to + 1), ...rsi.signal.slice(zr.from, zr.to + 1)]
     : [...rsi.data, ...rsi.signal]) : null;
-  // RSI 칸을 둘 때 가격 칸의 stack 비중(RSI 칸은 RSI_PANE). 그림 높이는 캔버스에서 아래 날짜 줄 · 위 여백(약 22px)을 뺀
-  // 만큼이라 RSI 칸이 약 RSI_PANE px 가 된다. 축 옵션은 다시 배치할 때마다 새로 읽혀 창 높이를 바꿔도 칸 높이가 그대로다.
-  const priceWeight = ({ chart: c }) => Math.max(c.height - 22 - RSI_PANE, RSI_PANE);
+  // RSI 칸을 둘 때 가격 칸의 stack 비중(RSI 칸은 RSI_PANE, 크게 보기면 RSI_TALL). 그림 높이는 캔버스에서 아래 날짜 줄 · 위
+  // 여백(약 22px)을 뺀 만큼이라 RSI 칸이 약 그 px 가 된다. 축 옵션은 다시 배치할 때마다 새로 읽혀 창 높이를 바꿔도 칸 높이가 그대로다.
+  const rsiPx = rsiTall ? RSI_TALL : RSI_PANE;
+  const priceWeight = ({ chart: c }) => Math.max(c.height - 22 - rsiPx, RSI_PANE);
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
@@ -932,7 +934,7 @@ function drawChart(arg) {
         },
         y: {
           position: 'right',
-          // RSI 를 그리면 yRsi 와 위아래로 쌓는다(Chart.js stack) — 위가 가격 칸, 아래 RSI_PANE 만큼이 RSI 칸
+          // RSI 를 그리면 yRsi 와 위아래로 쌓는다(Chart.js stack) — 위가 가격 칸, 아래 rsiPx 만큼이 RSI 칸
           ...(rsi ? { stack: 'pane', stackWeight: priceWeight } : {}),
           grid: { color: cssVar('--grid') },
           ticks: { color: cssVar('--mute'), font: { size: 9 }, maxTicksLimit: 4, callback: (v) => money(v, cur) },
@@ -942,7 +944,7 @@ function drawChart(arg) {
         yVol: {
           display: false,
           beginAtZero: true,
-          ...(rsi ? { min: (ctx) => (-maxVol * 4 * RSI_PANE) / priceWeight(ctx) } : {}),
+          ...(rsi ? { min: (ctx) => (-maxVol * 4 * rsiPx) / priceWeight(ctx) } : {}),
           max: maxVol * 4,
           grid: { display: false },
         },
@@ -951,7 +953,7 @@ function drawChart(arg) {
         ...(rsi ? { yRsi: {
           position: 'right',
           stack: 'pane',
-          stackWeight: RSI_PANE,
+          stackWeight: rsiPx,
           min: rsiFit.min,
           max: rsiFit.max,
           afterBuildTicks: (axis) => { axis.ticks = rsiFit.ticks.map((value) => ({ value })); },

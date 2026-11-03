@@ -1088,6 +1088,16 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   assert.equal(yVol.max, 4, '거래량 최댓값(1)의 4배');
   assert.ok(Math.abs(-vmin / (yVol.max - vmin) - axis.stackWeight / (pw + axis.stackWeight)) < 1e-9, '거래량 0 = 가격 칸 바닥');
   assert.ok(Math.abs(1 / (yVol.max - vmin) - (1 / 4) * pw / (pw + axis.stackWeight)) < 1e-9, '막대는 가격 칸 아래 1/4');
+  // RSI 크게 보기 — RSI 칸이 RSI_TALL. 상자가 그만큼 커져(240px) 가격 칸은 그대로다
+  run('rsiTall = true; drawChart(arg_);');
+  const tall = configs.at(-1).options.scales;
+  const tctx = { chart: { height: 195 - run('RSI_PANE') + run('RSI_TALL') } };
+  assert.equal(run('RSI_TALL'), 90, 'RSI 칸의 2배');
+  assert.equal(tall.yRsi.stackWeight, run('RSI_TALL'));
+  assert.equal(tall.y.stackWeight(tctx), pw, '가격 칸은 크게 보기 전과 같다');
+  const tvmin = tall.yVol.min(tctx);
+  assert.ok(Math.abs(-tvmin / (tall.yVol.max - tvmin) - run('RSI_TALL') / (pw + run('RSI_TALL'))) < 1e-9, '거래량 0 = 가격 칸 바닥');
+  run('rsiTall = false;');
   const on = cfg.data.datasets.filter((d) => d.yAxisID === 'yRsi');
   assert.ok(on.every((d) => d.order < 0 && d.order > -1), '거래량 막대(0) 위 · 추세선(-1) 아래');
   assert.ok(on.every((d) => !d.pointHitRadius), '마우스 대상은 주가선 하나다');
@@ -1968,6 +1978,49 @@ await test('rsi pane: the chart box grows by the RSI pane while RSI is on, loadi
   assert.equal(run('chartBoxClass(true)'), 'chartbox loading');
   run('delete state.indicators;');
   assert.equal(run('chartBoxClass()'), 'chartbox', '지표 설정이 없어도');
+  // RSI 크게 보기(#rsiTall)를 켜면 RSI 칸이 RSI_TALL 이라 상자도 그만큼(tall) — RSI 를 끄면 상관없다
+  run('state.indicators = { rsi: true }; rsiTall = true;');
+  assert.equal(run('chartBoxClass()'), 'chartbox sub tall');
+  assert.equal(run('chartBoxClass(true)'), 'chartbox sub tall loading');
+  run('state.indicators = { rsi: false };');
+  assert.equal(run('chartBoxClass()'), 'chartbox');
+});
+
+// RSI 크게 보기 버튼(차트 왼쪽 위, RSI 버튼 옆) — RSI 칸이 보일 때만. 켜면 RSI 칸이 RSI_PANE 에서 RSI_TALL 로 커지고 차트
+// 상자도 그만큼 커진다(가격 칸 그대로, 관심종목 목록이 줄어든다 — 사용자가 정함). 저장하지 않고(앱을 다시 켜면 꺼짐),
+// 데이터는 그대로라 상자 높이만 맞추고 다시 그린다.
+await test('rsi tall: the switch shows only with the RSI pane, names its state, resizes the box and redraws without saving', () => {
+  const { c, run, elements } = harness(['renderChartMode', 'toggleRsiTall']);
+  run(source.match(/^let lastChart = .*$/m)[0]);
+  c.MODE_ICON = { candle: 'C', line: 'L' };
+  const drawn = [];
+  Object.assign(c, { save: () => drawn.push('save'), drawChart: (d) => drawn.push(d) });
+  run("state.timeframe = '1D'; state.plainChart = false; state.indicators = { rsi: false }; renderChartMode(0, false);");
+  const b = elements.get('rsiTall');
+  assert.equal(b.hidden, true, 'RSI 칸이 꺼져 있으면 숨는다');
+  run('state.indicators = { rsi: true }; renderChartMode(0, false);');
+  assert.equal(b.hidden, false);
+  assert.equal(b.className, '', '처음에는 꺼짐');
+  assert.equal(b.title, 'RSI 크게 보기 — RSI 칸을 2배로(관심종목 목록이 그만큼 줄어든다)');
+  run("state.timeframe = '전체'; renderChartMode(20, true);");
+  assert.equal(b.hidden, true, 'RSI 를 그리지 않는 기간');
+  run("state.timeframe = '1Y'; state.plainChart = true; renderChartMode(20, true);");
+  assert.equal(b.hidden, true, '차트만 보기');
+  run("state.plainChart = false; lastChart = { id: 'last' }; document.getElementById('chartBox').className = 'chartbox sub';");
+  c.toggleRsiTall();
+  assert.equal(run('rsiTall'), true);
+  assert.equal(elements.get('chartBox').className, 'chartbox sub tall', '상자를 키운다');
+  assert.deepEqual(drawn.map((d) => d.id || d), ['last'], '저장하지 않고 다시 그린다');
+  run('renderChartMode(20, true);');
+  assert.equal(b.className, 'on', '켜져 있으면 또렷하게');
+  assert.equal(b.title, 'RSI 원래 크기로');
+  run("document.getElementById('chartBox').className = 'chartbox sub tall loading';");
+  c.toggleRsiTall();
+  assert.equal(elements.get('chartBox').className, 'chartbox sub loading', '받는 중이면 불러오는 중은 그대로');
+  run('lastChart = null;');
+  c.toggleRsiTall();
+  assert.equal(drawn.length, 2, '차트가 없으면 그리지 않는다');
+  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('rsiTall'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
 });
 
 // NXT 에 없는 종목(DSC인베스트먼트 · ETF)은 정규장 · 전체 응답이 똑같다 — 서명이 같아 다시 그리지 않으면 버튼 글자

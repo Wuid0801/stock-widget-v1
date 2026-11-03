@@ -110,6 +110,21 @@ function renderChartMode(bars, daily) {
   s.hidden = state.plainChart === true || !RSI_TF.has(state.timeframe);
   s.className = rsiOn ? 'on' : '';
   s.title = rsiOn ? 'RSI 칸 끄기' : 'RSI 칸 켜기 — 차트 아래에 RSI · 시그널';
+  // RSI 크게 보기 — RSI 칸이 보일 때만(RSI 버튼이 보이고 켜져 있을 때). 켜져 있으면 또렷하게.
+  const t = document.getElementById('rsiTall');
+  t.hidden = s.hidden || !rsiOn;
+  t.className = rsiTall ? 'on' : '';
+  t.title = rsiTall ? 'RSI 원래 크기로' : 'RSI 크게 보기 — RSI 칸을 2배로(관심종목 목록이 그만큼 줄어든다)';
+}
+
+// RSI 크게 보기 버튼 — RSI 칸을 RSI_PANE ↔ RSI_TALL 로. 차트 상자가 그만큼 커져 가격 칸은 그대로, 관심종목 목록이 줄어든다
+// (사용자가 정함). 저장하지 않는다(앱을 다시 켜면 꺼짐). 데이터는 그대로라 받지 않고 상자 높이만 맞춰 다시 그린다 —
+// 받는 중(loading)이면 불러오는 중 표시는 둔다.
+function toggleRsiTall() {
+  rsiTall = !rsiTall;
+  const box = document.getElementById('chartBox');
+  box.className = chartBoxClass(/\bloading\b/.test(box.className));
+  if (lastChart) drawChart(lastChart);
 }
 
 // 정규장 / 전체 버튼. 응답이 달라 다시 받는다(캐시는 둘을 따로 둔다 — fetchChartCached).

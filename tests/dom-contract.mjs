@@ -152,8 +152,16 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('.chartbox · .chartbox.sub 높이 규칙이 있다', !!base && !!sub);
   check('.chartbox.sub 는 최소 · 보통 · 최대 모두 RSI_PANE 만큼 크다', !!base && !!sub
     && +sub[1] === +base[1] + pane && +sub[2] === pane && +sub[3] === +base[2] + pane, `RSI_PANE ${pane}`);
+  // RSI 크게 보기(#rsiTall)를 켜면 RSI 칸이 RSI_TALL 이라 상자(.chartbox.sub.tall)도 그만큼 커진다 — 가격 칸은 그대로
+  const tallPane = +/const RSI_TALL = (\d+);/.exec(rendererSource())[1];
+  const tall = /\.chartbox\.sub\.tall\s*\{\s*height:\s*clamp\((\d+)px,\s*calc\(26vh \+ (\d+)px\),\s*(\d+)px\)/.exec(html);
+  check('.chartbox.sub.tall 은 최소 · 보통 · 최대 모두 RSI_TALL 만큼 크다', !!base && !!tall
+    && +tall[1] === +base[1] + tallPane && +tall[2] === tallPane && +tall[3] === +base[2] + tallPane, `RSI_TALL ${tallPane}`);
   const ctl = /<span class="chartctl">([\s\S]*?)<\/span>/.exec(html);
   check('#rsiPane 은 차트 버튼 묶음(.chartctl) 안에 있다', !!ctl && /<button id="rsiPane" type="button" hidden>RSI<\/button>/.test(ctl[1]));
+  check('#rsiTall 은 #rsiPane 바로 다음에 있다(같은 칸을 다루는 버튼끼리)',
+    !!ctl && /<button id="rsiPane"[^>]*>RSI<\/button><button id="rsiTall" type="button" hidden>/.test(ctl[1]));
+  check('#rsiTall 도 RSI 버튼과 같은 모양(켜지면 또렷)', /#extHours, #rsiPane, #rsiTall \{/.test(html) && /#rsiPane\.on, #rsiTall\.on \{/.test(html));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

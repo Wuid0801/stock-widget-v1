@@ -92,21 +92,21 @@ check('빈 배열도 안전하게 null', calcRSI([]) === null);
   const s = rsiScale([null, 39.2, 50, 66.4, null, 45]);
   const pad = (66.4 - 39.2) / 10;
   check('최저 · 최고에 폭의 1/10 여유', near(s.min, 39.2 - pad) && near(s.max, 66.4 + pad), JSON.stringify(s));
-  check('눈금 숫자는 최저 · 최고 자리(반올림)', ticks(s) === '[39,66]', ticks(s));
+  // 오른쪽 숫자는 30 · 70 만, 칸에 보일 때만(사용자가 정함) — 칸 끝(폭의 1/12)에 붙으면 가격 칸 · 날짜 줄로 넘쳐 뺀다
+  check('30 · 70 이 범위에 없으면 숫자도 없다', ticks(s) === '[]', ticks(s));
   const flat = rsiScale([48, 53]);
   check('거의 안 움직이면 폭은 RSI_MIN_SPAN(가운데 기준)', RSI_MIN_SPAN === 20
     && near(flat.max - flat.min, RSI_MIN_SPAN * 1.2) && near((flat.min + flat.max) / 2, 50.5), JSON.stringify(flat));
-  check('그때 눈금 숫자는 그 폭의 양 끝', ticks(flat) === '[41,61]', ticks(flat));
   const low = rsiScale([2, 12]);
   check('0 밑으로 내려가지 않는다(폭은 그대로 위로 민다)', low.min === 0 && near(low.max, 24), JSON.stringify(low));
   const high = rsiScale([95, 99]);
   check('100 위로 올라가지 않는다', high.max === 100 && near(high.min, 76), JSON.stringify(high));
   const wide = rsiScale([8, 95]);
   check('거의 다 쓰면 0~100 에 30 · 70', wide.min === 0 && wide.max === 100 && ticks(wide) === '[30,70]', JSON.stringify(wide));
-  const in70 = rsiScale([40, 90]);
-  check('30 · 70 이 범위 안이고 끝 숫자와 떨어져 있으면 그 숫자도', ticks(in70) === '[40,70,90]', ticks(in70));
-  const by70 = rsiScale([45, 78]);
-  check('끝 숫자와 칸의 1/4 안으로 붙으면 30 · 70 숫자는 뺀다(겹친다)', ticks(by70) === '[45,78]', ticks(by70));
+  check('보이는 것만', ticks(rsiScale([40, 90])) === '[70]' && ticks(rsiScale([28, 60])) === '[30]',
+    `${ticks(rsiScale([40, 90]))} ${ticks(rsiScale([28, 60]))}`);
+  check('둘 다 보이면 둘 다', ticks(rsiScale([25, 75])) === '[30,70]', ticks(rsiScale([25, 75])));
+  check('칸 끝에 붙으면 뺀다', ticks(rsiScale([30.5, 60])) === '[]', ticks(rsiScale([30.5, 60])));
   check('값이 없으면 0~100', JSON.stringify(rsiScale([null, null])) === JSON.stringify({ min: 0, max: 100, ticks: [30, 70] }));
 }
 

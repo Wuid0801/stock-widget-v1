@@ -66,8 +66,8 @@ function rsiSignal(rsi, period = 9) {
 // RSI 칸 눈금 — 보이는 RSI · 시그널의 최저~최고에 위아래로 폭의 1/10 여유를 둔 { min, max }. 0~100 이면 RSI 가 대개
 // 30~70 에서만 움직여 45px 칸에서 20px 남짓이라 꺾이는 곳이 안 보였다(2026-11-03). 폭은 적어도 RSI_MIN_SPAN — 거의 안
 // 움직인 날 잔떨림이 큰 파도로 보이지 않게. 0~100 밖으로는 밀어 넣고, 거의 다 쓰면 0~100 이다.
-// ticks 는 숫자를 적을 자리 — 그 폭의 양 끝(보통 최저 · 최고), 30 · 70 은 범위 안이고 양 끝과 칸의 1/4 넘게 떨어졌을 때만
-// (45px 칸에서 숫자가 겹치지 않게).
+// ticks 는 숫자를 적을 자리 — 30 · 70 만, 범위에 들 때만(사용자가 정함). 칸 끝(위아래 여유 안)에 붙으면 숫자가 가격 칸 ·
+// 날짜 줄로 넘쳐 뺀다.
 const RSI_MIN_SPAN = 20;
 function rsiScale(values) {
   const v = values.filter((x) => x != null);
@@ -81,9 +81,7 @@ function rsiScale(values) {
   const mid = Math.min(Math.max((lo + hi) / 2, half), 100 - half);
   const min = mid - half;
   const max = mid + half;
-  const ends = [Math.round(min + pad), Math.round(max - pad)];
-  const apart = (t) => ends.every((e) => Math.abs(t - e) >= (max - min) / 4);
-  return { min, max, ticks: [...ends, ...[30, 70].filter((t) => t > min && t < max && apart(t))].sort((a, b) => a - b) };
+  return { min, max, ticks: [30, 70].filter((t) => t >= min + pad && t <= max - pad) };
 }
 
 // 단순이동평균. 구간이 모자라는 앞부분은 null (Chart.js가 알아서 비워 둔다)

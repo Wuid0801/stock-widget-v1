@@ -661,6 +661,8 @@
   .chartbox { height: clamp(150px, 26vh, 300px); margin-top: 7px; position: relative; }
   /* RSI 를 켜 두면 차트 아래 RSI 칸(renderer/state.js RSI_PANE = 45px)만큼 키운다 — 가격 칸은 그대로 */
   .chartbox.sub { height: clamp(195px, calc(26vh + 45px), 345px); }
+  /* RSI 크게 보기(#rsiTall) — RSI 칸이 renderer/state.js RSI_TALL = 90px 라 그만큼. 가격 칸은 그대로, 관심종목 목록이 줄어든다 */
+  .chartbox.sub.tall { height: clamp(240px, calc(26vh + 90px), 390px); }
   /* 다른 종목 · 기간의 차트를 받는 동안(옛 차트는 지웠다) */
   .chartbox.loading::after {
     content: '불러오는 중…'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -707,14 +709,14 @@
   /* 덧그림(이동평균 · 보조 지표 · 기준선)이 보이면 또렷하게, 차트만 보기로 껐으면 흐리게 */
   #plainChart.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
   /* 정규장 / 전체(1D · 1W) — 글자가 지금 보는 것. 전체(시간외 켬)면 또렷하게, 정규장만이면 흐리게.
-     RSI 칸 켜고 끄기도 같은 모양 — 켜져 있으면 또렷하게 */
-  #extHours, #rsiPane {
+     RSI 칸 · RSI 크게 보기 켜고 끄기도 같은 모양 — 켜져 있으면 또렷하게 */
+  #extHours, #rsiPane, #rsiTall {
     height: 18px; padding: 0 5px; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); font-size: 10px; font-family: inherit; cursor: pointer; opacity: .6;
   }
-  #extHours:hover, #rsiPane:hover { opacity: 1; color: var(--text-3); }
-  #extHours.on, #rsiPane.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
-  #extHours[hidden], #rsiPane[hidden] { display: none; }
+  #extHours:hover, #rsiPane:hover, #rsiTall:hover { opacity: 1; color: var(--text-3); }
+  #extHours.on, #rsiPane.on, #rsiTall.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
+  #extHours[hidden], #rsiPane[hidden], #rsiTall[hidden] { display: none; }
   #zoomReset {
     height: 18px; padding: 0 6px; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); font-size: 10px; cursor: pointer; opacity: .6;
@@ -813,7 +815,7 @@
       <!-- 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과. 자세한 숫자는 툴팁 -->
       <div class="trendchk" id="trendCheck" hidden></div>
 
-      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><div class="metrics" id="metricsView" hidden></div><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="extHours" type="button" hidden></button><button id="rsiPane" type="button" hidden>RSI</button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
+      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><div class="metrics" id="metricsView" hidden></div><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="extHours" type="button" hidden></button><button id="rsiPane" type="button" hidden>RSI</button><button id="rsiTall" type="button" hidden>↕</button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
       <div class="err" id="err"></div>
     </div>
 

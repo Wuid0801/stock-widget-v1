@@ -195,6 +195,7 @@ async function refreshNow() {
   };
   document.getElementById('extHours').onclick = () => toggleExtHours().catch(console.error);
   document.getElementById('rsiPane').onclick = () => toggleRsiPane().catch(console.error);
+  document.getElementById('rsiTall').onclick = toggleRsiTall;
   document.getElementById('zoomReset').onclick = resetZoom;
   bindZoom();
   renderTabs();
