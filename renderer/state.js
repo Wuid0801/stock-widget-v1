@@ -165,11 +165,18 @@ const INDICES = [
   { symbol: 'NQ=F', code: 'NQ', name: '나스닥 선물', page: 2, overseas: true, delayMin: 10 },
   { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 2, overseas: true },
   { symbol: 'CL=F', code: 'WTI', name: 'WTI', overseas: true, delayMin: 10 },
+  // 브렌트유(2026-11-03) — 지수 줄 값은 네이버 LCOcv1, 차트는 야후 BZ=F. 늦음은 아직 재 보지 않아 적지 않는다(WTI 는 10분 실측)
+  { symbol: 'BZ=F', code: 'BRENT', name: '브렌트유', overseas: true },
   { symbol: '^TNX', code: 'US10Y', name: '미국채 10년', overseas: true, cur: '%' },
   { symbol: '^VIX', code: 'VIX', name: 'VIX', overseas: true },
   { symbol: '^SOX', code: 'SOX', name: 'SOX', overseas: true },
   { symbol: '^KS200', code: 'KPI200', name: '코스피200' },
   { symbol: '^KS200F', code: 'FUT', name: '코스피200 선물', delayMin: 20 },
+  // 지표 화면의 CNN 공포 · 탐욕 · 미국 HY OAS — 앱이 붙인 기호로 main 이 날마다의 값을 일봉처럼 준다(DAILY_ONLY, 2026-11-03).
+  // 지표 화면 줄은 market:extras 로 그리고(marketExtraRow), 누르면 이 항목의 차트(1M 이상 — 분봉이 없다).
+  // notTraded: 사고팔 수 있는 것이 아니라 추세 점검(매매 과거 검증)을 하지 않는다.
+  { symbol: '^FNG', code: 'FEARGREED', name: 'CNN 공포·탐욕', overseas: true, notTraded: true },
+  { symbol: '^HYOAS', code: 'HYOAS', name: '미국 HY OAS', overseas: true, cur: '%', notTraded: true },
 ];
 
 function isIndex(symbol) {
@@ -232,7 +239,7 @@ const MARKET_GROUPS = [
   ['국내', ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']],
   [INTRADAY_GROUP, ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']],
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
-  ['위험 · 자금', ['VIX', 'FEARGREED', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']], // FEARGREED CNN 공포 · 탐욕(2026-11-03)
+  ['위험 · 자금', ['VIX', 'FEARGREED', 'US10Y', 'HYOAS', 'USDKRW', 'WTI', 'BRENT']], // FEARGREED CNN 공포 · 탐욕 · BRENT 브렌트유(2026-11-03)
 ];
 // 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
 const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS', FEARGREED: 'CNN 공포·탐욕',
@@ -277,6 +284,10 @@ const MARKET_DESC = {
   WTI: 'WTI — 서부 텍사스산 원유 선물(배럴당 달러, 근월물, 10분 지연)\n'
     + '오르면 물가 · 금리 부담이 커지고 정유 · 에너지주에 유리하다\n'
     + '크게 내리면 경기 둔화 걱정으로 읽기도 한다',
+  BRENT: '브렌트유 — 북해산 원유 선물(배럴당 달러, 근월물)\n'
+    + '유럽 · 중동 · 아시아 원유 값의 기준으로 많이 쓴다\n'
+    + 'WTI 와 함께 움직이고 대개 조금 비싸다\n'
+    + '오르면 물가 · 금리 부담이 커지고 정유 · 에너지주에 유리하다',
 };
 // 데드캣 점검(market-check.js marketChecks)의 판정 key → 그 판정 점을 다는 지표 화면 줄
 const MARKET_CHECK_ROW = { spot: 'SPOT', futures: 'FUTFLOW', sox: 'SOX', usdkrw: 'USDKRW', vix: 'VIX', hyoas: 'HYOAS', us10y: 'US10Y' };

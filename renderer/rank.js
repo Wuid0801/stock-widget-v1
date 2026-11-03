@@ -68,7 +68,11 @@ function rankKey(v) {
 // 그 줄을 그리지 않는다. 주가지수(EGG_INDEX)는 메모에 코스톨라니 달걀 국면을 달고 툴팁(noteTitle)에 근거를 적는다.
 function marketRow(key) {
   const ix = INDICES.find((i) => i.code === key);
-  if (!ix) return marketExtraRow(key);
+  // 지표 화면만의 줄(MARKET_EXTRA_NAMES). CNN 공포 · 탐욕 · HY OAS 는 차트도 있어(INDICES) 누르면 그 차트로
+  if (!ix || key in MARKET_EXTRA_NAMES) {
+    const row = marketExtraRow(key);
+    return row && ix ? { ...row, symbol: ix.symbol } : row;
+  }
   const it = indexItems.find((i) => i.code === key);
   const q = quotes[ix.symbol];
   const value = it ? it.value : q && q.price;
@@ -317,7 +321,7 @@ function marketHtml() {
       // 위험 · 자금 줄은 툴팁에 그 지표의 뜻(MARKET_DESC) — 누를 수 있으면 그 아래에 '차트 보기', 값이 없어도 설명은 둔다
       const desc = MARKET_DESC[r.key];
       const tip = r.title || desc;
-      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(`${desc ? `${desc}\n\n` : ''}${r.name} 차트 보기`)}">`
+      const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(`${tip ? `${tip}\n\n` : ''}${r.name} 차트 보기`)}">`
         : `<div class="rrow mrow mfix" data-key="${r.key}"${tip ? ` title="${esc(tip)}"` : ''}>`;
       const chk = checkOf.get(r.key);
       if (chk) names.set(chk.key, r.name);

@@ -594,6 +594,10 @@ ipcMain.handle('quote:indices', async () => {
       .then((ds) => ds.filter((d) => d.reutersCode === 'NQcv1').map((d) => item(d, 'NQ', '나스닥 선물'))),
     naver('https://polling.finance.naver.com/api/realtime/marketindex/energy/CLcv1')
       .then((ds) => ds.filter((d) => d.reutersCode === 'CLcv1').map((d) => item(d, 'WTI', 'WTI'))),
+    // 브렌트유(시장 지표 화면, 2026-11-03 사용자 요청) — WTI 와 같은 네이버 에너지 주소. 코드 LCOcv1 은 네이버 모바일 원자재
+    // 페이지의 것으로, 실제 응답은 앱 밖에서 확인하지 못했다(check:sources 가 본다)
+    naver('https://polling.finance.naver.com/api/realtime/marketindex/energy/LCOcv1')
+      .then((ds) => ds.filter((d) => d.reutersCode === 'LCOcv1').map((d) => item(d, 'BRENT', '브렌트유'))),
     // 국채는 폴링 주소가 없다(404) — 상세를 받는다
     naverJson('https://api.stock.naver.com/marketindex/bond/US10YT=RR')
       .then((d) => (d && d.reutersCode === 'US10YT=RR' ? [item(d, 'US10Y', '미국채 10년')] : [])),
@@ -691,31 +695,33 @@ async function naverMinuteCloses(path, now) {
   }).filter((r) => Number.isFinite(r.t) && r.close > 0).sort((a, b) => a.t - b.t);
 }
 
-// 미국 HY OAS — FRED CSV 'observation_date,BAMLH0A0HYM2' 아래 '날짜,값'. 휴일은 값이 비고(또는 '.') 건너뛴다. 최근 60개.
+// 미국 HY OAS — FRED CSV 'observation_date,BAMLH0A0HYM2' 아래 '날짜,값'. 휴일은 값이 비고(또는 '.') 건너뛴다. 최근 60개
+// (all 이면 받은 전부 — 약 3년, 차트 ^HYOAS).
 // Electron net.fetch(Chromium 네트워크)로 받고 User-Agent 는 그대로 둔다. Electron 44(10/29 올림) 안의 Node fetch 는 FRED(앞단
 // Akamai)에서 답이 없어(20초 — PC 의 Node 22 는 0.2초, 헤더를 브라우저처럼 채워도 같다) 줄이 — 였고(10/27 Electron 43 에서는
 // 보였다), net.fetch 에 'Mozilla/5.0' 을 달면 HTTP2 프로토콜 오류다(2026-11-02 실측).
-async function fredHyOas(now) {
-  if (hyOasCache && now - hyOasCache.at < HYOAS_TTL) return hyOasCache.rows;
-  const res = await netFetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2', {}, (u, o) => net.fetch(u, o));
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const rows = (await res.text()).split(/\r?\n/).map((line) => line.split(','))
-    .filter(([d, v]) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && /^-?\d+(\.\d+)?$/.test((v || '').trim()))
-    .map(([d, v]) => ({ date: d.replace(/-/g, ''), value: Number(v) }))
-    .slice(-60);
-  if (!rows.length) throw new Error('빈 응답');
-  hyOasCache = { at: now, rows };
-  return rows;
+async function fredHyOas(now, all = false) {
+  if (!hyOasCache || now - hyOasCache.at >= HYOAS_TTL) {
+    const res = await netFetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2', {}, (u, o) => net.fetch(u, o));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const rows = (await res.text()).split(/\r?\n/).map((line) => line.split(','))
+      .filter(([d, v]) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && /^-?\d+(\.\d+)?$/.test((v || '').trim()))
+      .map(([d, v]) => ({ date: d.replace(/-/g, ''), value: Number(v) }));
+    if (!rows.length) throw new Error('빈 응답');
+    hyOasCache = { at: now, rows };
+  }
+  return all ? hyOasCache.rows : hyOasCache.rows.slice(-60);
 }
 
 // CNN 공포 · 탐욕 지수(지표 화면, 2026-11-03 사용자 요청) — CNN 웹페이지(edition.cnn.com/markets/fear-and-greed)가 쓰는 데이터라
 // 공식 API 가 아니다(모양이 바뀌면 이 줄만 실패한다). 브라우저(Chromium)에서 열리는 것을 확인했고(2026-11-03), 같은 네트워크 스택인
 // Electron net.fetch 로 받는다 — User-Agent 는 그대로(FRED 처럼, 위). fear_and_greed 의 지금 값 · 전일 종가 · 1주 · 1달 · 1년 전과,
 // 1년치 기록(점마다 x ms · y — 끝은 1시간 간격)을 날마다 마지막 값으로 줄인 최근 30일. 미국 장중에 바뀌어 10분 동안 다시 묻지 않는다.
+// 날마다의 기록 전부({ date, value }, 차트 ^FNG)는 fearGreedDays.
 const FEARGREED_TTL = 10 * 60000;
 let fearGreedCache = null;
-async function cnnFearGreed(now) {
-  if (fearGreedCache && now - fearGreedCache.at < FEARGREED_TTL) return fearGreedCache.v;
+async function loadFearGreed(now) {
+  if (fearGreedCache && now - fearGreedCache.at < FEARGREED_TTL) return fearGreedCache;
   const res = await netFetch('https://production.dataviz.cnn.io/index/fearandgreed/graphdata', {}, (u, o) => net.fetch(u, o));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const j = await res.json();
@@ -724,14 +730,20 @@ async function cnnFearGreed(now) {
   const num = (v) => (Number.isFinite(v) ? v : null);
   const byDay = new Map();
   for (const p of j?.fear_and_greed_historical?.data || []) {
-    if (Number.isFinite(p?.x) && Number.isFinite(p?.y)) byDay.set(new Date(p.x).toISOString().slice(0, 10), p.y);
+    if (Number.isFinite(p?.x) && Number.isFinite(p?.y)) byDay.set(new Date(p.x).toISOString().slice(0, 10).replace(/-/g, ''), p.y);
   }
   const v = { score: fg.score, rating: String(fg.rating || ''), at: typeof fg.timestamp === 'string' ? fg.timestamp : null,
     prevClose: num(fg.previous_close), week: num(fg.previous_1_week), month: num(fg.previous_1_month), year: num(fg.previous_1_year),
     days: [...byDay.values()].slice(-30) };
-  fearGreedCache = { at: now, v };
-  return v;
+  fearGreedCache = { at: now, v, rows: [...byDay].map(([date, value]) => ({ date, value })) };
+  return fearGreedCache;
 }
+const cnnFearGreed = async (now) => (await loadFearGreed(now)).v;
+const fearGreedDays = async (now) => (await loadFearGreed(now)).rows;
+
+// 지표 화면의 줄 중 날마다 값 하나만 있는 것의 차트(앱이 붙인 기호, 2026-11-03 사용자 요청) — 기호 → 날마다의 { date, value }.
+// 야후 · 네이버에는 없다. 일봉(1M · 3M · 1Y · 3Y)과 전체만 — 분봉이 없다(yf:chart).
+const DAILY_ONLY = { '^FNG': fearGreedDays, '^HYOAS': (now) => fredHyOas(now, true) };
 
 // 장중 수급(지표 화면의 '코스피 장중 수급' 묶음, 2026-10-30 사용자 요청) — 다음 금융. 네이버 수급(trend?bizdate=)은 날짜마다 값 하나라
 // 장중 흐름이 없다. 2026-10-30 브라우저에서 확인한 주소 셋을 함께 받는다(하나가 실패하면 그것만 null, 셋 다면 실패):
@@ -1670,6 +1682,7 @@ async function withExt(series, krExt, now, week) {
 const NAVER_DAY = {
   'NQ=F': { reutersCode: 'NQcv1', category: 'major', chartInfoType: 'futures' },
   'CL=F': { reutersCode: 'CLcv1', category: 'energy', chartInfoType: 'futures' },
+  'BZ=F': { reutersCode: 'LCOcv1', category: 'energy', chartInfoType: 'futures' }, // 브렌트유 — 확인 전이라 비거나 실패하면 야후
   // 미국채의 뉴욕 자정은 거래와 상관없는 경계다 — 그 뒤 몇 시간은 점이 몇 개뿐이라 전날의 같은 시각 뒤(lastPriceInfos)를
   // 앞에 이어 최근 24시간을 그린다(2026-10-27 13:18 오늘 1개 · 전날 128개).
   '^TNX': { reutersCode: 'US10YT=RR', category: 'bond', chartInfoType: 'governmentBond', last24h: true },
@@ -1743,6 +1756,24 @@ ipcMain.handle('yf:chart', async (_e, req) => {
   const { symbol, range, interval, extended } = req || {};
   if (!SYMBOL_RE.test(String(symbol ?? '')) || !RANGES.has(range) || !INTERVALS.has(interval)) {
     return { ok: false, error: '잘못된 요청' };
+  }
+  // CNN 공포 · 탐욕 · 미국 HY OAS(DAILY_ONLY) — 날마다 값 하나를 시 · 고 · 저 · 종가 같은 봉으로(거래량 0). 시각은 그날
+  // 00:00 UTC(네이버 일봉처럼), 전체(max)는 받은 전부를 일봉 그대로. 분봉 기간은 그릴 것이 없다.
+  if (DAILY_ONLY[symbol]) {
+    if (!(range === 'max' || (interval === '1d' && range in NAVER_DAILY_DAYS))) return { ok: false, error: '일별 값만 있습니다(1M 이상)' };
+    try {
+      const now = Date.now();
+      const from = range === 'max' ? '' : kstDay(now - NAVER_DAILY_DAYS[range] * 86400000);
+      const bars = (await DAILY_ONLY[symbol](now)).filter((r) => r.date >= from).map((r) => ({
+        time: Date.UTC(+r.date.slice(0, 4), r.date.slice(4, 6) - 1, +r.date.slice(6)),
+        open: r.value, high: r.value, low: r.value, close: r.value, volume: 0 }));
+      if (!bars.length) return { ok: false, error: '데이터 없음' };
+      const series = toSeries(bars);
+      delete series.ext;
+      return { ok: true, symbol, price: bars.at(-1).close, currency: null, week52High: null, week52Low: null, ...series };
+    } catch (err) {
+      return { ok: false, error: err.message || '요청 실패' };
+    }
   }
   // 시간외는 1D(5분봉) · 1W(30분봉)에만 붙인다. 지수는 시간외가 없다.
   const week = range === '5d' && interval === '30m';

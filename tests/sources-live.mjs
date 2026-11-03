@@ -64,7 +64,7 @@ export const CHECKS = [
   {
     name: '지수 줄', source: '네이버 polling · 미국채 · 야후 환율',
     call: (h) => h['quote:indices'](),
-    verify: (r) => [...okOf(r), ...['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'NASDAQ', 'SPX', 'VIX', 'SOX', 'NQ', 'WTI', 'US10Y', 'USDKRW'].flatMap((code) => {
+    verify: (r) => [...okOf(r), ...['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'NASDAQ', 'SPX', 'VIX', 'SOX', 'NQ', 'WTI', 'BRENT', 'US10Y', 'USDKRW'].flatMap((code) => {
       const it = r && Array.isArray(r.items) && r.items.find((i) => i.code === code);
       return need(it && pos(it.value) && num(it.pct), `${code}: 값 · 등락률 없음`);
     })],

@@ -322,5 +322,28 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   `${verdictOf({ spotFlows: [f('20261022', 1000), f('20261023', 2100)], kospiDays: kospi }, 'spot').detail} | ${verdictOf({ futFlows: [f('20261023', 4514)], futDays: fut, kospiDays: kospi }, 'futures').detail}`);
 }
 
+// --- CNN 공포 · 탐욕 · HY OAS 차트(yf:chart ^FNG · ^HYOAS, 2026-11-03) — 날마다 값을 시 · 고 · 저 · 종가 같은 봉으로 ---------------
+{
+  const chart = (symbol, range, interval = '1d') => handlers['yf:chart']({}, { symbol, range, interval });
+  NOW = kst('2026-11-03T12:00');
+  reply = base();
+  let r = await chart('^FNG', '1mo');
+  check('공포 · 탐욕 일봉 — 날마다 마지막 값, 그날 00:00 UTC, 거래량 0', r.ok && same(r.closes, [30, 25.5, 23, 22.7285714285714])
+    && same(r.times, [Date.UTC(2026, 9, 30), Date.UTC(2026, 9, 31), Date.UTC(2026, 10, 2), Date.UTC(2026, 10, 3)])
+    && same(r.highs, r.closes) && same(r.lows, r.closes) && r.price === 22.7285714285714 && r.volumes.every((v) => v === 0),
+    JSON.stringify(r).slice(0, 300));
+  r = await chart('^FNG', '1d', '5m');
+  check('분봉 기간은 없다', r.ok === false && r.error === '일별 값만 있습니다(1M 이상)', JSON.stringify(r));
+  r = await chart('^HYOAS', 'max', '1mo');
+  check('HY OAS 전체는 받은 날마다 값 전부(60개로 자르지 않는다)', r.ok && same(r.closes, [3.27, 3.4]), JSON.stringify(r).slice(0, 200));
+  NOW = kst('2026-12-01T12:00');
+  r = await chart('^HYOAS', '1mo');
+  check('기간 안에 값이 없으면 데이터 없음', r.ok === false && r.error === '데이터 없음', JSON.stringify(r));
+  reply = { ...base(), cnn: { status: 500 } };
+  r = await chart('^FNG', '1y');
+  check('받다 실패하면 그 이유', r.ok === false && r.error === 'HTTP 500', JSON.stringify(r));
+  reply = base();
+}
+
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');
 process.exit(fails ? 1 : 0);

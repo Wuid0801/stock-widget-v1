@@ -85,7 +85,7 @@ function renderW52(low, high, price, cur) {
 // 덮은 사본이라 쓰지 않는다. 계산에 쓰는 마지막 확정 봉(끝에서 두 번째)이 바뀔 때만 다시 계산한다.
 function renderTrendCheck(item) {
   const el = document.getElementById('trendCheck');
-  const d = item && dailyCache[item.symbol];
+  const d = item && !item.notTraded && dailyCache[item.symbol]; // 공포 · 탐욕 · HY OAS 는 사고팔 것이 아니다
   if (!d || !d.closes) { el.hidden = true; return; }
   const n = d.closes.length;
   const key = `${n}:${d.times[n - 2]}`;

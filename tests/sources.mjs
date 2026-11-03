@@ -30,7 +30,7 @@ const days = (n) => Array.from({ length: n }, (_, i) => ({ date: ymd(n - 1 - i),
 const GOOD = {
   '국내 실시간 시세': { ok: true, quotes: { '005930': { price: 230000, prevClose: 232000 }, '000660': { price: 1529000, prevClose: 1487000 } } },
   '미국 실시간 시세': { ok: true, quotes: { AAPL: { price: 270, prevClose: 268 }, NVDA: { price: 200, prevClose: 205 } } },
-  '지수 줄': { ok: true, items: ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'NASDAQ', 'SPX', 'VIX', 'SOX', 'NQ', 'WTI', 'US10Y', 'USDKRW'].map((code) => ({ code, value: 10, pct: -0.5 })) },
+  '지수 줄': { ok: true, items: ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'NASDAQ', 'SPX', 'VIX', 'SOX', 'NQ', 'WTI', 'BRENT', 'US10Y', 'USDKRW'].map((code) => ({ code, value: 10, pct: -0.5 })) },
   '시장 지표': { ok: true, kospiDays: days(20), futDays: days(20), k200Days: days(20), k200Min: [{ t: Date.now() - 60000, close: 880 }],
     intraday: { spot: [{ t: Date.now() - 60000, foreign: -13737, individual: 7761, institution: 3670, pension: 4853, corp: 2306 }],
       fut: [{ t: Date.now() - 60000, foreign: 203, individual: 434, institution: -541, pension: 130, corp: -96 }], program: -419 },

@@ -3080,8 +3080,9 @@ await test('market panel: 위험 · 자금 rows explain what each measure is on 
   assert.match(titleOf(html, 'US10Y'), /\n오늘 등락 · 5일 변화는 bp\(0\.01%포인트\)/);
   assert.match(titleOf(html, 'USDKRW'), /^원\/달러 — 1달러에 원화 몇 원\n오르면 원화 약세/);
   assert.match(titleOf(html, 'WTI'), /^WTI — 서부 텍사스산 원유 선물/);
-  assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'), 'HY OAS 는 누를 수 없는 줄 — 설명만');
-  assert.match(titleOf(html, 'HYOAS'), /^미국 HY OAS — 투기등급\(하이일드\)[\s\S]*\nICE BofA US High Yield OAS, FRED — 1~2영업일 늦다$/);
+  // HY OAS 도 누르면 차트(FRED 날마다 값, 2026-11-03) — 설명 아래 '차트 보기'
+  assert.equal(titleOf(html, 'HYOAS'), `${h.run('MARKET_DESC.HYOAS')}\n\n미국 HY OAS 차트 보기`);
+  assert.match(titleOf(html, 'HYOAS'), /^미국 HY OAS — 투기등급\(하이일드\)[\s\S]*\nICE BofA US High Yield OAS, FRED — 1~2영업일 늦다\n\n/);
   // HY OAS 는 근거 없던 '3~4% 낙관 · 5% 경계' 를 빼고 확인한 숫자로 — FRED 최근 3년 · 20년 평균(2023) · 2008 정점
   assert.match(titleOf(html, 'HYOAS'), /· 최근 3년\(2023-11~2026-10\): 대개 2\.7~3\.5% \(중앙값 3\.0%, 가장 높을 때 2025-04 4\.6%\)\n· 20년 평균 약 5\.2% \(2023년 기준\) · 2008년 위기 때 약 20%/);
   assert.doesNotMatch(titleOf(html, 'HYOAS'), /낙관|경계/);
@@ -3089,7 +3090,7 @@ await test('market panel: 위험 · 자금 rows explain what each measure is on 
   h.run('marketExtras = null; indexItems = [];');
   html = h.c.marketHtml();
   assert.equal(titleOf(html, 'VIX'), h.run('MARKET_DESC.VIX'), '값이 없는 줄(누를 수 없다)도 설명');
-  assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'));
+  assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'), '값이 없으면 누를 수 없다 — 설명만');
 });
 
 // 코스톨라니 달걀(해석) — 거래량이 있는 주가지수(코스피 · 코스닥 · 나스닥 · S&P 500)만 메모에 국면, 툴팁에 근거. 2026-10-29.
@@ -3211,7 +3212,8 @@ await test('market panel: KOSPI 200 futures says 20분 지연 and opens its char
 });
 
 // CNN 공포 · 탐욕(2026-11-03 사용자 요청) — 위험 · 자금 묶음의 VIX 바로 아래. 값은 점수, 오늘 등락은 전일 종가 대비 · 5일 변화
-// 자리는 1주 전 대비(점수 차), 메모에 단계(한글), 툴팁에 뜻과 1달 · 1년 전까지. 차트가 없어 누를 수 없다. 받다 실패하면 그 이유.
+// 자리는 1주 전 대비(점수 차), 메모에 단계(한글), 툴팁에 뜻과 1달 · 1년 전까지. 누르면 차트(^FNG — main 이 날마다 값으로 그린다).
+// 받다 실패하면 그 이유.
 await test('market panel: CNN fear & greed sits under VIX with its score, the change since yesterday and a week ago, and its mood', () => {
   const h = marketHarness();
   h.run(EXTRAS);
@@ -3220,9 +3222,13 @@ await test('market panel: CNN fear & greed sits under VIX with its score, the ch
   const html = h.c.marketHtml();
   const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
   assert.equal(keys[keys.indexOf('VIX') + 1], 'FEARGREED', 'VIX 바로 아래');
-  assert.match(html, /<div class="rrow mrow mfix" data-key="FEARGREED" title="CNN 공포 · 탐욕 지수\(0~100\)/, '누를 수 없다 — 툴팁에 뜻');
+  assert.match(html, /<div class="hit rrow mrow" data-sym="\^FNG" data-key="FEARGREED" title="CNN 공포 · 탐욕 지수\(0~100\)/, '누르면 차트 — 툴팁에 뜻');
   const row = keyRow(html, 'FEARGREED');
-  assert.match(row, /지금 23\(극단적 공포\) · 전일 25 · 1주 전 33 · 1달 전 38 · 1년 전 33\n11\/03 10:00 기준\(한국 시각\)"/);
+  assert.match(row, /지금 23\(극단적 공포\) · 전일 25 · 1주 전 33 · 1달 전 38 · 1년 전 33\n11\/03 10:00 기준\(한국 시각\)\n\nCNN 공포·탐욕 차트 보기"/);
+  h.c.rankClick({ closest: (sel) => (sel === '[data-sym]' ? { dataset: { sym: '^FNG' } } : null) });
+  assert.deepEqual(h.picked, ['^FNG'], '지수 줄처럼 고른다');
+  assert.equal(h.run("curOf('^FNG')"), 'pt');
+  assert.equal(h.run("curOf('^HYOAS')"), '%');
   assert.match(row, /CNN 공포·탐욕/);
   assert.match(row, /<span class="mnote">극단적 공포<\/span>/);
   assert.match(row, /<span class="mval">23<\/span>/);
@@ -3230,7 +3236,9 @@ await test('market panel: CNN fear & greed sits under VIX with its score, the ch
   assert.match(row, /<span class="md5" title="1주 전 대비\(점수 차\)">-10\.2<\/span>/);
   assert.match(row, /class="mspark"/);
   h.run("marketExtras.d.fearGreed = null; marketExtras.d.errors = { fearGreed: 'HTTP 418' };");
-  assert.match(keyRow(h.c.marketHtml(), 'FEARGREED'), />실패 · HTTP 418<\/span>/);
+  const failed = h.c.marketHtml();
+  assert.match(keyRow(failed, 'FEARGREED'), />실패 · HTTP 418<\/span>/);
+  assert.match(failed, /<div class="rrow mrow mfix" data-key="FEARGREED"/, '값이 없으면 누를 수 없다');
 });
 
 // 코스피200 현물과 베이시스(선물 - 현물) — 현물은 지수 줄 요청에 붙여 받은 KPI200. 선물은 20분 늦어 같은 시각의 현물(오늘 1분 종가)과
@@ -4199,6 +4207,9 @@ await test('trend check: one line + tooltip, verdict colour, hidden without data
   assert.equal(el.hidden, true, '일봉을 아직 못 받음');
 
   run(`dailyCache['005930.KS'] = ${JSON.stringify(trendDaily(600))};`);
+  run(`dailyCache['^HYOAS'] = ${JSON.stringify(trendDaily(600))};`);
+  c.renderTrendCheck({ symbol: '^HYOAS', notTraded: true });
+  assert.equal(el.hidden, true, '공포 · 탐욕 · HY OAS 는 사고팔 것이 아니라 숨긴다(2026-11-03)');
   c.renderTrendCheck({ symbol: '005930.KS' });
   assert.equal(el.hidden, false);
   // 08-07 09:00 KST → 09-10 (하네스 시각) = 34일
