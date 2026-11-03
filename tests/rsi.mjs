@@ -4,7 +4,7 @@
 // 널리 쓰이는 technicalindicators 라이브러리의 RSI 와 소수 2자리까지
 // 전부 일치함을 확인했다(Wilder 예제 + 실제 국내 5종목 일봉, 총 1166개 값).
 // 여기서는 외부 의존성 없이 그 결과를 고정해 두어 구현이 바뀌면 잡히게 한다.
-import { calcRSI, weekCloses, rsiSeries, rsiSignal, sma } from '../indicators.js';
+import { calcRSI, weekCloses, rsiSeries, rsiSignal, sma, rsiScale, RSI_MIN_SPAN } from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -83,6 +83,31 @@ check('빈 배열도 안전하게 null', calcRSI([]) === null);
   check('RSI 의 9봉 평균', g.slice(14).every((v, k) => (v === null ? want[k] === null : Math.abs(v - want[k]) < 1e-9)));
   check('기간을 바꿀 수 있다', rsiSignal(r, 6)[19] != null && rsiSignal(r, 6)[18] === null);
   check('RSI 가 없으면 전부 null', rsiSignal([null, null]).every((v) => v === null));
+}
+
+// RSI 칸 눈금 — 보이는 RSI · 시그널의 최저~최고에 맞춘다. 0~100 이면 30~70 에서만 움직여 45px 칸에서 선이 납작했다.
+{
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  const ticks = (s) => JSON.stringify(s.ticks);
+  const s = rsiScale([null, 39.2, 50, 66.4, null, 45]);
+  const pad = (66.4 - 39.2) / 10;
+  check('최저 · 최고에 폭의 1/10 여유', near(s.min, 39.2 - pad) && near(s.max, 66.4 + pad), JSON.stringify(s));
+  check('눈금 숫자는 최저 · 최고 자리(반올림)', ticks(s) === '[39,66]', ticks(s));
+  const flat = rsiScale([48, 53]);
+  check('거의 안 움직이면 폭은 RSI_MIN_SPAN(가운데 기준)', RSI_MIN_SPAN === 20
+    && near(flat.max - flat.min, RSI_MIN_SPAN * 1.2) && near((flat.min + flat.max) / 2, 50.5), JSON.stringify(flat));
+  check('그때 눈금 숫자는 그 폭의 양 끝', ticks(flat) === '[41,61]', ticks(flat));
+  const low = rsiScale([2, 12]);
+  check('0 밑으로 내려가지 않는다(폭은 그대로 위로 민다)', low.min === 0 && near(low.max, 24), JSON.stringify(low));
+  const high = rsiScale([95, 99]);
+  check('100 위로 올라가지 않는다', high.max === 100 && near(high.min, 76), JSON.stringify(high));
+  const wide = rsiScale([8, 95]);
+  check('거의 다 쓰면 0~100 에 30 · 70', wide.min === 0 && wide.max === 100 && ticks(wide) === '[30,70]', JSON.stringify(wide));
+  const in70 = rsiScale([40, 90]);
+  check('30 · 70 이 범위 안이고 끝 숫자와 떨어져 있으면 그 숫자도', ticks(in70) === '[40,70,90]', ticks(in70));
+  const by70 = rsiScale([45, 78]);
+  check('끝 숫자와 칸의 1/4 안으로 붙으면 30 · 70 숫자는 뺀다(겹친다)', ticks(by70) === '[45,78]', ticks(by70));
+  check('값이 없으면 0~100', JSON.stringify(rsiScale([null, null])) === JSON.stringify({ min: 0, max: 100, ticks: [30, 70] }));
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

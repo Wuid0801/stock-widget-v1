@@ -63,6 +63,29 @@ function rsiSignal(rsi, period = 9) {
   return out;
 }
 
+// RSI 칸 눈금 — 보이는 RSI · 시그널의 최저~최고에 위아래로 폭의 1/10 여유를 둔 { min, max }. 0~100 이면 RSI 가 대개
+// 30~70 에서만 움직여 45px 칸에서 20px 남짓이라 꺾이는 곳이 안 보였다(2026-11-03). 폭은 적어도 RSI_MIN_SPAN — 거의 안
+// 움직인 날 잔떨림이 큰 파도로 보이지 않게. 0~100 밖으로는 밀어 넣고, 거의 다 쓰면 0~100 이다.
+// ticks 는 숫자를 적을 자리 — 그 폭의 양 끝(보통 최저 · 최고), 30 · 70 은 범위 안이고 양 끝과 칸의 1/4 넘게 떨어졌을 때만
+// (45px 칸에서 숫자가 겹치지 않게).
+const RSI_MIN_SPAN = 20;
+function rsiScale(values) {
+  const v = values.filter((x) => x != null);
+  if (!v.length) return { min: 0, max: 100, ticks: [30, 70] };
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const span = Math.max(hi - lo, RSI_MIN_SPAN);
+  const pad = span / 10;
+  const half = span / 2 + pad;
+  if (half >= 50) return { min: 0, max: 100, ticks: [30, 70] };
+  const mid = Math.min(Math.max((lo + hi) / 2, half), 100 - half);
+  const min = mid - half;
+  const max = mid + half;
+  const ends = [Math.round(min + pad), Math.round(max - pad)];
+  const apart = (t) => ends.every((e) => Math.abs(t - e) >= (max - min) / 4);
+  return { min, max, ticks: [...ends, ...[30, 70].filter((t) => t > min && t < max && apart(t))].sort((a, b) => a - b) };
+}
+
 // 단순이동평균. 구간이 모자라는 앞부분은 null (Chart.js가 알아서 비워 둔다)
 function sma(closes, period) {
   const out = new Array(closes.length).fill(null);
@@ -666,7 +689,7 @@ function eggPhase(closes, volumes) {
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
-    calcRSI, rsiSeries, rsiSignal, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    calcRSI, rsiSeries, rsiSignal, RSI_MIN_SPAN, rsiScale, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,

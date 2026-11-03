@@ -576,6 +576,9 @@ function drawChart(arg) {
   const rsiDot = new Map(rsi ? [...rsi.crosses.map((x) => [x.i, { golden: x.golden, open: false }]),
     ...(rsi.pending ? [[rsi.pending.i, { golden: rsi.pending.golden, open: true }]] : [])] : []);
   const rsiDotColor = (i) => (rsiDot.has(i) && rsiDot.get(i).golden ? UP : DOWN);
+  // RSI 칸 눈금 — 보이는 봉의 RSI · 시그널 최저~최고에 맞춘다(rsiScale). 거래량처럼 확대 중에는 그 구간으로.
+  const rsiFit = rsi ? rsiScale(zr ? [...rsi.data.slice(zr.from, zr.to + 1), ...rsi.signal.slice(zr.from, zr.to + 1)]
+    : [...rsi.data, ...rsi.signal]) : null;
   // RSI 칸을 둘 때 가격 칸의 stack 비중(RSI 칸은 RSI_PANE). 그림 높이는 캔버스에서 아래 날짜 줄 · 위 여백(약 22px)을 뺀
   // 만큼이라 RSI 칸이 약 RSI_PANE px 가 된다. 축 옵션은 다시 배치할 때마다 새로 읽혀 창 높이를 바꿔도 칸 높이가 그대로다.
   const priceWeight = ({ chart: c }) => Math.max(c.height - 22 - RSI_PANE, RSI_PANE);
@@ -774,10 +777,11 @@ function drawChart(arg) {
         fill: false,
         spanGaps: false,
       }] : []),
-      // RSI · 시그널(보조 지표) — 가격 칸 아래 따로 둔 칸(숨긴 축 yRsi, RSI_PANE)에 그린다. RSI 는 옅은 실선, 시그널은 점선,
-      // 30 · 70 은 아주 옅은 점선. 시그널을 뚫은 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 막대(0) 위 ·
-      // 추세선(-1) 아래에 그린다. 그 봉의 값은 툴팁 footer, 지금 상태는 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
-      ...(rsi ? [...[30, 70].map((v) => ({
+      // RSI · 시그널(보조 지표) — 가격 칸 아래 따로 둔 칸(축 yRsi, RSI_PANE)에 그린다. RSI 는 옅은 실선, 시그널은 점선,
+      // 30 · 70 은 아주 옅은 점선 — 눈금(rsiFit) 안일 때만. 밖이면 RSI 칸을 벗어나 가격 칸에 그어진다. 시그널을 뚫은
+      // 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 막대(0) 위 · 추세선(-1) 아래에 그린다. 그 봉의 값은
+      // 툴팁 footer, 지금 상태는 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
+      ...(rsi ? [...[30, 70].filter((v) => v > rsiFit.min && v < rsiFit.max).map((v) => ({
         data: closes.map(() => v),
         yAxisID: 'yRsi',
         order: -0.5,
@@ -942,15 +946,18 @@ function drawChart(arg) {
           max: maxVol * 4,
           grid: { display: false },
         },
-        // RSI 전용 축(보조 지표). y 와 같은 오른쪽 stack 의 아래 칸.
+        // RSI 전용 축(보조 지표). y 와 같은 오른쪽 stack 의 아래 칸. 눈금은 보이는 RSI 범위(rsiFit), 숫자는 rsiFit 이 고른
+        // 자리에만 — 쌓인 축은 폭을 같이 써 가격 눈금과 같은 줄에 선다. 기준선은 데이터셋이라 격자 · 축 선은 끈다.
         ...(rsi ? { yRsi: {
-          display: false,
           position: 'right',
           stack: 'pane',
           stackWeight: RSI_PANE,
-          min: 0,
-          max: 100,
+          min: rsiFit.min,
+          max: rsiFit.max,
+          afterBuildTicks: (axis) => { axis.ticks = rsiFit.ticks.map((value) => ({ value })); },
           grid: { display: false },
+          border: { display: false },
+          ticks: { color: cssVar('--mute'), font: { size: 9 }, autoSkip: false },
         } } : {}),
       },
     },

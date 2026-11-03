@@ -1062,9 +1062,18 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   const cfg = configs.at(-1);
   const axis = cfg.options.scales.yRsi;
   const { y, yVol } = cfg.options.scales;
-  assert.equal(axis.display, false, '거래량 축처럼 눈금 없이');
-  assert.equal(axis.min, 0);
-  assert.equal(axis.max, 100, 'RSI 칸 전체가 0~100');
+  // 눈금은 보이는 RSI · 시그널의 최저~최고(rsiScale) — 0~100 이면 선이 납작했다. 숫자는 rsiScale 이 고른 자리에만,
+  // 가격 눈금과 같은 오른쪽 줄에. 격자 · 축 선은 없다(기준선은 데이터셋)
+  const want = run('rsiScale([null, 40, 55, 60, null, 45, 50, 52])');
+  assert.equal(axis.min, want.min);
+  assert.equal(axis.max, want.max);
+  assert.ok(axis.max - axis.min < 100, '0~100 보다 좁다');
+  const tickAxis = {};
+  axis.afterBuildTicks(tickAxis);
+  assert.deepEqual([...tickAxis.ticks].map((t) => t.value), [...want.ticks], '눈금 숫자');
+  assert.equal(axis.ticks.autoSkip, false, '칸이 낮아도 숫자를 건너뛰지 않는다');
+  assert.equal(axis.grid.display, false);
+  assert.equal(axis.border.display, false);
   // 가격 축(y)과 같은 오른쪽 stack 에 쌓는다 — 위가 가격 칸, 아래가 RSI 칸(RSI_PANE 만큼)
   assert.equal(axis.position, 'right');
   assert.ok(axis.stack && axis.stack === y.stack, 'y 와 같은 stack');
@@ -1087,7 +1096,7 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   assert.equal(line.borderDash, undefined);
   const sig = on.find((d) => JSON.stringify(d.data) === '[null,45,50,52]');
   assert.ok(sig.borderDash, '시그널은 점선');
-  assert.ok(on.some((d) => d.data.every((v) => v === 30)) && on.some((d) => d.data.every((v) => v === 70)), '30 · 70 기준선');
+  assert.ok(!on.some((d) => d.data.every((v) => v === 30 || v === 70)), '범위(38~62) 밖 기준선은 그리지 않는다 — 그리면 가격 칸에 그어진다');
   const dots = on.find((d) => d.showLine === false);
   assert.equal(JSON.stringify(dots.data), '[null,null,55,null]', '확정된 교차 봉에만 점');
   assert.equal(dots.pointBackgroundColor[2], run('UP'), '위로 뚫으면 빨강');
@@ -1108,11 +1117,42 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   run('arg_.rsi = { ...arg_.rsi, crosses: [{ i: 1, y: 40, golden: false }] }; drawChart(arg_);');
   assert.equal(configs.at(-1).data.datasets.find((d) => d.yAxisID === 'yRsi' && d.showLine === false).pointBackgroundColor[1],
     run('DOWN'), '아래로 뚫으면 파랑');
+  run('arg_.rsi = { ...arg_.rsi, data: [null, 40, 85, 60] }; drawChart(arg_);');
+  const wide = configs.at(-1).data.datasets.filter((d) => d.yAxisID === 'yRsi');
+  assert.ok(wide.some((d) => d.data.every((v) => v === 70)), '70 이 범위 안이면 기준선');
+  assert.ok(!wide.some((d) => d.data.every((v) => v === 30)), '30 은 아직 범위 밖');
   run('arg_.rsi = null; drawChart(arg_);');
   assert.equal(configs.at(-1).data.datasets.some((d) => d.yAxisID === 'yRsi'), false);
   assert.equal(configs.at(-1).options.scales.yRsi, undefined, 'RSI 를 끄면 축도 없다');
   assert.equal(configs.at(-1).options.scales.y.stack, undefined, '가격이 그림 전체 높이를 쓴다');
   assert.equal(configs.at(-1).options.scales.yVol.min, undefined, '거래량도 예전처럼 그림 바닥부터');
+});
+
+await test('indicators: the RSI pane fits the visible bars when zoomed, like the price axis', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: () => 'x', cssVar: (n) => n,
+  });
+  const day = 86400000;
+  const t0 = Date.parse('2026-07-01T00:00:00Z');
+  // 앞 10봉은 RSI 90, 그 뒤는 40~59
+  run(`state.timeframe = '1Y';
+    var T_ = Array.from({ length: 30 }, (_, i) => ${t0} + i * ${day});
+    var C_ = Array.from({ length: 30 }, (_, i) => 100 + i);
+    var arg_ = { closes: C_, times: T_, up: true, volumes: C_.map(() => 10), highs: C_, lows: C_,
+      rsi: { data: C_.map((_, i) => (i < 10 ? 90 : 40 + (i % 20))), signal: C_.map(() => null), crosses: [] } };`);
+  run('drawChart(arg_);');
+  assert.ok(configs.at(-1).options.scales.yRsi.max > 90, '전체면 90 까지');
+  run('zoom = { start: T_[10], end: T_[19] }; drawChart(arg_);');
+  const axis = configs.at(-1).options.scales.yRsi;
+  const want = run('rsiScale([50, 51, 52, 53, 54, 55, 56, 57, 58, 59])');
+  assert.equal(axis.min, want.min, '확대하면 보이는 봉(50~59)으로');
+  assert.equal(axis.max, want.max);
 });
 
 // 지수 대비 수익률(보조 지표): 기간 배지에 종목 수익률 - 같은 기간 지수 수익률(%p).
