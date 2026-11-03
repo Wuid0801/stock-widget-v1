@@ -3047,7 +3047,7 @@ await test('market panel: 지표 lists every index item in three groups and pick
   assert.equal(h.elements.get('rankTabs').hidden, true, '지표 화면은 탭 줄이 없다');
   const html = h.elements.get('rankList').innerHTML;
   assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
-    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분', '미국', '위험 · 자금', '원자재']);
+    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분', '미국', '심리', '금리 · 신용', '환율', '원자재']);
   const order = [...html.matchAll(/data-sym="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(order, ['^KS11', '^KQ11', '^IXIC', '^GSPC', 'NQ=F', '^SOX', '^VIX', '^TNX', 'KRW=X', 'CL=F'], '묶음 안 순서');
   assert.match(rowOf(html, '^TNX'), /4\.970/);
@@ -3452,7 +3452,7 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   h.run(INTRADAY('2026-09-10')); // 하네스의 오늘(2026-09-10 18:30 KST)
   let html = h.c.marketHtml();
   assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
-    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분 (14:25)', '미국', '위험 · 자금', '원자재'], '국내 다음 묶음 — 제목에 단위와 마지막 현물 시각');
+    ['국내', '코스피 장중 수급 · 현물 · 선물 억 · 30분 (14:25)', '미국', '심리', '금리 · 신용', '환율', '원자재'], '국내 다음 묶음 — 제목에 단위와 마지막 현물 시각');
   const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(keys.slice(keys.indexOf('FUTFLOW') + 1, keys.indexOf('FUTFLOW') + 7),
     ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']);

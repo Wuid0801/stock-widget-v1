@@ -245,8 +245,11 @@ const MARKET_GROUPS = [
   ['국내', ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']],
   [INTRADAY_GROUP, ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']],
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
-  // FEARGREED CNN 공포 · 탐욕 · CURVE 장단기 금리차 · DXY 달러 인덱스 · 원자재 묶음(2026-11-03 — 줄이 늘어 유가를 나눴다)
-  ['위험 · 자금', ['VIX', 'FEARGREED', 'US10Y', 'CURVE', 'HYOAS', 'USDKRW', 'DXY']],
+  // 예전 '위험 · 자금' 한 묶음 — 줄이 늘어(FEARGREED CNN 공포 · 탐욕 · CURVE 장단기 금리차 · DXY 달러 인덱스 · 원자재) 성격대로
+  // 나눴다(2026-11-03 사용자 요청: 읽기 쉽게)
+  ['심리', ['VIX', 'FEARGREED']],
+  ['금리 · 신용', ['US10Y', 'CURVE', 'HYOAS']],
+  ['환율', ['USDKRW', 'DXY']],
   ['원자재', ['WTI', 'BRENT', 'GOLD', 'COPPER']],
 ];
 // 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
