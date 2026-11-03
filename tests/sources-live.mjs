@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { loadMain } from './_main.mjs';
 
 // main.js 를 읽어 IPC 처리기를 꺼낸다. fetch 는 받은 것을, Electron net.fetch 자리는 netImpl(없으면 같은 fetch)을 쓴다.
-// 앱은 FRED 만 Electron net.fetch 로 받는다 — 이 파일만 돌리면 Node fetch 로 대신해 주소 · 응답 모양만 본다(Electron 에서만
+// 앱은 FRED · CNN 만 Electron net.fetch 로 받는다 — 이 파일만 돌리면 Node fetch 로 대신해 주소 · 응답 모양만 본다(Electron 에서만
 // 막히는 것은 못 본다 — tests/sources-electron.mjs 가 진짜 net.fetch 를 넘긴다)
 export function loadHandlers(fetchImpl, netImpl = fetchImpl) {
   return loadMain({ globals: { fetch: fetchImpl }, electron: { net: { fetch: netImpl } }, platform: 'check' });
@@ -70,7 +70,7 @@ export const CHECKS = [
     })],
   },
   {
-    name: '시장 지표', source: '네이버 수급 · 지수 일봉, FRED HY OAS, 다음 금융 장중 수급',
+    name: '시장 지표', source: '네이버 수급 · 지수 일봉, FRED HY OAS, 다음 금융 장중 수급, CNN 공포 · 탐욕',
     call: (h) => h['market:extras'](),
     verify: (r) => [...okOf(r), ...(r && r.ok ? [
       ...need(Array.isArray(r.kospiDays) && r.kospiDays.length >= 10 && r.kospiDays.every((d) => pos(d.close)), '코스피 일별 종가가 10일 미만'),
@@ -93,6 +93,11 @@ export const CHECKS = [
       ...need(r.intraday && Array.isArray(r.intraday.fut) && r.intraday.fut.length > 0 && r.intraday.fut.every((s) => num(s.foreign)),
         '장중 수급 선물(다음 금융)이 없음'),
       ...need(r.intraday && num(r.intraday.program), '프로그램 매매(다음 금융)가 없음'),
+      // CNN 공포 · 탐욕(2026-11-03) — 공식 API 가 아닌 CNN 웹페이지 데이터
+      ...need(r.fearGreed && num(r.fearGreed.score) && r.fearGreed.score >= 0 && r.fearGreed.score <= 100 && r.fearGreed.rating,
+        'CNN 공포 · 탐욕 점수가 없음'),
+      ...need(r.fearGreed && Array.isArray(r.fearGreed.days) && r.fearGreed.days.length >= 10, 'CNN 공포 · 탐욕 날마다 기록이 10일 미만'),
+      ...need(r.fearGreed && recent(Date.parse(r.fearGreed.at), 7), 'CNN 공포 · 탐욕이 7일보다 오래됨'),
     ] : [])],
   },
   {

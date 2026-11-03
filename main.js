@@ -708,6 +708,31 @@ async function fredHyOas(now) {
   return rows;
 }
 
+// CNN 공포 · 탐욕 지수(지표 화면, 2026-11-03 사용자 요청) — CNN 웹페이지(edition.cnn.com/markets/fear-and-greed)가 쓰는 데이터라
+// 공식 API 가 아니다(모양이 바뀌면 이 줄만 실패한다). 브라우저(Chromium)에서 열리는 것을 확인했고(2026-11-03), 같은 네트워크 스택인
+// Electron net.fetch 로 받는다 — User-Agent 는 그대로(FRED 처럼, 위). fear_and_greed 의 지금 값 · 전일 종가 · 1주 · 1달 · 1년 전과,
+// 1년치 기록(점마다 x ms · y — 끝은 1시간 간격)을 날마다 마지막 값으로 줄인 최근 30일. 미국 장중에 바뀌어 10분 동안 다시 묻지 않는다.
+const FEARGREED_TTL = 10 * 60000;
+let fearGreedCache = null;
+async function cnnFearGreed(now) {
+  if (fearGreedCache && now - fearGreedCache.at < FEARGREED_TTL) return fearGreedCache.v;
+  const res = await netFetch('https://production.dataviz.cnn.io/index/fearandgreed/graphdata', {}, (u, o) => net.fetch(u, o));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const j = await res.json();
+  const fg = j?.fear_and_greed;
+  if (!Number.isFinite(fg?.score)) throw new Error('모양이 다른 응답');
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  const byDay = new Map();
+  for (const p of j?.fear_and_greed_historical?.data || []) {
+    if (Number.isFinite(p?.x) && Number.isFinite(p?.y)) byDay.set(new Date(p.x).toISOString().slice(0, 10), p.y);
+  }
+  const v = { score: fg.score, rating: String(fg.rating || ''), at: typeof fg.timestamp === 'string' ? fg.timestamp : null,
+    prevClose: num(fg.previous_close), week: num(fg.previous_1_week), month: num(fg.previous_1_month), year: num(fg.previous_1_year),
+    days: [...byDay.values()].slice(-30) };
+  fearGreedCache = { at: now, v };
+  return v;
+}
+
 // 장중 수급(지표 화면의 '코스피 장중 수급' 묶음, 2026-10-30 사용자 요청) — 다음 금융. 네이버 수급(trend?bizdate=)은 날짜마다 값 하나라
 // 장중 흐름이 없다. 2026-10-30 브라우저에서 확인한 주소 셋을 함께 받는다(하나가 실패하면 그것만 null, 셋 다면 실패):
 //  - 코스피 현물 시간별(investor/KOSPI/times) — 그날 09:01 부터 1~2분 간격 누적 순매수(원, 최신이 앞), 세부(details)에 연기금 · 기타법인
@@ -767,12 +792,13 @@ ipcMain.handle('market:extras', async () => {
   const parts = await Promise.allSettled([flows('KOSPI'), flows('FUT'), kospi, naverIndexCloses('FUT', now), fredHyOas(now),
     naverIndexCloses('KPI200', now), // 코스피200 현물 일별 종가 — 5일 변화 · 날마다의 베이시스(선물 종가 - 현물 종가)
     naverMinuteCloses('KPI200', now), // 오늘 1분 종가 — 장중 베이시스를 20분 늦은 선물의 시각에 맞춘다
-    daumIntraday()]); // 장중 수급(현물 · 선물 · 프로그램)
+    daumIntraday(), // 장중 수급(현물 · 선물 · 프로그램)
+    cnnFearGreed(now)]);
   if (parts.every((p) => p.status === 'rejected')) {
     return { ok: false, error: parts[0].reason?.message || '시장 지표 조회 실패' };
   }
   // 실패한 부분은 null, 그 이유는 errors[부분] — 지표 화면이 빈 줄의 메모에 적는다(2026-11-02)
-  const names = ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday'];
+  const names = ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday', 'fearGreed'];
   const out = { ok: true, errors: {} };
   parts.forEach((p, i) => {
     out[names[i]] = p.status === 'fulfilled' ? p.value : null;

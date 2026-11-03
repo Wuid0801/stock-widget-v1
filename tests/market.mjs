@@ -25,7 +25,7 @@ const fakeFetch = async (url, opt) => {
   const route = url.includes('/chart/domestic/index/KOSPI/day') ? 'kospiDay' : url.includes('/chart/domestic/index/FUT/day') ? 'futDay'
     : url.includes('/chart/domestic/index/KPI200/day') ? 'k200Day' : url.includes('/chart/domestic/index/KPI200/minute') ? 'k200Min'
     : url.includes('/api/index/KOSPI/trend') ? 'spot' : url.includes('/api/index/FUT/trend') ? 'fut'
-      : url.includes('fred.stlouisfed.org') ? 'fred'
+      : url.includes('fred.stlouisfed.org') ? 'fred' : url.includes('dataviz.cnn.io/index/fearandgreed') ? 'cnn'
         : url.includes('finance.daum.net/api/investor/KOSPI/times') ? 'daumSpot' : url.includes('finance.daum.net/api/investor/future/times') ? 'daumFut'
           : url.includes('finance.daum.net/api/domestic/quotes') ? 'daumQuotes' : 'other';
   headersOf[route] = opt && opt.headers;
@@ -36,7 +36,7 @@ const fakeFetch = async (url, opt) => {
   return { ok: true, status: 200, json: async () => body, text: async () => String(body ?? '') };
 };
 
-const netCalls = []; // Electron net.fetch(Chromium)로 나간 주소 — FRED 만
+const netCalls = []; // Electron net.fetch(Chromium)로 나간 주소 — FRED · CNN 만
 const handlers = loadMain({ globals: { fetch: fakeFetch, AbortSignal, Date: FixedDate },
   electron: { net: { fetch: (url, opt) => { netCalls.push(String(url)); return fakeFetch(url, opt); } } } });
 
@@ -45,6 +45,14 @@ const trend = (date, foreign) => ({ bizdate: date, personalValue: '+1', foreignV
 const SPOT = { 20261023: '-9,811', 20261026: '-6,827', 20261027: '+4,080', 20261028: '+1,500' };
 const FUT = { 20261023: '+4,514', 20261026: '-1,200', 20261027: '+6,185', 20261028: '-300' };
 const FRED = 'observation_date,BAMLH0A0HYM2\n2026-10-21,3.27\n2026-10-22,\n2026-10-23,.\n2026-10-24,3.40\n';
+// CNN 공포 · 탐욕 — 2026-11-03 브라우저에서 본 graphdata 의 쓰는 필드만. 기록의 끝은 1시간 간격이라 같은 날이 여러 점이다.
+const CNN = {
+  fear_and_greed: { score: 22.7285714285714, rating: 'extreme fear', timestamp: '2026-11-03T01:00:00+00:00', previous_close: 22.7285714285714,
+    previous_1_week: 32.8857142857143, previous_1_month: 38.2, previous_1_year: 32.6 },
+  fear_and_greed_historical: { data: [{ x: Date.parse('2026-10-30T00:00:00Z'), y: 30 }, { x: Date.parse('2026-10-31T00:00:00Z'), y: 25.5 },
+    { x: Date.parse('2026-11-02T00:00:00Z'), y: 24 }, { x: Date.parse('2026-11-02T20:00:00Z'), y: 23 },
+    { x: Date.parse('2026-11-03T01:00:00Z'), y: 22.7285714285714 }, { x: 'x', y: 1 }] },
+};
 const base = () => ({
   kospiDay: [day('20261023', 5550.3), day('20261026', 5469.47), day('20261027', 5641.17)],
   futDay: [day('20261023', 863.3), day('20261026', 850), day('20261027', 883.7)],
@@ -55,6 +63,7 @@ const base = () => ({
   spot: (d) => trend(d, SPOT[d]),
   fut: (d) => trend(d, FUT[d]),
   fred: FRED,
+  cnn: CNN,
 });
 const extras = () => handlers['market:extras']({});
 const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/trend`)).map((u) => /bizdate=(\d{8})/.exec(u)[1]);
@@ -78,6 +87,33 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
     same(r.k200Min, [{ t: kst('2026-10-27T13:10'), close: 885 }, { t: kst('2026-10-27T13:16'), close: 886.5 }]), JSON.stringify(r.k200Min));
   check('분봉은 오늘 하루를 묻는다', calls.some((u) => u.includes('/index/KPI200/minute?startDateTime=202610270000&endDateTime=202610272359')),
     calls.filter((u) => u.includes('minute')).join(' '));
+  // CNN 공포 · 탐욕(2026-11-03) — 지금 값 · 비교 값과, 기록을 날마다 마지막 값으로 줄인 것(잘못된 점은 뺀다)
+  check('CNN 공포 · 탐욕 모양', same(r.fearGreed, { score: 22.7285714285714, rating: 'extreme fear', at: '2026-11-03T01:00:00+00:00',
+    prevClose: 22.7285714285714, week: 32.8857142857143, month: 38.2, year: 32.6, days: [30, 25.5, 23, 22.7285714285714] }), JSON.stringify(r.fearGreed));
+  check('CNN 은 Electron net.fetch 로, User-Agent 를 바꾸지 않는다(FRED 처럼)',
+    netCalls.some((u) => u.includes('dataviz.cnn.io')) && !JSON.stringify(headersOf.cnn || {}).includes('User-Agent'), JSON.stringify(headersOf.cnn));
+}
+
+// --- 1b. CNN 은 10분 기억, 실패하면 그 줄만 ------------------------------------------------------------
+{
+  const cnnCalls = () => calls.filter((u) => u.includes('dataviz.cnn.io')).length;
+  NOW = kst('2026-10-27T15:09');
+  calls.length = 0;
+  await extras();
+  check('10분 안에는 CNN 을 다시 묻지 않는다', cnnCalls() === 0, calls.join(' '));
+  NOW = kst('2026-10-27T15:10');
+  await extras();
+  check('10분이 지나면 다시 묻는다', cnnCalls() === 1);
+  reply = { ...base(), cnn: { fear_and_greed: { rating: 'fear' } } };
+  NOW = kst('2026-10-27T15:21');
+  let r = await extras();
+  check('점수가 없으면 모양이 다른 응답 — fearGreed 만 null', r.ok === true && r.fearGreed === null && r.errors?.fearGreed === '모양이 다른 응답'
+    && r.spotFlows?.length === 3, JSON.stringify(r.errors));
+  reply = { ...base(), cnn: { status: 418 } };
+  NOW = kst('2026-10-27T15:32');
+  r = await extras();
+  check('막히면 그 상태를 errors 에', r.fearGreed === null && r.errors?.fearGreed === 'HTTP 418', JSON.stringify(r.errors));
+  reply = base();
 }
 
 // --- 2. final 은 한국 20:30 — 지난 날 · 확정된 오늘은 다시 묻지 않는다 -------------------------------------
@@ -108,8 +144,8 @@ const trendDates = (kind) => calls.filter((u) => u.includes(`/api/index/${kind}/
   check('기억이 지나 FRED 를 새로 받았다', calls.some((u) => u.includes('fred')));
   check('FRED 빈 값 · 점은 건너뛴다', same(r.hyOas, [{ date: '20261021', value: 3.27 }, { date: '20261024', value: 3.4 }]), JSON.stringify(r.hyOas));
   // Electron 44 의 Node fetch 는 FRED 에서 답이 없고(20초), net.fetch 에 User-Agent 를 바꿔 달면 HTTP2 오류다(2026-11-02 실측)
-  check('FRED 는 Electron net.fetch 로, 다른 출처는 Node fetch 로', netCalls.length > 0 && netCalls.every((u) => u.includes('fred.stlouisfed.org')),
-    netCalls.join(' '));
+  check('FRED · CNN 은 Electron net.fetch 로, 다른 출처는 Node fetch 로', netCalls.length > 0
+    && netCalls.every((u) => u.includes('fred.stlouisfed.org') || u.includes('dataviz.cnn.io')), netCalls.join(' '));
   check('FRED 요청은 User-Agent 를 바꾸지 않는다', !JSON.stringify(headersOf.fred || {}).includes('User-Agent'), JSON.stringify(headersOf.fred));
   calls.length = 0;
   const fetchedAt = NOW;

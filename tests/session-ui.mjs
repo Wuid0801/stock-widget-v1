@@ -3210,6 +3210,29 @@ await test('market panel: KOSPI 200 futures says 20분 지연 and opens its char
     ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']);
 });
 
+// CNN 공포 · 탐욕(2026-11-03 사용자 요청) — 위험 · 자금 묶음의 VIX 바로 아래. 값은 점수, 오늘 등락은 전일 종가 대비 · 5일 변화
+// 자리는 1주 전 대비(점수 차), 메모에 단계(한글), 툴팁에 뜻과 1달 · 1년 전까지. 차트가 없어 누를 수 없다. 받다 실패하면 그 이유.
+await test('market panel: CNN fear & greed sits under VIX with its score, the change since yesterday and a week ago, and its mood', () => {
+  const h = marketHarness();
+  h.run(EXTRAS);
+  h.run(`marketExtras.d.fearGreed = { score: 22.7285714285714, rating: 'extreme fear', at: '2026-11-03T01:00:00+00:00',
+    prevClose: 25.1, week: 32.8857142857143, month: 38.2, year: 32.6, days: [30, 25.5, 23, 22.7285714285714] };`);
+  const html = h.c.marketHtml();
+  const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(keys[keys.indexOf('VIX') + 1], 'FEARGREED', 'VIX 바로 아래');
+  assert.match(html, /<div class="rrow mrow mfix" data-key="FEARGREED" title="CNN 공포 · 탐욕 지수\(0~100\)/, '누를 수 없다 — 툴팁에 뜻');
+  const row = keyRow(html, 'FEARGREED');
+  assert.match(row, /지금 23\(극단적 공포\) · 전일 25 · 1주 전 33 · 1달 전 38 · 1년 전 33\n11\/03 10:00 기준\(한국 시각\)"/);
+  assert.match(row, /CNN 공포·탐욕/);
+  assert.match(row, /<span class="mnote">극단적 공포<\/span>/);
+  assert.match(row, /<span class="mval">23<\/span>/);
+  assert.match(row, /<span class="rpct"[^>]*>-2\.4<\/span>/, '전일 종가(25.1) 대비');
+  assert.match(row, /<span class="md5" title="1주 전 대비\(점수 차\)">-10\.2<\/span>/);
+  assert.match(row, /class="mspark"/);
+  h.run("marketExtras.d.fearGreed = null; marketExtras.d.errors = { fearGreed: 'HTTP 418' };");
+  assert.match(keyRow(h.c.marketHtml(), 'FEARGREED'), />실패 · HTTP 418<\/span>/);
+});
+
 // 코스피200 현물과 베이시스(선물 - 현물) — 현물은 지수 줄 요청에 붙여 받은 KPI200. 선물은 20분 늦어 같은 시각의 현물(오늘 1분 종가)과
 // 뺀다 — 지금 현물과 빼면 그 20분 동안 움직인 만큼이 섞였다. 2026-10-29 · 30 사용자 요청.
 const kst2 = (s) => Date.parse(`${s}+09:00`);

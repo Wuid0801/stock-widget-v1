@@ -232,11 +232,13 @@ const MARKET_GROUPS = [
   ['국내', ['KOSPI', 'KOSDAQ', 'KPI200', 'FUT', 'BASIS', 'SPOT', 'FUTFLOW']],
   [INTRADAY_GROUP, ['INTRA_FOREIGN', 'INTRA_INDIV', 'INTRA_INST', 'INTRA_PENSION', 'INTRA_CORP', 'INTRA_PROGRAM']],
   ['미국', ['NASDAQ', 'SPX', 'NQ', 'SOX']],
-  ['위험 · 자금', ['VIX', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']],
+  ['위험 · 자금', ['VIX', 'FEARGREED', 'US10Y', 'HYOAS', 'USDKRW', 'WTI']], // FEARGREED CNN 공포 · 탐욕(2026-11-03)
 ];
 // 지표 화면에만 있는 줄의 이름(INDICES 밖의 키)
-const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS',
+const MARKET_EXTRA_NAMES = { BASIS: '베이시스', SPOT: '외국인 현물', FUTFLOW: '외국인 선물', HYOAS: '미국 HY OAS', FEARGREED: 'CNN 공포·탐욕',
   INTRA_FOREIGN: '외국인', INTRA_INDIV: '개인', INTRA_INST: '기관', INTRA_PENSION: '연기금', INTRA_CORP: '기타법인', INTRA_PROGRAM: '프로그램' };
+// CNN 공포 · 탐욕의 단계(응답의 rating) → 한글. 모르는 값은 그대로 적는다.
+const FEARGREED_LABEL = { 'extreme fear': '극단적 공포', fear: '공포', neutral: '중립', greed: '탐욕', 'extreme greed': '극단적 탐욕' };
 // 장중 수급 줄 → market:extras intraday 의 주체 필드. 프로그램은 필드가 아니라 현물 값 하나(intraday.program)다.
 const INTRADAY_FIELD = { INTRA_FOREIGN: 'foreign', INTRA_INDIV: 'individual', INTRA_INST: 'institution', INTRA_PENSION: 'pension',
   INTRA_CORP: 'corp', INTRA_PROGRAM: null };
@@ -263,6 +265,12 @@ const MARKET_DESC = {
     + '· 최근 3년(2023-11~2026-10): 대개 2.7~3.5% (중앙값 3.0%, 가장 높을 때 2025-04 4.6%)\n'
     + '· 20년 평균 약 5.2% (2023년 기준) · 2008년 위기 때 약 20%\n\n'
     + 'ICE BofA US High Yield OAS, FRED — 1~2영업일 늦다',
+  FEARGREED: 'CNN 공포 · 탐욕 지수(0~100) — 미국 주식시장 심리\n'
+    + '모멘텀 · 신고가/신저가 · 상승/하락 거래량 · 풋/콜 비율 · VIX · 정크본드 수요 · 안전자산 수요 일곱 가지를 합친다\n'
+    + '0~25 극단적 공포 · 25~45 공포 · 45~55 중립 · 55~75 탐욕 · 75~100 극단적 탐욕\n'
+    + '공포가 클 때 싸게 살 기회, 탐욕이 클 때 조심할 때로 거꾸로 읽기도 한다\n\n'
+    + 'CNN 웹페이지가 쓰는 데이터(공식 API 아님) — 미국 장중에 바뀐다\n'
+    + '오늘 등락은 전일 종가 대비, 5일 변화 자리는 1주 전 대비(점수 차)',
   USDKRW: '원/달러 — 1달러에 원화 몇 원\n'
     + '오르면 원화 약세: 외국인에게는 환차손 걱정이라 국내 주식을 팔기 쉽고, 수출 기업 실적에는 유리하다\n'
     + '내리면 반대다',
