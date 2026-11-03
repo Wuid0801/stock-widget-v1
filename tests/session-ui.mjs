@@ -860,7 +860,9 @@ await test('indicators: SAR legend shows the direction and how long it has held,
   assert.equal(c.document.getElementById('maLegend').hidden, false, 'SAR 만 켜져 있어도 범례가 보인다');
   assert.deepEqual([...read()], ['SAR=하락 4일째']);
   assert.equal(items[0].kids[1].style.background, '--sar-down', '하락이면 파랑 점의 색');
-  assert.equal(items[0].title, `파라볼릭 SAR — ${run(`labelFor(${flip}, '1M')`)} 하락 전환 (가속 0.02 · 최대 0.2). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위`);
+  assert.equal(items[0].title, `파라볼릭 SAR — ${run(`labelFor(${flip}, '1M')`)} 하락 전환 (가속 0.02 · 최대 0.2). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위`
+    + `\n\n${run('SAR_EVIDENCE')}`, '과거 검증 — 매매 신호가 아니었다(2026-11-03)');
+  assert.match(items[0].title, /\n· 빨강 · 파랑은 방향\(위로 · 아래로\)일 뿐 매매 신호가 아니었다$/);
   items.length = 0;
   run('hoverIdx = 1; renderMaLegend();');
   assert.deepEqual([...read()], ['SAR=95,000'], '마우스를 올리면 그 봉의 SAR');
@@ -1030,7 +1032,7 @@ await test('indicators: RSI legend says which side of the signal RSI has stayed 
   assert.deepEqual([...read()], ['RSI=상향 2일째']);
   assert.equal(items[0].kids[1].style.background, '--rsi-line');
   assert.equal(items[0].title, `RSI(14) · 시그널(RSI 9봉 평균) — ${run(`labelFor(${flip}, '1M')`)} 상향 교차. `
-    + '차트 아래 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점');
+    + `차트 아래 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점\n\n${run('RSI_CROSS_EVIDENCE')}`, '과거 검증(2026-11-03)');
   items.length = 0;
   run('hoverIdx = 1; renderMaLegend();');
   assert.deepEqual([...read()], ['RSI=상향 2일째'], '마우스를 올려도 그대로 — 그 봉의 값은 툴팁에 있다');
@@ -4200,6 +4202,28 @@ await test('trend badges: convergence counts up from the last bar, hides when pa
   assert.equal(brk.hidden, false);
   assert.equal(brk.textContent, '저항 돌파 +5.23% · 3일 전');
   assert.deepEqual(toggled.at(-1), ['breakout', 'sup', false]);
+  // 툴팁에 그 기간(3M · 1Y) 추세선의 과거 검증 — 매매 신호가 아니었다(2026-11-03)
+  run("state.timeframe = '1Y';");
+  c.renderTrendBadges([ln('--sup-line', 100, 1), ln('--res-line', 242, -1, { at: 57, gap: 9, pct: 0.0523 })], 60, times);
+  assert.equal(brk.title, `저항선 위로 뚫었다 — 지금 그 선에서 +5.23%\n\n${run("TREND_EVIDENCE['1Y']")}`);
+  run("state.timeframe = '3M';");
+  c.renderTrendBadges([ln('--sup-line', 100, 1, { at: 57, gap: -9, pct: 0.04 }), ln('--res-line', 242, -1)], 60, times);
+  assert.match(brk.title, /^지지선 아래로 뚫었다 — /);
+  assert.ok(brk.title.endsWith(run("TREND_EVIDENCE['3M']")));
+});
+
+// 골든 · 데드 크로스 배지 — 툴팁에 뜻과 그 쌍(5/20 · 20/60)의 과거 검증. 색은 방향일 뿐 매매 신호가 아니었다(2026-11-03).
+await test('cross badge: the tooltip says what crossed and that it did not foretell the next 20 days', () => {
+  const { c, run, elements } = harness(['renderCrossBadge']);
+  const el = c.document.getElementById('cross');
+  el.classList = { toggle() {} };
+  const t = Date.parse('2026-09-07T00:00:00Z');
+  c.renderCrossBadge([{ i: 0, pair: '20/60', golden: true }], [t]);
+  assert.equal(elements.get('cross').textContent, '20/60 골든 · 3일 전');
+  assert.equal(el.title, `20/60 이동평균 골든 크로스 — 짧은 선이 긴 선을 위로 뚫었다\n\n${run("MA_CROSS_EVIDENCE['20/60']")}`);
+  assert.match(el.title, /골든 뒤 −0\.5 \(29곳 중 10곳만 나음\)/);
+  c.renderCrossBadge([{ i: 0, pair: '5/20', golden: false }], [t]);
+  assert.match(el.title, /^5\/20 이동평균 데드 크로스 — 짧은 선이 긴 선을 아래로 뚫었다\n\n과거 10년/);
 });
 
 // 추세 점검 줄 — 계산은 backtest.js(tests/backtest.mjs), 여기서는 그리기 · 캐시 · 숨김만 본다.

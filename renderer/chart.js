@@ -126,7 +126,7 @@ function renderMaLegend() {
     const when = labelFor(sr.flipAt, intraday ? state.timeframe : '1M');
     add('SAR', hoverIdx != null ? sr.data[hoverIdx] : intraday ? `${dir} · ${when}부터` : `${dir} ${sr.since}일째`,
       cssVar(sr.rising ? '--sar-up' : '--sar-down'),
-      `파라볼릭 SAR — ${when} ${dir} 전환 (가속 ${SAR_STEP} · 최대 ${SAR_MAX}). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위`);
+      `파라볼릭 SAR — ${when} ${dir} 전환 (가속 ${SAR_STEP} · 최대 ${SAR_MAX}). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위\n\n${SAR_EVIDENCE}`);
   }
   // RSI 는 SAR 처럼 지금 상태 — 마지막 확정 교차 뒤 RSI 가 시그널 위(상향)인지 아래(하향)인지와 그 기간. 확정된 교차가
   // 없으면 마지막 값. 마우스를 올려도 그대로다 — 그 봉의 값은 툴팁에 있다.
@@ -137,13 +137,13 @@ function renderMaLegend() {
       const lastOf = (a) => a.filter((v) => v != null).pop();
       const r = lastOf(rs.data); const g = lastOf(rs.signal);
       add('RSI', `${r.toFixed(0)}${g != null ? ` · 시그널 ${g.toFixed(0)}` : ''}`, cssVar('--rsi-line'),
-        `${head} — 보이는 구간에 확정된 교차가 없습니다. ${dots}`);
+        `${head} — 보이는 구간에 확정된 교차가 없습니다. ${dots}\n\n${RSI_CROSS_EVIDENCE}`);
     } else {
       const dir = rs.rising ? '상향' : '하향';
       const intraday = state.timeframe === '1D' || state.timeframe === '1W';
       const when = labelFor(rs.flipAt, intraday ? state.timeframe : '1M');
       add('RSI', intraday ? `${dir} · ${when}부터` : `${dir} ${rs.since}일째`, cssVar('--rsi-line'),
-        `${head} — ${when} ${dir} 교차. ${dots}`);
+        `${head} — ${when} ${dir} 교차. ${dots}\n\n${RSI_CROSS_EVIDENCE}`);
     }
   }
   // 매물대는 가장 많이 거래된 가격대(진하게 칠한 칸)를 늘 보여 준다
@@ -294,6 +294,9 @@ function renderCrossBadge(crosses, times) {
   el.textContent = `${last.pair} ${last.golden ? '골든' : '데드'} · ${days}일 전`;
   el.classList.toggle('up', last.golden);
   el.classList.toggle('down', !last.golden);
+  // 툴팁에 뜻과 과거 검증(MA_CROSS_EVIDENCE, 2026-11-03) — 색은 방향일 뿐 매매 신호가 아니었다
+  el.title = `${last.pair} 이동평균 ${last.golden ? '골든' : '데드'} 크로스 — 짧은 선이 긴 선을 ${last.golden ? '위로' : '아래로'} 뚫었다`
+    + `${MA_CROSS_EVIDENCE[last.pair] ? `\n\n${MA_CROSS_EVIDENCE[last.pair]}` : ''}`;
 }
 
 // 추세선 배지 둘 — 돌파와 수렴.
@@ -319,6 +322,9 @@ function renderTrendBadges(trends, len, times = []) {
     brk.classList.toggle('sup', isSup);
     brk.textContent = `${isSup ? '지지 이탈' : '저항 돌파'} ${fmtPct(hit.broke.pct * 100)}`
       + ` · ${days}일 전`; // 크로스 배지와 같이 확정 봉만 보므로 "오늘"은 없다
+    // 툴팁에 뜻과 그 기간(3M · 1Y) 추세선의 과거 검증(TREND_EVIDENCE, 2026-11-03) — 색은 방향일 뿐 매매 신호가 아니었다
+    const ev = TREND_EVIDENCE[state.timeframe];
+    brk.title = `${isSup ? '지지선 아래로 뚫었다' : '저항선 위로 뚫었다'} — 지금 그 선에서 ${fmtPct(hit.broke.pct * 100)}${ev ? `\n\n${ev}` : ''}`;
     return;
   }
 
