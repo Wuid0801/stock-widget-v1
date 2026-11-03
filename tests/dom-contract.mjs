@@ -1,7 +1,7 @@
 // 테스트가 의존하는 DOM 계약 가드 — 앱을 띄우지 않고 index.html 만 본다.
 //
-// #dname 의 textContent 는 "종목명"이어야 한다. 8개 스위트(watchlist · reorder ·
-// restore · realtime · holdings · foreign · week52 · chart-integrity)가 이 값을
+// #dname 의 textContent 는 "종목명"이어야 한다. 7개 스위트(watchlist · reorder ·
+// restore · realtime · holdings · foreign · week52)가 이 값을
 // 종목명과 직접 비교한다.
 //
 // 한 번 깨진 적이 있다. 업종을 붙이면서 #dname 을 래퍼로 만들고 이름을

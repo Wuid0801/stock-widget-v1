@@ -56,7 +56,6 @@ const ORDER = [
   'backup.mjs',
   'search.mjs',
   'market.mjs',
-  'chart-integrity.mjs',
   'watchlist.mjs',
   'reorder.mjs',
   'period.mjs',
