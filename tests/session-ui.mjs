@@ -2690,6 +2690,13 @@ await test('poll timeout always rearms, including first refresh failure', async 
   assert.equal(timers[2].delay, 30000);
 });
 
+// 첫 실행의 차트 — init 이 첫 갱신(관심종목 · 지수 시세를 하나씩 받는다)을 기다리지 않고 차트부터 받는다. 갱신 끝에서야
+// 받으면 첫 실행(캐시가 빈)에 차트 자리가 한참 비어 있었다 — 불러오는 중도 안 떴다(2026-11-03).
+await test('init loads the first chart without waiting for the first refresh', () => {
+  const init = source.slice(source.indexOf('(async function init()'));
+  assert.match(init, /\n {2}loadChart\(\)\.catch\(console\.error\);\r?\n[\s\S]*?\n {2}await pollTick\(\);\r?\n\}\)\(\);/);
+});
+
 await test('real refresh failure releases busy and pollTick schedules recovery', async () => {
   const { c, run, timers } = harness(['pollTick', 'refreshAll']);
   c.loadIndices = async () => { throw new Error('index IPC failure'); };
