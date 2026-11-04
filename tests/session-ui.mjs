@@ -975,12 +975,18 @@ await test('indicators: 1D RSI warm-up asks 5 days of 5-minute bars once a day a
   assert.equal(await c.rsiWarmFor('Y', t('09:00')), null, '실패하면 null — 오늘 봉만으로 계산한다');
   assert.equal(await c.rsiWarmFor('Y', t('09:00')), null);
   assert.equal(asked.length, 3, '실패한 뒤 잠시는 다시 묻지 않는다');
-  run(`rsiWarmCache.get('Y').at -= RSI_WARM_RETRY;`);
+  run(`rsiWarmCache.get('Y 5m').at -= RSI_WARM_RETRY;`);
   await c.rsiWarmFor('Y', t('09:00'));
   assert.equal(asked.length, 4, '조금 지나면 다시 묻는다');
+  // 1W 는 한 달치 30분봉 — 1D 의 5분봉과 따로 기억한다
+  run("state.timeframe = '1W';");
+  reply = { ok: true, times: [t('15:00', '02'), t('15:30', '02'), t('09:00')], closes: [7, 8, 9] };
+  assert.deepEqual([...await c.rsiWarmFor('X', t('09:00'))], [7, 8]);
+  assert.deepEqual({ ...asked.at(-1) }, { symbol: 'X', range: '1mo', interval: '30m' });
+  assert.equal(asked.length, 5, '1D 에 받은 5분봉을 쓰지 않는다');
 });
 
-await test('indicators: loadChart passes RSI on 1D, 1W and the daily periods only, warming 1D up with the earlier bars', async () => {
+await test('indicators: loadChart passes RSI on 1D, 1W and the daily periods only, warming 1D and 1W up with the earlier bars', async () => {
   const { c, run } = harness(['loadChart', 'rsiFor']);
   const draws = [];
   const warms = [];
@@ -1005,8 +1011,9 @@ await test('indicators: loadChart passes RSI on 1D, 1W and the daily periods onl
     return draws.at(-1).rsi;
   };
   for (const tf of ['1D', '1W', '1M', '3M', '1Y', '3Y']) assert.ok(await show(tf, true), `${tf} 에는 그린다`);
-  assert.deepEqual(warms, [['005930.KS', T[0]]], '앞 거래일 봉은 1D 에서만, 차트 첫 봉 시각으로 묻는다');
+  assert.deepEqual(warms, [['005930.KS', T[0]], ['005930.KS', T[0]]], '앞 거래일 봉은 1D · 1W 에서만, 차트 첫 봉 시각으로 묻는다');
   assert.ok((await show('1D', true)).data[0] != null, '1D 는 첫 봉부터');
+  assert.ok((await show('1W', true)).data[0] != null, '1W 도 첫 봉부터');
   assert.equal(await show('전체', true), null, '전체(월봉 · 분기봉)는 그리지 않는다');
   warms.length = 0;
   assert.equal(await show('1D', false), null, '칩을 끄면 없다');

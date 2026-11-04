@@ -85,8 +85,10 @@ const RSI_PANE = 45;   // RSI 칸 높이(px) — 가격 칸 아래 따로 둔다
 const RSI_TALL = 90;   // RSI 크게 보기(#rsiTall) 칸 높이(px) — 상자도 RSI_PANE 대신 이만큼 커진다(.chartbox.sub.tall, 가격 칸 그대로)
 let rsiTall = false;   // RSI 크게 보기 버튼으로 켜고 끈다. 저장하지 않는다(앱을 다시 켜면 꺼짐)
 const RSI_TF = new Set(['1D', '1W', '1M', '3M', '1Y', '3Y']); // 전체(월봉 · 분기봉)는 SAR 처럼 뺀다
-const RSI_WARM_RETRY = 5 * 60000; // 1D 의 앞 거래일 봉을 못 받으면 이만큼 뒤에 다시 묻는다
-const rsiWarmCache = new Map(); // 종목 → { at, times, closes } — 1D RSI 의 앞 거래일 5분봉(closes null = 실패)
+// 1D · 1W RSI 의 앞 거래일 봉(rsiWarmFor) — 1D 는 5일치 5분봉, 1W 는 한 달치 30분봉(국내는 main 이 네이버 열 거래일)
+const RSI_WARM = { '1D': { range: '5d', interval: '5m' }, '1W': { range: '1mo', interval: '30m' } };
+const RSI_WARM_RETRY = 5 * 60000; // 앞 거래일 봉을 못 받으면 이만큼 뒤에 다시 묻는다
+const rsiWarmCache = new Map(); // '종목 봉 크기' → { at, times, closes } — RSI 의 앞 거래일 봉(closes null = 실패)
 // 차트 상자의 class. RSI 를 켜 두면 그 칸만큼 키운다(sub) — 기간 · 차트만 보기와 상관없이 켜 둔 동안은 같은 높이라 기간을
 // 바꿀 때마다 아래 관심종목 목록이 들썩이지 않는다. RSI 를 그리지 않는 화면(전체 · 차트만 보기)은 가격이 그 칸까지 쓴다.
 // RSI 크게 보기면 그 칸(RSI_TALL)만큼(tall).

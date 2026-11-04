@@ -188,8 +188,8 @@ function sarFor(symbol, times, highs, lows, ext) {
 }
 
 // RSI · 시그널(보조 지표). 일봉 기간은 이동평균처럼 5년치 일봉 종가(오늘 봉은 현재가)로 계산해 날짜로 맞춘다 — 첫 봉부터 값이
-// 있다. 1D 는 앞 거래일 5분봉(warm — 차트 첫 봉 앞의 종가들, rsiWarmFor)을 앞에 이어 장 초반부터 값이 있고 증권사 앱처럼 날을
-// 넘어 이어진다. 1W 와 warm 이 없는 1D 는 받은 봉만으로(앞 14봉이 빈다). 시간외 봉도 그대로 잇는다 — 빈 칸을 채운 평평한 봉은
+// 있다. 1D · 1W 는 앞 거래일 봉(warm — 차트 첫 봉 앞의 종가들, rsiWarmFor)을 앞에 이어 첫 봉부터 값이 있고 증권사 앱처럼 날을
+// 넘어 이어진다. warm 을 못 받으면 받은 봉만으로(앞 14봉이 빈다). 시간외 봉도 그대로 잇는다 — 빈 칸을 채운 평평한 봉은
 // RSI 를 움직이지 않는다. 교차는 확정된 것만(마지막 봉은 진행 중) — 골든 · 데드와 같은 규칙(confirmedCrosses).
 // 돌려주는 값: { data, signal, crosses, rising(마지막 확정 교차가 위로인지, 없으면 null), since(그 봉부터 센 봉 수), flipAt } | null
 function rsiFor(symbol, times, closes, warm) {
@@ -221,17 +221,19 @@ function rsiFor(symbol, times, closes, warm) {
     flipAt: last ? times[last.i] : null };
 }
 
-// 1D RSI 의 앞 거래일 5분봉 — 차트 첫 봉(first) 앞의 종가들. 5일치 5분봉(정규장)을 받는다 — 국내는 main 이 네이버 KRX 분봉으로
-// 준다(야후 국내 5분봉은 15:00 뒤 봉이 없다). 지난 날 봉은 바뀌지 않아 차트 첫 봉 뒤에 받은 것이면 다시 받지 않는다(날이 바뀔 때
-// 한 번 꼴). 실패하면
-// null(오늘 봉만으로 계산한다 — 장 초반이 빈다)이고 RSI_WARM_RETRY 동안 다시 묻지 않는다.
+// 1D · 1W RSI 의 앞 거래일 봉 — 차트 첫 봉(first) 앞의 종가들. 지금 기간의 RSI_WARM(정규장)을 받는다 — 국내는 main 이 네이버
+// KRX 분봉으로 준다(야후 국내 5분봉은 15:00 뒤 봉이 없다). 지난 날 봉은 바뀌지 않아 차트 첫 봉 뒤에 받은 것이면 다시 받지 않는다
+// (날이 바뀔 때 한 번 꼴). 실패하면
+// null(받은 봉만으로 계산한다 — 앞쪽이 빈다)이고 RSI_WARM_RETRY 동안 다시 묻지 않는다.
 async function rsiWarmFor(symbol, first) {
-  let hit = rsiWarmCache.get(symbol);
+  const req = RSI_WARM[state.timeframe];
+  const key = `${symbol} ${req.interval}`;
+  let hit = rsiWarmCache.get(key);
   const fresh = hit && (hit.closes ? hit.at >= first : Date.now() - hit.at < RSI_WARM_RETRY);
   if (!fresh) {
-    const r = await api.fetchChart({ symbol, range: '5d', interval: '5m' }).catch(() => null);
+    const r = await api.fetchChart({ symbol, ...req }).catch(() => null);
     hit = { at: Date.now(), times: r && r.ok ? r.times : null, closes: r && r.ok ? r.closes : null };
-    rsiWarmCache.set(symbol, hit);
+    rsiWarmCache.set(key, hit);
   }
   return hit.closes ? hit.closes.filter((_, i) => hit.times[i] < first) : null;
 }
@@ -474,8 +476,8 @@ async function loadChart() {
       : `${item.name} 차트: ${r.error}`);
     return;
   }
-  // RSI(보조 지표)의 1D 는 앞 거래일 5분봉을 앞에 잇는다 — 차트 첫 봉 앞의 종가들(하루 한 번 받는다, rsiWarmFor)
-  const rsiWarm = !plain && state.indicators && state.indicators.rsi && state.timeframe === '1D' && r.times.length
+  // RSI(보조 지표)의 1D · 1W 는 앞 거래일 봉을 앞에 잇는다 — 차트 첫 봉 앞의 종가들(하루 한 번 받는다, rsiWarmFor)
+  const rsiWarm = !plain && state.indicators && state.indicators.rsi && RSI_WARM[state.timeframe] && r.times.length
     ? await rsiWarmFor(item.symbol, r.times[0]) : null;
   if (seq !== chartSeq) return;
 

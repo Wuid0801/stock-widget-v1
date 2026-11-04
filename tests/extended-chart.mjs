@@ -397,7 +397,10 @@ const krxPathOf = (u) => u.replace('https://api.stock.naver.com/chart/domestic/'
   krxCalls.length = 0; yahooCalls.length = 0;
   NOW = kst('2026-10-27T10:00');
   krxReply = (url) => {
-    if (url.includes('/item/009150/day?')) return ['20261020', '20261021', '20261022', '20261023', '20261026'].map((d) => ({ localDate: d }));
+    if (url.includes('/item/009150/day?')) {
+      return ['20261013', '20261014', '20261015', '20261016', '20261019', '20261020', '20261021', '20261022', '20261023', '20261026']
+        .map((d) => ({ localDate: d }));
+    }
     const m = /item\/009150\/minute\?startDateTime=(\d{4})(\d{2})(\d{2})0000/.exec(url);
     if (!m) return [];
     const d = `${m[1]}-${m[2]}-${m[3]}`;
@@ -408,6 +411,12 @@ const krxPathOf = (u) => u.replace('https://api.stock.naver.com/chart/domestic/'
     && same(r.times.map(md), ['10-21', '10-22', '10-23', '10-26', '10-27'].flatMap((d) => [`${d} 09:00`, `${d} 15:10`, `${d} 15:30`])),
     weekRuns(r));
   check('5d · 5m 은 야후를 묻지 않는다', !yahooCalls.some((u) => u.includes('009150')), yahooCalls.join(' '));
+  // 1W RSI 의 앞 거래일 봉(1mo · 30m): 국내는 네이버 정규장 — 최근 열 거래일(오늘 포함)을 30분으로 묶는다
+  r = await handlers['yf:chart']({}, { symbol: '009150.KS', range: '1mo', interval: '30m' });
+  check('1mo · 30m 도 국내는 네이버 — 최근 열 거래일의 정규장 30분봉', r.ok && r.realtime === true
+    && same(r.times.map(md), ['10-14', '10-15', '10-16', '10-19', '10-20', '10-21', '10-22', '10-23', '10-26', '10-27']
+      .flatMap((d) => [`${d} 09:00`, `${d} 15:00`, `${d} 15:30`])), weekRuns(r));
+  check('1mo · 30m 은 야후를 묻지 않는다', !yahooCalls.some((u) => u.includes('009150')), yahooCalls.join(' '));
   krxReply = () => [];
 }
 
