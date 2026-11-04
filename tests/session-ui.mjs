@@ -3217,7 +3217,7 @@ await test('market panel: flows show the last final day, the streak, and today\'
   // 단위는 억 원(네이버 10/23 선물 +4,514 = 다음 금융 금액 4,514억, 2026-11-02 확인) — 예전에는 단위 없이 숫자만
   assert.match(spot, /<span class="mval">\+3,300억<\/span>/, '마지막 확정일 값(억 원)');
   assert.match(spot, /2일 연속 순매수/);
-  assert.match(spot, /오늘 잠정 \+4,080억/);
+  assert.match(spot, /<span class="mnote">10\/26 확정\n오늘 잠정 \+4,080억<\/span>/, '이름 아래 — 오른쪽 값의 날짜, 그 아래 오늘 잠정');
   // 확정은 20:30(예전 18:00 — KRX 애프터마켓 16:00~20:00 뒤로 맞는지 몰라 늦췄다, 2026-11-02 사용자 결정)
   assert.match(html, /data-key="SPOT" title="외국인 순매수\(억 원\) 10\/26 확정\n20:30 전 오늘 값은 잠정"/);
   assert.match(keyRow(html, 'FUTFLOW'), /1일 연속 순매도/);

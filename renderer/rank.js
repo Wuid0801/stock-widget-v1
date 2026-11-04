@@ -121,7 +121,7 @@ function k200At(t, spot, mins) {
 //    오늘 등락은 어제 베이시스(같은 날 종가끼리) 대비, 5일 변화 · 미니 선은 날마다의 베이시스에 지금 값을 이은 것.
 //  - SPOT · FUTFLOW 외국인 현물 · 선물 수급: 마지막 확정일의 외국인 순매수(억 원 — 네이버 화면은 단위를 적지 않지만 10/23 선물
 //    +4,514 가 다음 금융 금액 4,514억(계약으로는 2,177)과 같았다, 2026-11-02 확인), 5일 변화 자리에 확정일 끝에서 같은 부호가 이어진
-//    날 수, 20:30 전 오늘 값은 잠정이라 메모에 따로(main FLOW_FINAL).
+//    날 수, 메모 첫 줄에 그 확정일, 20:30 전 오늘 값은 잠정이라 메모 둘째 줄에 따로(main FLOW_FINAL).
 //  - HYOAS 미국 HY OAS: 마지막 값(%), 오늘 등락은 앞 줄 · 5일 변화는 다섯 줄 앞 대비 bp, 메모에 그 값의 날짜(1~2영업일 늦다).
 //  - INTRA_* 장중 수급(다음 금융, main 의 intraday): 값 = 코스피 현물 누적 순매수(억), 오늘 등락 자리 = 코스피200 선물 누적(억 —
 //    처음엔 계약이었는데 현물과 견주기 어려웠다, 부호 색), 5일 변화 자리 = 최근 30분 현물 변화(그 시각 또는 그 앞의 마지막 값 대비 — 없으면 —), 미니 선 = 오늘 현물 누적.
@@ -172,7 +172,8 @@ function marketExtraRow(key) {
     return { key, name: MARKET_EXTRA_NAMES[key], symbol: null, value: last.foreign, pct: null, change: null,
       d5: null, d5Unit: '%', valueText: `${signed(last.foreign)}억`, dayText: '', dayTone: last.foreign,
       d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
-      note: today ? `오늘 잠정 ${signed(today.foreign)}억` : '',
+      // 이름 아래 첫 줄에 오른쪽 값의 날짜, 둘째 줄에 오늘 잠정 — 한 줄로는 기본 너비(340px)에서 잠정 숫자가 잘린다
+      note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 확정${today ? `\n오늘 잠정 ${signed(today.foreign)}억` : ''}`,
       title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정\n20:30 전 오늘 값은 잠정`,
       spark: done.slice(-20).map((f) => f.foreign) };
   }
