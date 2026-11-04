@@ -589,6 +589,17 @@ function drawChart(arg) {
   // RSI 칸을 둘 때 가격 칸의 stack 비중(RSI 칸은 RSI_PANE, 크게 보기면 RSI_TALL). 그림 높이는 캔버스에서 아래 날짜 줄 · 위
   // 여백(약 22px)을 뺀 만큼이라 RSI 칸이 약 그 px 가 된다. 축 옵션은 다시 배치할 때마다 새로 읽혀 창 높이를 바꿔도 칸 높이가 그대로다.
   const rsiPx = rsiTall ? RSI_TALL : RSI_PANE;
+  // 가격 축 범위 — 보이는 봉(확대 구간)의 고 · 저 · 종가와 추세선만으로 정한다(y 의 afterDataLimits). 볼린저 · 지수 비교선 · SAR ·
+  // 이동평균 · VWAP 까지 넣으면 범위가 넓어지고, Chart.js 가 눈금(최대 4개)을 1 · 2 · 5 단위로 맞추며 축 끝을 또 넓혀(5만 간격 →
+  // 100,000~200,000) 같은 차트가 덧그림을 켜면 3배 넘게 납작했다(2026-11-04 KB금융 1M, 사용자 결정). 범위 밖 덧그림은 축 칸에서
+  // 잘리고 값은 범례에 있다. 추세선은 끝이 말없이 잘리지 않게 넣는다(아래 데이터셋 주석).
+  let yLo = Infinity;
+  let yHi = -Infinity;
+  for (let i = zr ? zr.from : 0; i <= (zr ? zr.to : closes.length - 1); i++) {
+    for (const v of [lows[i], highs[i], closes[i], ...(zr ? [] : trends).map((t) => t.data[i])]) {
+      if (v != null && Number.isFinite(v)) { yLo = Math.min(yLo, v); yHi = Math.max(yHi, v); }
+    }
+  }
   const priceWeight = ({ chart: c }) => Math.max(c.height - 22 - rsiPx, RSI_PANE);
 
   chart = new Chart(document.getElementById('chart'), {
@@ -652,7 +663,7 @@ function drawChart(arg) {
       }] : []),
       // 볼린저 밴드(보조 지표). 위 · 아래 경계를 얇은 점선으로, 사이를 옅게 채운다 — 고저 밴드처럼
       // 위쪽이 fill:'+1' 로 바로 다음(아래쪽)까지 채우므로 배열에서 붙어 있어야 한다.
-      // 정규 데이터셋이라 y축이 밴드까지 넓어진다(밴드 밖으로 나간 봉이 보여야 해서).
+      // 가격 축은 주가에만 맞춰 밴드가 축을 넓히지 않고, 범위 밖 부분은 가격 칸에서 잘린다.
       ...(bands ? [{
         data: bands.upper,
         yAxisID: 'y',
@@ -738,7 +749,7 @@ function drawChart(arg) {
       // 점선 1.6px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
       // 맨 위에 그린다(order -1). 아래에 깔면 1Y 라인 모드의 주가 채움에 물들고, 같은 주황
       // 계열인 5일선이 저항선을 덮는다.
-      // 정규 데이터셋이라 y축이 알아서 범위에 넣는다. 캔버스에 직접 그리면
+      // 가격 축 범위(yLo ~ yHi)에 넣는다 — 덧그림 중 추세선만. 캔버스에 직접 그리면
       // 기울어진 선의 양 끝이 축 밖으로 나가 말없이 잘린다(시간외 선에서 겪음).
       // 확대 중에는 숨긴다. "지금"을 말하는 선(최근 5봉을 빼고 만들어 오늘 값 · 돌파를
       // 계산)이고, 과거 구간 가격에서 먼 선이 y축을 다시 벌려 확대 효과를 깎는다.
@@ -942,6 +953,9 @@ function drawChart(arg) {
           position: 'right',
           // RSI 를 그리면 yRsi 와 위아래로 쌓는다(Chart.js stack) — 위가 가격 칸, 아래 rsiPx 만큼이 RSI 칸
           ...(rsi ? { stack: 'pane', stackWeight: priceWeight } : {}),
+          // 범위는 주가에만(yLo ~ yHi). Chart.js 가 데이터로 끝을 정한 직후 바꿔 두면 그 범위를 1 · 2 · 5 단위로 넓히며 눈금을 단다
+          // ("차트만 보기"와 같은 축). min · max 로 못 박으면 그 안의 눈금만 남아 셋 중 하나꼴로 숫자가 하나뿐이었다.
+          afterDataLimits: (s) => { if (yHi > yLo) { s.min = yLo; s.max = yHi; } },
           grid: { color: cssVar('--grid') },
           ticks: { color: cssVar('--mute'), font: { size: 9 }, maxTicksLimit: 4, callback: (v) => money(v, cur) },
         },

@@ -1140,6 +1140,33 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   assert.equal(configs.at(-1).options.scales.yVol.min, undefined, '거래량도 예전처럼 그림 바닥부터');
 });
 
+// 가격 축은 보이는 봉의 고 · 저 · 종가와 추세선에만 맞춘다 — 볼린저 · 지수 비교선 · 이동평균까지 넣으면 범위가 넓어지고 눈금 반올림
+// (최대 4개, 1 · 2 · 5 단위)으로 또 넓어져 같은 차트가 덧그림을 켜면 3배 넘게 납작했다(2026-11-04 KB금융 1M).
+await test('chart: the price axis fits the visible prices and trendlines only, so overlays do not flatten the line', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
+    hexA: () => 'x', cssVar: (n) => n,
+  });
+  run(`state.timeframe = '1M';
+    var C_ = [150, 160, 155, 152];
+    var arg_ = { closes: C_, times: [1, 2, 3, 4], up: true, volumes: [1, 1, 1, 1], highs: [152, 162, 157, 153], lows: [148, 158, 150, 151],
+      mas: [{ p: 60, data: [180, 180, 180, 180] }], bands: { upper: [190, 190, 190, 190], mid: [170, 170, 170, 170], lower: [120, 120, 120, 120] },
+      benchLine: { name: '코스피', data: [150, 140, 130, 120] } };
+    drawChart(arg_);`);
+  // Chart.js 가 덧그림까지 넣어 정한 끝(120~190)을 afterDataLimits 가 주가 범위로 바꾼다. 못 박지는 않는다(min · max 없음) —
+  // 그래야 Chart.js 가 1 · 2 · 5 단위로 넓혀 눈금을 2개 넘게 단다
+  const fit = () => { const y = configs.at(-1).options.scales.y; const s = { min: 120, max: 190 }; y.afterDataLimits(s); return [y.min, y.max, s.min, s.max]; };
+  assert.deepEqual(fit(), [undefined, undefined, 148, 162], '저가 148 ~ 고가 162');
+  // 추세선은 넣는다 — 끝이 말없이 잘리지 않게
+  run("arg_ = { ...arg_, trends: [{ data: [null, null, 165, 170], varName: '--res-line' }] }; drawChart(arg_);");
+  assert.deepEqual(fit(), [undefined, undefined, 148, 170], '추세선 끝 170 까지');
+});
+
 await test('indicators: the RSI pane fits the visible bars when zoomed, like the price axis', () => {
   const { c, run } = harness(['drawChart', 'labelFor']);
   run(formatting);
@@ -1165,6 +1192,10 @@ await test('indicators: the RSI pane fits the visible bars when zoomed, like the
   const want = run('rsiScale([50, 51, 52, 53, 54, 55, 56, 57, 58, 59])');
   assert.equal(axis.min, want.min, '확대하면 보이는 봉(50~59)으로');
   assert.equal(axis.max, want.max);
+  // 가격 축도 보이는 봉(10~19번째, 110~119)으로
+  const s = { min: 0, max: 999 };
+  configs.at(-1).options.scales.y.afterDataLimits(s);
+  assert.deepEqual([s.min, s.max], [110, 119], '확대하면 가격 축도 보이는 봉으로');
 });
 
 // 지수 대비 수익률(보조 지표): 기간 배지에 종목 수익률 - 같은 기간 지수 수익률(%p).
