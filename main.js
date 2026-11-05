@@ -1430,6 +1430,20 @@ const EXT_TTL = 30000;
 const naverMinutes = new Map(); // '시장/코드|YYYYMMDD|창' → { at, bars, done }
 const kstClock = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(11, 16).replace(':', '');
 
+// 시각순으로 오는 봉 b 를 칸 목록 out 에 넣는다 — 앞 봉과 같은 칸(시각 · 시간외 여부)이면 종가 · 고 · 저 · 거래량을 이어
+// 합치고, 아니면 새 칸이다. 분봉 · 일봉을 칸으로 묶는 곳이 모두 쓴다(네 곳에 같은 블록이 따로 있었다, 2026-11-05).
+function pushBar(out, b) {
+  const last = out[out.length - 1];
+  if (last && last.time === b.time && last.ext === b.ext) {
+    last.close = b.close;
+    last.high = Math.max(last.high, b.high);
+    last.low = Math.min(last.low, b.low);
+    last.volume += b.volume;
+  } else {
+    out.push(b);
+  }
+}
+
 // 네이버 분봉(1분) → 5분봉. 시각은 칸의 시작이다(야후 5분봉과 같다).
 // 이름과 달리 accumulatedTradingVolume 은 그 1분의 거래량이다(2026-10-14 실측 — 하루 누적이 아니다).
 function bucket5m(rows, session) {
@@ -1441,16 +1455,8 @@ function bucket5m(rows, session) {
     if (!m || !(c > 0)) continue;
     const at = Math.floor(Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+09:00`) / STEP_5M) * STEP_5M;
     const pick = (v) => (Number(v) > 0 ? Number(v) : c);
-    const v = Number(r.accumulatedTradingVolume) || 0;
-    const last = out[out.length - 1];
-    if (last && last.time === at) {
-      last.close = c;
-      last.high = Math.max(last.high, pick(r.highPrice));
-      last.low = Math.min(last.low, pick(r.lowPrice));
-      last.volume += v;
-    } else {
-      out.push({ time: at, open: pick(r.openPrice), high: pick(r.highPrice), low: pick(r.lowPrice), close: c, volume: v, ext: session });
-    }
+    pushBar(out, { time: at, open: pick(r.openPrice), high: pick(r.highPrice), low: pick(r.lowPrice), close: c,
+      volume: Number(r.accumulatedTradingVolume) || 0, ext: session });
   }
   return out;
 }
@@ -1471,18 +1477,7 @@ async function naverWindow(code, day, [name, from, to], now, venue = 'NXT/') {
 // 5분봉을 step 칸으로 다시 묶는다(1W 30분봉). 30분 칸은 UTC 와 한국 시각에서 같은 곳에 떨어진다.
 function rebucket(bars, step) {
   const out = [];
-  for (const b of bars) {
-    const at = Math.floor(b.time / step) * step;
-    const last = out[out.length - 1];
-    if (last && last.time === at && last.ext === b.ext) {
-      last.close = b.close;
-      last.high = Math.max(last.high, b.high);
-      last.low = Math.min(last.low, b.low);
-      last.volume += b.volume;
-    } else {
-      out.push({ ...b, time: at });
-    }
-  }
+  for (const b of bars) pushBar(out, { ...b, time: Math.floor(b.time / step) * step });
   return out;
 }
 
@@ -1626,16 +1621,8 @@ async function naverDaily(path, range, now) {
     if (!m || !(c > 0)) continue;
     const pick = (v) => (Number(v) > 0 ? Number(v) : c);
     const time = Date.UTC(+m[1], m[2] - 1, range === 'max' ? 1 : +m[3]);
-    const v = Number(r.accumulatedTradingVolume) || 0;
-    const last = bars[bars.length - 1];
-    if (last && last.time === time) {
-      last.close = c;
-      last.high = Math.max(last.high, pick(r.highPrice));
-      last.low = Math.min(last.low, pick(r.lowPrice));
-      last.volume += v;
-    } else {
-      bars.push({ time, open: pick(r.openPrice), high: pick(r.highPrice), low: pick(r.lowPrice), close: c, volume: v });
-    }
+    pushBar(bars, { time, open: pick(r.openPrice), high: pick(r.highPrice), low: pick(r.lowPrice), close: c,
+      volume: Number(r.accumulatedTradingVolume) || 0 });
   }
   return bars;
 }
@@ -1697,16 +1684,7 @@ function naverDayBars(list, zone) {
     const acc = Number(p.accumulatedTradingVolume);
     const v = Number.isFinite(acc) ? (cum != null && acc >= cum ? acc - cum : acc) : 0;
     if (Number.isFinite(acc)) cum = acc;
-    const at = Math.floor(t / STEP_5M) * STEP_5M;
-    const last = out[out.length - 1];
-    if (last && last.time === at) {
-      last.close = c;
-      last.high = Math.max(last.high, c);
-      last.low = Math.min(last.low, c);
-      last.volume += v;
-    } else {
-      out.push({ time: at, open: c, high: c, low: c, close: c, volume: v, ext: null });
-    }
+    pushBar(out, { time: Math.floor(t / STEP_5M) * STEP_5M, open: c, high: c, low: c, close: c, volume: v, ext: null });
   }
   return out;
 }
