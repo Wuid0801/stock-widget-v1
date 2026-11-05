@@ -76,7 +76,7 @@ function techHtml(item) {
   const d = q && q.daily;
   if (!d || !d.closes.length) return '';
   const cur = curOf(item.symbol);
-  const pct = (v) => (v ? `<b style="color:${v > 0 ? UP : DOWN}">${fmtPct(v)}</b>` : `<b>${fmtPct(v)}</b>`);
+  const pct = (v) => `<b style="color:${plColor(v)}">${fmtPct(v)}</b>`;
   const line = (label, body, tip) => `<p title="${esc(tip)}"><span class="mxmute">${label}</span> ${body}</p>`;
   const out = [];
   const tf = trendFollow(d.closes, FOLLOW_MA);
@@ -134,10 +134,9 @@ function metricsHtml(item, d, q) {
   if (!d) return '<p class="mxnote">지표를 불러오는 중…</p>';
   if (!d.ok) return `<p class="mxnote">지표를 불러오지 못했습니다 (${esc(d.error || '알 수 없는 오류')})</p>`;
   const kr = d.market === 'kr';
-  const tone = (v) => (v > 0 ? UP : v < 0 ? DOWN : null);
-  const colored = (text, v) => (tone(v) ? `<b style="color:${tone(v)}">${text}</b>` : `<b>${text}</b>`);
+  const colored = (text, v) => `<b style="color:${plColor(v)}">${text}</b>`;
   const signedVol = (v) => (v > 0 ? '+' : v < 0 ? '-' : '') + fmtVol(Math.abs(v));
-  const cell = (v) => (v == null ? '<td>—</td>' : tone(v) ? `<td style="color:${tone(v)}">${signedVol(v)}</td>` : `<td>${signedVol(v)}</td>`);
+  const cell = (v) => (v == null ? '<td>—</td>' : `<td style="color:${plColor(v)}">${signedVol(v)}</td>`);
   const mmdd = (s) => { const n = String(s).replace(/\D/g, ''); return `${n.slice(4, 6)}/${n.slice(6, 8)}`; };
   const p2 = (n) => String(n).padStart(2, '0');
   const stamp = (ms) => { const t = new Date(ms); return `${p2(t.getMonth() + 1)}/${p2(t.getDate())} ${p2(t.getHours())}:${p2(t.getMinutes())}`; };

@@ -10,8 +10,7 @@
 // 업종 · 테마 탭의 묶음 목록(d.groups)은 묶음 등락률과 오른 · 내린 종목 수다 — 등락률은 평균이라 큰 종목 한두 개에
 // 끌려서 수를 같이 봐야 한다. 누르면 그 묶음 안의 종목(d.items, 급등처럼 거른 것)이다.
 function rankPct(v) {
-  const tone = v > 0 ? UP : v < 0 ? DOWN : null;
-  return `<span class="rpct"${tone ? ` style="color:${tone}"` : ''}>${fmtPct(v)}</span>`;
+  return `<span class="rpct" style="color:${plColor(v)}">${fmtPct(v)}</span>`;
 }
 function rankCount(g) {
   return `<span class="rcnt"><span style="color:${UP}">↑${g.up}</span> <span style="color:${DOWN}">↓${g.down}</span></span>`;
@@ -299,7 +298,6 @@ function sparkSvg(values) {
 // 지표 화면 HTML — 맨 위 데드캣 점검 요약(개수만 — 결론을 내리지 않는다), 묶음 제목 줄과 줄들(판정 점 · 이름(메모) · 값 · 오늘 등락 ·
 // 5일 변화 · 20일 미니 선). 누를 수 있는 줄(고를 수 있는 항목)만 data-sym. 점검 대상이 아닌 줄은 점 자리만 비운다.
 function marketHtml() {
-  const tone = (v) => (v > 0 ? UP : v < 0 ? DOWN : cssVar('--flat'));
   const checks = marketChecks(marketCheckInput());
   const checkOf = new Map(checks.map((c) => [MARKET_CHECK_ROW[c.key], c]));
   const names = new Map(); // 판정 key → 줄 이름(요약 툴팁에 판정별로 적는다)
@@ -333,7 +331,7 @@ function marketHtml() {
         : '<span class="mdsp"></span>';
       out.push(`${open}${dot}<span class="hname"><span class="mname">${esc(r.name)}</span>${r.note ? `<span class="mnote"${r.noteTitle ? ` title="${esc(r.noteTitle)}"` : ''}>${esc(r.note)}</span>` : ''}</span>`
         + `<span class="mval">${r.valueText != null ? esc(r.valueText) : money(r.value, r.cur)}</span>`
-        + `<span class="rpct" style="color:${tone(r.dayTone != null ? r.dayTone : bp ? r.change : r.pct)}">${day}</span>`
+        + `<span class="rpct" style="color:${plColor(r.dayTone != null ? r.dayTone : bp ? r.change : r.pct)}">${day}</span>`
         + `<span class="md5" title="${esc(r.d5Title || '5거래일 전 종가 대비')}">${d5}</span>${sparkSvg(r.spark)}</div>`);
     }
   }

@@ -46,7 +46,7 @@ function renderIndices(animate = false) {
   const dots = pages.length < 2 ? '' : `<span class="ixdots">${pages.map((p, i) => `<button class="ixdot${i === indexPage ? ' on' : ''}" `
     + `data-page="${i}" title="${p.items.map(({ ix }) => ix.name).join(' · ')}"></button>`).join('')}</span>`;
   box.innerHTML = `<div class="ixpage${animate ? ' in' : ''}">${pages[indexPage].items.map(({ ix, it }) => {
-    const color = it.pct === 0 ? cssVar('--flat') : (it.pct > 0 ? UP : DOWN);
+    const color = plColor(it.pct);
     const cls = ix.symbol === state.selected ? 'ix on' : 'ix';
     const move = ix.cur === '%' && it.change != null ? fmtBp(it.change) : fmtPct(it.pct); // 금리는 bp
     return `<span class="${cls}" data-symbol="${ix.symbol}" title="${ix.name}${ix.delayMin ? ` (${ix.delayMin}분 지연)` : ''} 차트 보기">`

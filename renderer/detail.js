@@ -123,8 +123,7 @@ function renderDetail() {
   const badge = document.getElementById('badge');
 
   if (q && q.change != null) {
-    const color = q.change === 0 ? cssVar('--flat') : (q.change > 0 ? UP : DOWN);
-    chgEl.style.color = color;
+    chgEl.style.color = plColor(q.change);
     chgEl.innerHTML = `${cur === '%' ? fmtBp(q.change) : signedMoney(q.change, cur)}<br>${fmtPct(q.pct)}`; // 금리는 bp
   } else {
     chgEl.textContent = '';

@@ -7,15 +7,14 @@ function renderPeriod(first, last, rel = null) {
   if (state.timeframe === '1D' || !first || last == null) { el.hidden = true; return; }
 
   const pct = ((last - first) / first) * 100;
-  const tone = (v) => (v === 0 ? cssVar('--flat') : (v > 0 ? UP : DOWN));
-  const color = tone(pct);
+  const color = plColor(pct);
   el.hidden = false;
   // 글자는 숫자와 고정된 기간 이름뿐이라 innerHTML 로 써도 된다
   let html = `${state.timeframe} ${fmtPct(pct)}`;
   el.title = '';
   if (rel) {
     const ex = pct - rel.pct;
-    html += `<span style="color:${tone(ex)}"> · 초과 ${ex > 0 ? '+' : ''}${ex.toFixed(2)}%p</span>`;
+    html += `<span style="color:${plColor(ex)}"> · 초과 ${ex > 0 ? '+' : ''}${ex.toFixed(2)}%p</span>`;
     el.title = `같은 기간 ${rel.name} ${fmtPct(rel.pct)} — 종목이 ${Math.abs(ex).toFixed(2)}%포인트 ${ex >= 0 ? '앞섬' : '뒤처짐'}`;
   }
   el.innerHTML = html;

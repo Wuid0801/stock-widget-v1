@@ -114,9 +114,7 @@ function renderList() {
     const row = rows[i];
     const q = quotes[item.symbol];
     const lv = levelOf(q && q.rsi);
-    const up = q && q.change > 0;
-    const flat = !q || !q.change;
-    const color = flat ? cssVar('--flat') : (up ? UP : DOWN);
+    const color = plColor(q && q.change);
 
     row.classList.toggle('on', item.symbol === state.selected); // className 을 덮지 않는다 — 끌기 중 표시가 남게
     row.querySelector('.dot').style.background = lv.color;

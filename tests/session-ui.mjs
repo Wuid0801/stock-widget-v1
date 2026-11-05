@@ -61,9 +61,10 @@ function harness(extra = []) {
     renderMetrics: () => {},
     renderRank: () => {},
     loadEvents: async () => {}, // 갱신이 부르는 관심종목 일정 — 진짜는 extra 로
+    cssVar: (n) => n, // 0 · 값 없음의 색(plColor) — 화면이 없는 하네스에서는 변수 이름 그대로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'rankCount', 'rankKey', 'rankBackHtml', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'plColor', 'rankCount', 'rankKey', 'rankBackHtml', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -1403,7 +1404,7 @@ await test('metrics: panel for a Korean stock — volume multiple, returns, inve
   assert.match(html, /<span class="mxi">1주 <b/, '기간 수익률도 항목마다(1 / 년으로 쪼개지지 않게)');
   assert.match(html, /1주 <b style="color:#e24b4a">\+9\.50%<\/b>/, '기간 수익률(빨강 = 상승)');
   // 매매동향: 앞 5일 외국인 -10만 × 5 = -50만, 20일 = -50만 + 1만 × 15 = -35만. 기관 2만 × 5 = +10만, × 20 = +40만
-  assert.match(html, /<td>5일<\/td><td style="color:#185fa5">-50만<\/td><td style="color:#e24b4a">\+10만<\/td><td>0<\/td>/, '5일 합');
+  assert.match(html, /<td>5일<\/td><td style="color:#185fa5">-50만<\/td><td style="color:#e24b4a">\+10만<\/td><td style="color:--flat">0<\/td>/, '5일 합(0 은 목록처럼 회색)');
   assert.match(html, /<td>20일<\/td><td style="color:#185fa5">-35만<\/td><td style="color:#e24b4a">\+40만<\/td>/, '20일 합');
   assert.equal((html.match(/<tr class="day">/g) || []).length, 10, '날짜별은 최근 10일');
   assert.match(html, /<tr class="day"><td>10\/15<\/td><td style="color:#185fa5">-10만<\/td>/, '최근이 먼저, MM/DD');
@@ -1652,7 +1653,7 @@ await test('rank: list shows rank, name with a check for watchlist stocks, price
     '관심종목에 있으면 ✓, 거래대금 원 → 조');
   assert.match(html, /<span class="hname">&lt;i&gt;알테오젠&lt;\/i&gt;<\/span>/, '이름은 이스케이프한다, 관심종목이 아니면 ✓ 없음');
   assert.match(html, /<span class="rpct" style="color:#185fa5">-1\.50%<\/span><span class="rval">1,019억<\/span>/, '1조 미만은 억');
-  assert.match(html, /<span class="rpct">0\.00%<\/span>/, '보합은 색 없음');
+  assert.match(html, /<span class="rpct" style="color:--flat">0\.00%<\/span>/, '보합은 목록 · 지수 줄처럼 회색(--flat)');
   assert.match(text(html), /^10\/16 14:22 기준 · 일반 주식만\(ETF · ETN · 우선주 제외\) · 거래대금 10억 원 이상 · 코스피 \+ 코스닥1/,
     '기준 문구는 목록 맨 위 — 열자마자 보인다(스크롤해야 보이면 지난 장 순위인지 모른다)');
   assert.ok(html.indexOf('rnote') < html.indexOf('rrow'), '기준 문구가 첫 줄보다 위');
@@ -1674,6 +1675,14 @@ await test('rank: list shows rank, name with a check for watchlist stocks, price
   assert.match(run("rankHtml({ ok: false, error: '<x>' }, 'kr', 'up')"), /순위를 불러오지 못했습니다 \(&lt;x&gt;\)/);
   c.D = { ...KR_RANK, items: [] };
   assert.match(run("rankHtml(D, 'kr', 'down')"), /조건에 맞는 종목이 없습니다/);
+});
+
+await test('plColor: up red, down blue, zero and missing grey — the one rule every view colours changes with', () => {
+  // 0 이 목록 · 지수 줄은 회색, 순위 · 지표 화면은 기본 글자색이었다 — 화면마다 따로 쓰던 규칙을 이것 하나로(2026-11-05)
+  const { run } = harness();
+  assert.equal(run('plColor(0.01)'), run('UP'));
+  assert.equal(run('plColor(-0.01)'), run('DOWN'));
+  for (const v of ['0', 'null', 'undefined', 'NaN']) assert.equal(run(`plColor(${v})`), '--flat', `${v} 는 회색(파랑이 아니다)`);
 });
 
 await test('rank: market and tab switch fetch only what is shown, reuse it for a minute, and a late reply does not replace another tab', async () => {

@@ -27,8 +27,9 @@ function holdingPl(h, price) {
   return { value, pl: value - cost, pct: cost ? ((value - cost) / cost) * 100 : 0 };
 }
 
+// 오르면 빨강, 내리면 파랑, 0 · 값 없음은 회색 — 등락을 칠하는 곳은 모두 이것을 쓴다(0 이 화면마다 달랐다, 2026-11-05)
 function plColor(pl) {
-  return pl === 0 ? cssVar('--flat') : (pl > 0 ? UP : DOWN);
+  return pl > 0 ? UP : pl < 0 ? DOWN : cssVar('--flat');
 }
 
 // 목록 줄의 보유 표시 — 이름 아래 작은 줄 "10주 · 손익 +12.50%". 보유가 아니면 빈 문자열.
