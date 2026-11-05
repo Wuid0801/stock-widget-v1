@@ -1769,33 +1769,17 @@ ipcMain.handle('yf:chart', async (_e, req) => {
     if (!result) return { ok: false, error: json?.chart?.error?.description || '데이터 없음' };
     if (interval === '1d') await fillGaps(symbol, result.timestamp || [], result.indicators?.quote?.[0] || {});
 
-    // close 배열에는 실제로 null이 섞여 나온다 → timestamp와 짝을 맞춰 제거
-    const rawCloses = result.indicators?.quote?.[0]?.close || [];
-    // 거래량·시가·고가·저가는 close 와 같은 객체에 이미 들어있다 (추가 요청 없음)
+    // 거래량 · 시가 · 고가 · 저가는 close 와 같은 객체에 이미 들어있다(추가 요청 없음). close 에는 실제로 null 이 섞여
+    // 나온다 → 그 봉은 뺀다. 시가 · 고가 · 저가가 비면 종가로(밴드 폭 0), 거래량이 비면 0. 열은 다른 경로처럼 toSeries 로.
     const q0 = result.indicators?.quote?.[0] || {};
-    const rawVolumes = q0.volume || [];
-    const rawOpens = q0.open || [];
-    const rawHighs = q0.high || [];
-    const rawLows = q0.low || [];
     const stamps = result.timestamp || [];
-    const closes = [];
-    const times = [];
-    const volumes = [];
-    const opens = [];
-    const highs = [];
-    const lows = [];
-    for (let i = 0; i < rawCloses.length; i++) {
-      if (rawCloses[i] == null) continue;
-      closes.push(rawCloses[i]);
-      times.push(stamps[i] * 1000);
-      volumes.push(rawVolumes[i] ?? 0);
-      // 시가/고가/저가가 비면 종가로 대체해 밴드 폭이 0 이 되게 한다
-      opens.push(rawOpens[i] ?? rawCloses[i]);
-      highs.push(rawHighs[i] ?? rawCloses[i]);
-      lows.push(rawLows[i] ?? rawCloses[i]);
-    }
+    const bars = [];
+    (q0.close || []).forEach((c, i) => {
+      if (c != null) bars.push({ time: stamps[i] * 1000, open: q0.open?.[i] ?? c, high: q0.high?.[i] ?? c, low: q0.low?.[i] ?? c,
+        close: c, volume: q0.volume?.[i] ?? 0 });
+    });
 
-    let series = { closes, times, volumes, opens, highs, lows, ext: null };
+    let series = toSeries(bars);
     if (usExt) {
       // 정규장 구간은 날마다 하나다(1D 는 하루, 1W 는 닷새 — 2026-10-21 실측). 봉은 그날 구간의 앞이면 pre,
       // 끝부터 after. 그날 = 정규장 시작 6시간 전(프리 04:00 은 5시간 반 전)부터 끝난 뒤 5시간(애프터 20:00 은
@@ -1803,7 +1787,7 @@ ipcMain.handle('yf:chart', async (_e, req) => {
       const regs = (result.meta?.tradingPeriods?.regular || []).flat()
         .filter((p) => Number.isFinite(p?.start) && Number.isFinite(p?.end));
       if (regs.length) {
-        series.ext = times.map((t) => {
+        series.ext = series.times.map((t) => {
           const p = regs.find((x) => t >= x.start * 1000 - 6 * 3600000 && t < x.end * 1000 + 5 * 3600000);
           return !p ? null : t < p.start * 1000 ? 'pre' : t >= p.end * 1000 ? 'after' : null;
         });
@@ -1816,7 +1800,7 @@ ipcMain.handle('yf:chart', async (_e, req) => {
     return {
       ok: true,
       symbol,
-      price: result.meta?.regularMarketPrice ?? closes[closes.length - 1],
+      price: result.meta?.regularMarketPrice ?? bars.at(-1)?.close,
       // 52주 고저는 meta에 이미 들어있어 추가 요청이 필요 없다
       currency: result.meta?.currency ?? 'KRW',
       week52High: result.meta?.fiftyTwoWeekHigh ?? null,
