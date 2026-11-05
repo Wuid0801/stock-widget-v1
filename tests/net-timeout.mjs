@@ -23,7 +23,6 @@ let handlers = loadMain({ globals: { fetch: hang, AbortSignal: FastAbortSignal }
 const CALLS = {
   'quote:realtime': [['005930.KS']],
   'quote:indices': [],
-  'fx:usdkrw': [],
   'yf:sector': ['005930.KS'],
   'naver:detail': ['005930.KS'],
   'naver:rank': [{ market: 'kr', kind: 'up' }],

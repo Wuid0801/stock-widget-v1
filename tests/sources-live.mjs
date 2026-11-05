@@ -104,11 +104,6 @@ export const CHECKS = [
     ] : [])],
   },
   {
-    name: '환율', source: '야후 KRW=X',
-    call: (h) => h['fx:usdkrw'](),
-    verify: (r) => [...okOf(r), ...need(r && r.rate > 500 && r.rate < 3000, `원/달러 ${r && r.rate} 가 범위 밖`)],
-  },
-  {
     name: '일봉 5년', source: '야후 chart (국내 · 미국 · 지수)',
     call: async (h) => ({
       kr: await h['yf:chart']({}, { symbol: '005930.KS', range: '5y', interval: '1d' }),

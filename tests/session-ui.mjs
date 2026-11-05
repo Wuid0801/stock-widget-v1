@@ -4791,7 +4791,7 @@ await test('holdings: detail adds, validates, edits, cancels and deletes; refres
 
 await test('holdings: folio names its numbers and steps through total and each holding', async () => {
   const { c, run, elements } = holdHarness(['folioLines', 'renderFolio', 'showFolio', 'tickFolio']);
-  c.usdKrw = async () => 1380;
+  c.usdKrw = () => 1380;
   run(`state.watchlist.push({ symbol: 'AAPL', name: 'AAPL' });
     state.holdings = { '005930.KS': { qty: 10, avg: 200000 }, '000660.KS': { qty: 2, avg: 1600000 }, AAPL: { qty: 5, avg: 180 } };
     quotes['005930.KS'] = { price: 225000 }; quotes['000660.KS'] = { price: 1520000 };
@@ -4835,7 +4835,7 @@ await test('holdings: folio names its numbers and steps through total and each h
   assert.equal(box.innerHTML, line('fline', '삼성전자 10주', '2,250,000', UP, '+250,000 (+12.50%)'));
 
   run(`state.holdings = { '005930.KS': { qty: 10, avg: 200000 }, AAPL: { qty: 5, avg: 180 } };`);
-  c.usdKrw = async () => null;
+  c.usdKrw = () => null;
   await c.renderFolio();
   assert.equal(box.innerHTML, '<div class="fline"><span class="fn">보유 2종목</span>'
     + '<span class="fv">환율을 받지 못해 합계를 낼 수 없습니다</span></div>', '틀린 합계를 내놓지 않는다');
@@ -4845,11 +4845,23 @@ await test('holdings: folio names its numbers and steps through total and each h
   assert.equal(box.hidden, true);
 });
 
+await test('holdings: the folio rate is the index strip\'s USD/KRW, and the last one is kept when the strip fails', () => {
+  // 따로 받아 30분 기억하던 때는 같은 야후 주소를 한 번 더 불렀고 지수 줄보다 묵은 환율을 썼다(2026-11-05)
+  const { c, run } = harness(['usdKrw']);
+  run('var fxRate = null; var indexItems = [];');
+  assert.equal(c.usdKrw(), null, '지수 줄을 아직 못 받았으면 없다');
+  run("indexItems = [{ code: 'KOSPI', value: 4000 }, { code: 'USDKRW', value: 1380.5 }];");
+  assert.equal(c.usdKrw(), 1380.5);
+  assert.equal(run('fxRate'), 1380.5, '지표 화면 비중(holdWeight)도 이 값을 쓴다');
+  run('indexItems = [];');
+  assert.equal(c.usdKrw(), 1380.5, '지수 줄이 실패하면 직전 값');
+});
+
 // 오늘 손익 — 보유 수량 × (현재가 - 전일 종가). 340px 줄에 이름 · 평가 · 손익 · 오늘 넷은 들어가지 않아(만 · 억으로
 // 줄여도 넘쳤다) 오늘이 있으면 평가는 툴팁으로 뺀다. 전일 종가를 못 받은 종목이 섞이면 지금처럼 평가를 보인다.
 await test('holdings: folio shows today\'s gain beside the total gain, moving the value into the tooltip', async () => {
   const { c, run, elements } = holdHarness(['folioLines', 'renderFolio', 'showFolio', 'tickFolio']);
-  c.usdKrw = async () => 1380;
+  c.usdKrw = () => 1380;
   run(`state.watchlist.push({ symbol: 'AAPL', name: 'AAPL' });
     state.holdings = { '005930.KS': { qty: 10, avg: 200000 }, '000660.KS': { qty: 2, avg: 1600000 }, AAPL: { qty: 5, avg: 180 } };
     quotes['005930.KS'] = { price: 225000, prevClose: 220000 }; quotes['000660.KS'] = { price: 1520000, prevClose: 1500000 };

@@ -49,7 +49,7 @@ function setHolding(symbol, h) {
   save();
   renderList();
   renderDetail();
-  renderFolio().catch(console.error); // 환율을 받을 수 있어 async 다 — 띄워만 둔다
+  renderFolio().catch(console.error);
   if (symbol === state.selected) loadChart().catch(console.error);
 }
 
@@ -59,16 +59,14 @@ function clearHolding(symbol) {
 }
 
 // --- 보유 종목 합계 ---------------------------------------------------------------
-// 달러 종목이 섞이면 그냥 더할 수 없어 원화로 환산한다. 환율은 천천히 움직이므로 30분 캐시.
+// 달러 종목이 섞이면 그냥 더할 수 없어 원화로 환산한다. 환율은 지수 줄의 원/달러(갱신마다 받는다) — 따로 받아 30분
+// 기억하던 때는 같은 주소를 한 번 더 불렀고 합계가 지수 줄보다 최대 30분 묵은 환율을 썼다(2026-11-05).
 let fxRate = null;
-let fxAt = 0;
-const FX_TTL = 30 * 60 * 1000;
 
-async function usdKrw() {
-  if (fxRate && Date.now() - fxAt < FX_TTL) return fxRate;
-  const r = await api.fxUsdKrw();
-  if (r.ok) { fxRate = r.rate; fxAt = Date.now(); }
-  return fxRate; // 실패하면 직전 값(없으면 null)
+function usdKrw() {
+  const it = indexItems.find((i) => i.code === 'USDKRW');
+  if (it && it.value > 0) fxRate = it.value;
+  return fxRate; // 지수 줄을 못 받았으면 직전 값(없으면 null)
 }
 
 // 합계 줄에 차례로 보일 줄들과 툴팁. 보유가 둘 이상이면 합계 → 종목마다 한 줄(목록 순서),
@@ -134,7 +132,7 @@ async function renderFolio() {
   if (!held.length) { box.hidden = true; folioView = []; return; }
 
   // 환율은 둘 이상을 더할 때만 필요하다
-  const rate = held.length > 1 && held.some((x) => curOf(x.i.symbol) !== 'KRW') ? await usdKrw() : null;
+  const rate = held.length > 1 && held.some((x) => curOf(x.i.symbol) !== 'KRW') ? usdKrw() : null;
   const { lines, tip } = folioLines(held, rate);
   folioView = lines;
   if (folioAt >= lines.length) folioAt = 0; // 30초 갱신에도 보던 차례를 지킨다

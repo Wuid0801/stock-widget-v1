@@ -813,22 +813,6 @@ ipcMain.handle('market:extras', async () => {
   return { ...out, at: new Date(now).toISOString() };
 });
 
-// 원/달러 환율. 포트폴리오 합계에서 달러 종목을 원화로 환산할 때만 쓴다.
-// 심볼 'KRW=X' 는 '=' 때문에 yf:chart 의 심볼 허용 패턴에 걸린다.
-// 패턴을 넓히는 대신 URL 을 고정한 전용 핸들러를 둔다(렌더러 입력이 아예 없다).
-ipcMain.handle('fx:usdkrw', async () => {
-  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?range=1d&interval=1d';
-  try {
-    const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-
-    const rate = (await res.json())?.chart?.result?.[0]?.meta?.regularMarketPrice;
-    return Number.isFinite(rate) ? { ok: true, rate } : { ok: false, error: '빈 응답' };
-  } catch (err) {
-    return { ok: false, error: err.message || '환율 조회 실패' };
-  }
-});
-
 // 업종. 네이버 한글 업종을 먼저 쓰고, 네이버에 없으면 야후 영어 업종을 쓴다.
 // 야후 값은 영어이고 검증용 99종목 중 21종목이 비어 있었으며(SK하이닉스 · MSFT …), 국내 분류가
 // 어색했다(삼성전자 Consumer Electronics) — 네이버는 국내 업종 79개(삼성전자 반도체와반도체장비),

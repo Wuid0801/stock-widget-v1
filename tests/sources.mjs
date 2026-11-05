@@ -14,7 +14,7 @@ const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : '
   const names = [...main.matchAll(/ipcMain\.handle\('([^']+)'/g)].map((m) => m[1]).filter((n) => !local.has(n));
   const called = CHECKS.map((c) => c.call.toString()).join('\n');
   const missing = names.filter((n) => !called.includes(`h['${n}']`));
-  check(`네트워크 처리기 ${names.length}개가 모두 점검에 있다`, names.length >= 10 && missing.length === 0, missing.join(', '));
+  check(`네트워크 처리기 ${names.length}개가 모두 점검에 있다`, names.length >= 9 && missing.length === 0, missing.join(', '));
   check('점검 이름이 겹치지 않는다', new Set(CHECKS.map((c) => c.name)).size === CHECKS.length);
 }
 
