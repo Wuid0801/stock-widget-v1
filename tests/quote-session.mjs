@@ -364,6 +364,21 @@ await test('IPC daily failure leaves the price alone and keeps no close', async 
   assert.equal(r.quotes['005930'].price, 248500);
   assert.equal(r.quotes['005930'].fromClose, null);
 });
+await test('IPC cold start ignores a daily close from another day (Yahoo a day behind)', async () => {
+  tried.clear();
+  cache.clear();
+  baseResponse = after;
+  nxtResponse = { datas: [] };
+  const today = yahooResponse;
+  yahooResponse = { chart: { result: [{ meta: { regularMarketPrice: 1700000,
+    regularMarketTime: Date.parse('2026-09-14T15:30:22+09:00') / 1000 } }] } };
+  const r = await handler(null, ['000660.KS']);
+  yahooResponse = today;
+  assert.equal(r.quotes['000660'].session, 'after');
+  assert.equal(r.quotes['000660'].regularClose, null, '어제 종가를 오늘 종가로 붙이지 않는다');
+  assert.equal(r.quotes['000660'].fromClose, null);
+  assert.equal(cache.has('000660'), false, '다른 날 종가는 기억하지 않는다');
+});
 await test('IPC single-venue failure keeps usable price, not false all-closed', async () => {
   failed = new Set(['NXT']);
   const r = await handler(null, ['069500.KS']);

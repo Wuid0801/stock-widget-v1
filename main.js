@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
 const { normalizeQuote, normalizeWorldQuote, confirmedRegularClose, overFromClose,
-  dailyRegularClose } = require('./quote-session.cjs');
+  dailyRegularClose, koreaDate } = require('./quote-session.cjs');
 
 // Only confirmed same-day regular closes. An after-market startup has none of
 // its own, so it asks the daily chart once; retries are spaced by CLOSE_RETRY
@@ -538,11 +538,12 @@ async function domesticRealtime(symbols) {
         const close = dailyRegularClose(
           { price: meta?.regularMarketPrice, timeMs: meta?.regularMarketTime * 1000 },
           baseMap.get(code)?.stockExchangeType?.endTime);
-        if (!close) return;
+        const q = quotes[code];
+        // normalizeQuote 처럼 시세와 같은 날의 종가만 — 야후가 하루 늦으면 어제 종가가 오늘 "종가 대비" 로 붙었다
+        if (!close || !q.tradedAt || close.date !== koreaDate(Date.parse(q.tradedAt))) return;
         regularCloseCache.set(code, close);
         // Patch the two fields instead of rebuilding: the session decision and
         // any override above it stay exactly as they were.
-        const q = quotes[code];
         q.regularClose = close.price;
         q.fromClose = overFromClose(close.price, q.price, q.priceSession);
       } catch { /* 일봉을 못 받으면 종가 대비 줄만 빠진다 */ }
