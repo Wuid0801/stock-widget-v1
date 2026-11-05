@@ -8,29 +8,12 @@
 // 그것이 이 파일을 테스트에서 통째로 import 할 수 있게 하는 조건이다.
 
 // --- RSI(14), Wilder smoothing -----------------------------------------------
+// 지금 RSI 는 봉마다의 RSI(rsiSeries)의 마지막 값 — 계산을 따로 두면 목록의 RSI 와 차트 RSI 선이 갈릴 수 있다.
 function calcRSI(closes, period = 14) {
-  if (!closes || closes.length < period + 1) return null;
-
-  let gain = 0, loss = 0;
-  for (let i = 1; i <= period; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d >= 0) gain += d; else loss -= d;
-  }
-  gain /= period;
-  loss /= period;
-
-  for (let i = period + 1; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    gain = (gain * (period - 1) + Math.max(d, 0)) / period;
-    loss = (loss * (period - 1) + Math.max(-d, 0)) / period;
-  }
-
-  if (loss === 0) return gain === 0 ? 50 : 100;
-  return 100 - 100 / (1 + gain / loss);
+  return closes && closes.length > period ? rsiSeries(closes, period)[closes.length - 1] : null;
 }
 
-// 봉마다의 RSI(차트의 RSI 선) — calcRSI 와 같은 계산이라 i 번째 값은 처음부터 i 번째 봉까지의 calcRSI 다.
-// 앞 period 봉은 null.
+// 봉마다의 RSI(차트의 RSI 선) — i 번째 값은 처음부터 i 번째 봉까지로 센 RSI 다. 앞 period 봉은 null.
 function rsiSeries(closes, period = 14) {
   const out = new Array(closes.length).fill(null);
   if (closes.length < period + 1) return out;
