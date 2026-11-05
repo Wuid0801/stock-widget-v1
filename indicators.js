@@ -523,22 +523,26 @@ function trendFollow(closes, period = 200) {
   return { above, ma: ma[n], days };
 }
 
+// ms 의 n 달 전 같은 날(UTC 날짜로, 시각은 그대로). 그달에 그날이 없으면(3/31 의 한 달 전) 그달 마지막 날.
+// 모멘텀과 지표 화면의 기간 수익률(1 · 3개월 · 1년)이 같은 날짜를 쓰게 여기 하나만 둔다(2026-11-05 까지 두 벌).
+function monthsBack(ms, n) {
+  const d = new Date(ms);
+  const want = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - n);
+  d.setUTCDate(Math.min(want, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()));
+  return d.getTime();
+}
+
 // 모멘텀 12-1 — 최근 skip 달을 뺀 long 달 수익률(%) = skip 달 전 종가 / long 달 전 종가 - 1. 마지막 한 달은 단기 되돌림이
 // 섞여 빼는 것이 흔한 정의다. 그날(없으면 그 앞의 마지막 봉) 종가이고 날짜는 마지막 봉의 UTC 날짜에서 달로 센다 — 거래일
 // 수로 세면 국내는 1년 거래일이 244일 남짓이라 252봉 전이 12개월보다 열흘 넘게 앞이었다(2026-10-29 하이닉스 279.8% ·
-// 달력 216.3%). 그달에 그날이 없으면(3/31 의 한 달 전) 그달 마지막 날. long 달 전보다 앞선 봉이 없으면 null.
+// 달력 216.3%). 날짜는 monthsBack. long 달 전보다 앞선 봉이 없으면 null.
 function momentum(times, closes, long = 12, skip = 1) {
   if (!times || times.length < 2) return null;
   const n = times.length - 1;
   const dayOf = (t) => Math.floor(t / 86400000);
-  const back = (m) => {
-    const d = new Date(times[n]);
-    const want = d.getUTCDate();
-    d.setUTCDate(1);
-    d.setUTCMonth(d.getUTCMonth() - m);
-    d.setUTCDate(Math.min(want, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()));
-    return dayOf(d.getTime());
-  };
+  const back = (m) => dayOf(monthsBack(times[n], m));
   const at = (day) => { let k = -1; for (let i = 0; i <= n && dayOf(times[i]) <= day; i++) k = i; return k; };
   const from = at(back(long));
   const to = at(back(skip));
@@ -670,7 +674,7 @@ function eggPhase(closes, volumes) {
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
-    calcRSI, rsiSeries, rsiSignal, RSI_MIN_SPAN, rsiScale, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    calcRSI, rsiSeries, rsiSignal, RSI_MIN_SPAN, rsiScale, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, monthsBack, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,

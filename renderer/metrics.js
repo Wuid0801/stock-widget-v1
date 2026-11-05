@@ -32,17 +32,9 @@ function periodReturns(symbol) {
   if (!d || !d.times.length) return [];
   const lastT = d.times[d.times.length - 1];
   const last = q.price != null ? q.price : d.closes[d.closes.length - 1];
-  // n 달 전 같은 날. 그달에 그날이 없으면(3/31 의 한 달 전) 그달 마지막 날
-  const monthsBack = (n) => {
-    const t = new Date(lastT);
-    const want = t.getUTCDate();
-    t.setUTCDate(1);
-    t.setUTCMonth(t.getUTCMonth() - n);
-    t.setUTCDate(Math.min(want, new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()));
-    return t.getTime();
-  };
-  const from = [['1주', lastT - 7 * 86400000], ['1개월', monthsBack(1)], ['3개월', monthsBack(3)],
-    ['올해', Date.UTC(new Date(lastT).getUTCFullYear() - 1, 11, 31)], ['1년', monthsBack(12)]];
+  // n 달 전 같은 날(monthsBack — 모멘텀과 같은 날짜 규칙)
+  const from = [['1주', lastT - 7 * 86400000], ['1개월', monthsBack(lastT, 1)], ['3개월', monthsBack(lastT, 3)],
+    ['올해', Date.UTC(new Date(lastT).getUTCFullYear() - 1, 11, 31)], ['1년', monthsBack(lastT, 12)]];
   const dayOf = (t) => Math.floor(t / 86400000);
   return from.map(([label, t]) => ({
     label, pct: dayOf(t) < dayOf(d.times[0]) ? null : returnSince(d.times, d.closes, t, last),
