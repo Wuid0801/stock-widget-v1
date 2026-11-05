@@ -226,4 +226,4 @@ function normalizeWorldQuote(data, { now = Date.now() } = {}) {
     regularClose: close, fromClose: null, source: 'naver-us', tradedAt: data.localTradedAt };
 }
 
-module.exports = { normalizeQuote, normalizeWorldQuote, confirmedRegularClose, overFromClose, dailyRegularClose, koreaDate };
+module.exports = { normalizeQuote, normalizeWorldQuote, confirmedRegularClose, overFromClose, dailyRegularClose, koreaDate, numberOrNull };

@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
 const { normalizeQuote, normalizeWorldQuote, confirmedRegularClose, overFromClose,
-  dailyRegularClose, koreaDate } = require('./quote-session.cjs');
+  dailyRegularClose, koreaDate, numberOrNull } = require('./quote-session.cjs');
 
 // Only confirmed same-day regular closes. An after-market startup has none of
 // its own, so it asks the daily chart once; retries are spaced by CLOSE_RETRY
@@ -550,24 +550,19 @@ async function domesticRealtime(symbols) {
 const US_INDICES = { '.IXIC': { code: 'NASDAQ', name: '나스닥' }, '.INX': { code: 'SPX', name: 'S&P 500' },
   '.VIX': { code: 'VIX', name: 'VIX' }, '.SOX': { code: 'SOX', name: 'SOX' } };
 ipcMain.handle('quote:indices', async () => {
-  // 지수 헤더용 값. 빠진 값은 0 이 아니라 null — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
-  const opt = (v) => {
-    const s = String(v ?? '').replace(/,/g, '').trim();
-    const n = s ? Number(s) : NaN;
-    return Number.isFinite(n) ? n : null;
-  };
+  // 지수 헤더용 값. 빠진 값은 0 이 아니라 null(numberOrNull) — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
   const naver = async (url) => (await naverJson(url)).datas || [];
   const item = (d, code, name) => ({
     code,
     name,
-    value: opt(d.closePriceRaw ?? d.closePrice),
+    value: numberOrNull(d.closePriceRaw ?? d.closePrice),
     // 지수도 종목처럼 내리면 음수다(2026-10-02 코스닥 -1.00 실측). 유가 · 국채(시장지표)는 이름이 fluctuations 다
     // (2026-10-23 금 -43.50 · 한국 국채 10년 -0.0600 — 내리면 음수인 것도 같다).
-    change: opt(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice ?? d.fluctuations),
-    pct: opt(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
-    open: opt(d.openPriceRaw ?? d.openPrice),
-    high: opt(d.highPriceRaw ?? d.highPrice),
-    low: opt(d.lowPriceRaw ?? d.lowPrice),
+    change: numberOrNull(d.compareToPreviousClosePriceRaw ?? d.compareToPreviousClosePrice ?? d.fluctuations),
+    pct: numberOrNull(d.fluctuationsRatioRaw ?? d.fluctuationsRatio),
+    open: numberOrNull(d.openPriceRaw ?? d.openPrice),
+    high: numberOrNull(d.highPriceRaw ?? d.highPrice),
+    low: numberOrNull(d.lowPriceRaw ?? d.lowPrice),
     isOpen: d.marketStatus === 'OPEN',
     tradedAt: d.localTradedAt || null,
   });
@@ -636,23 +631,16 @@ const HYOAS_TTL = 6 * 3600000; // FRED 시리즈(HY OAS · 장단기 금리차)�
 const flowCache = new Map(); // '경로|YYYYMMDD' → 확정된 그날 수급
 const fredCache = new Map(); // FRED 시리즈 id → { at, rows }
 
-// 수급 문자열 → 숫자. '+4,080' → 4080, '-9,811' → -9811, 빈 값 → null.
-function parseFlowValue(v) {
-  const s = String(v ?? '').replace(/[,+\s]/g, '');
-  if (!s) return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
-}
-
 // 그날 외국인 · 기관 · 개인 순매수. path 는 'KOSPI'(현물) · 'FUT'(코스피200 선물). 모양이 다르거나 다른 날의 값이 오면 null.
+// 값은 '+4,080' · '-9,811' · '' 모양의 글자다(numberOrNull: 4080 · -9811 · null).
 async function naverFlow(path, date, now) {
   const key = `${path}|${date}`;
   if (flowCache.has(key)) return flowCache.get(key);
   const j = await naverJson(`https://m.stock.naver.com/api/index/${path}/trend?bizdate=${date}`);
-  const foreign = j && j.bizdate === date ? parseFlowValue(j.foreignValue) : null;
+  const foreign = j && j.bizdate === date ? numberOrNull(j.foreignValue) : null;
   if (foreign == null) return null;
-  const inst = parseFlowValue(j.institutionalValue);
-  const personal = parseFlowValue(j.personalValue);
+  const inst = numberOrNull(j.institutionalValue);
+  const personal = numberOrNull(j.personalValue);
   // 셋 다 0 이면 아직 없는 값이다 — 네이버는 값이 없을 때도 오류 대신 0 을 준다. 확정된 날에 한 번 온 0 을 기억하면 앱을 다시
   // 켤 때까지 연속 일수 · 판정이 틀렸다(리뷰 2026-10-27) — 빼고 기억하지 않아 다음에 다시 묻는다
   if (foreign === 0 && !inst && !personal) return null;
@@ -903,10 +891,8 @@ ipcMain.handle('yf:sector', async (_e, symbol) => {
 // NXT 포함 거래량은 totalVolume 으로 따로 둔다.
 const DETAIL_VALUATION = [['per', 'PER'], ['cnsPer', '추정 PER'], ['pbr', 'PBR'], ['eps', 'EPS'], ['bps', 'BPS'],
   ['dividendYieldRatio', '배당수익률'], ['dividend', '주당배당금'], ['exDividendAt', '배당락일']];
-const detailNum = (v) => {
-  const n = Number(String(v ?? '').replace(/[,%+]/g, ''));
-  return v == null || v === '' || !Number.isFinite(n) ? null : n;
-};
+// 네이버 숫자 글자 → 숫자. '%' 를 뗀 뒤로는 다른 곳과 같은 numberOrNull — 공백뿐인 값만 여기서 0 으로 읽던 것도 null 로 맞췄다.
+const detailNum = (v) => numberOrNull(typeof v === 'string' ? v.replace(/%/g, '') : v);
 // 네이버 표기('9.82배', '22,292원')는 그대로 쓴다. 값이 없다는 표기는 뺀다.
 const detailInfos = (list) => {
   const map = new Map((Array.isArray(list) ? list : []).map((x) => [x.code, x.value]));
