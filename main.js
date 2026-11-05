@@ -458,17 +458,11 @@ async function domesticRealtime(symbols) {
   const symbolOf = new Map(valid.map((s) => [s.split('.')[0], s]));
   if (!codes.length) return { ok: true, quotes: {} };
 
-  const headers = { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' };
-  const read = async (url) => {
-    const res = await netFetch(url, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  };
   try {
     // Explicit venue endpoints; the KRX top-level quote now includes afterMarket.
     const results = await Promise.allSettled([
-      read(`https://polling.finance.naver.com/api/realtime/domestic/stock/${codes.join(',')}`),
-      read(`https://polling.finance.naver.com/api/realtime/domestic/NXT/stock/${codes.join(',')}`),
+      naverJson(`https://polling.finance.naver.com/api/realtime/domestic/stock/${codes.join(',')}`),
+      naverJson(`https://polling.finance.naver.com/api/realtime/domestic/NXT/stock/${codes.join(',')}`),
     ]);
     const rows = results.map((r) => r.status === 'fulfilled' && Array.isArray(r.value?.datas)
       ? r.value.datas : []);
@@ -1288,12 +1282,7 @@ ipcMain.handle('yf:search', async (_e, query) => {
   const url = 'https://m.stock.naver.com/front-api/search'
     + `?q=${encodeURIComponent(q)}&target=stock&page=1&size=30`;
   try {
-    const res = await netFetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' },
-    });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-
-    const json = await res.json();
+    const json = await naverJson(url); // 실패하면 아래 catch 가 'HTTP nnn' 을 돌려준다
     const items = (json.result?.items || [])
       .filter((i) => i.code && (i.nationCode === 'KOR' || i.nationCode === 'USA'))
       .map((i) => ({
@@ -1356,18 +1345,15 @@ async function fillGaps(symbol, stamps, q) {
     const url = `https://api.stock.naver.com/chart/domestic/${code}/day`
       + `?startDateTime=${from}0000&endDateTime=${to}2359`;
     try {
-      const res = await netFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://m.stock.naver.com/' } });
-      if (res.ok) {
-        const rows = await res.json();
-        for (const x of Array.isArray(rows) ? rows : []) {
-          const d = String(x.localDate);
-          if (d < today && Number(x.closePrice) > 0) naverDays.set(`${code}:${d}`, {
-            close: Number(x.closePrice), open: Number(x.openPrice), high: Number(x.highPrice),
-            low: Number(x.lowPrice), volume: Number(x.accumulatedTradingVolume) || 0,
-          });
-        }
-        for (const i of ask) if (!naverDays.has(`${code}:${days[i]}`)) naverDays.set(`${code}:${days[i]}`, null);
+      const rows = await naverJson(url);
+      for (const x of Array.isArray(rows) ? rows : []) {
+        const d = String(x.localDate);
+        if (d < today && Number(x.closePrice) > 0) naverDays.set(`${code}:${d}`, {
+          close: Number(x.closePrice), open: Number(x.openPrice), high: Number(x.highPrice),
+          low: Number(x.lowPrice), volume: Number(x.accumulatedTradingVolume) || 0,
+        });
       }
+      for (const i of ask) if (!naverDays.has(`${code}:${days[i]}`)) naverDays.set(`${code}:${days[i]}`, null);
     } catch { /* 지금처럼 그날을 뺀다. 기억하지 않으므로 다음 요청에서 다시 묻는다 */ }
   }
   // 비율은 채우기 전에 구한다 — 채운 날이 다른 빈 날의 비율에 섞이지 않게

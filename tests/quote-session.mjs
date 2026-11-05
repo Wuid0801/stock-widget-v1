@@ -307,20 +307,21 @@ vm.runInNewContext(main.slice(start, end), {
   ...require('../quote-session.cjs'), Date: Clock, AbortSignal,
   regularCloseCache: cache, regularCloseTried: tried, CLOSE_RETRY: 300000, FORCE_SESSION: '',
   naverUsCode: async (s) => { usAsked.push(s); return usCodes[s] ?? null; },
+  // 국내 KRX · NXT 도 naverJson 으로 묻는다(main.js 의 네이버 요청은 이것 하나) — 주소로 가른다
   naverJson: async (url) => {
+    if (url.includes('/domestic/')) {
+      const venue = url.includes('/NXT/') ? 'NXT' : 'KRX';
+      if (failed.has(venue)) throw new Error('fixture failure');
+      return venue === 'NXT' ? nxtResponse : baseResponse;
+    }
     usCalls.push(url);
     if (failed.has('US')) throw new Error('fixture failure');
     return usPre;
   },
-  netFetch: async (url) => {
-    if (url.includes('finance.yahoo.com')) {
-      yahooCalls.push(url);
-      if (failed.has('YAHOO')) throw new Error('fixture failure');
-      return { ok: true, json: async () => yahooResponse };
-    }
-    const venue = url.includes('/NXT/') ? 'NXT' : 'KRX';
-    if (failed.has(venue)) throw new Error('fixture failure');
-    return { ok: true, json: async () => venue === 'NXT' ? nxtResponse : baseResponse };
+  netFetch: async (url) => { // 야후 일봉(애프터마켓 종가 되찾기)만 여기로 온다
+    yahooCalls.push(url);
+    if (failed.has('YAHOO')) throw new Error('fixture failure');
+    return { ok: true, json: async () => yahooResponse };
   },
 });
 await test('IPC carries verified close from break snapshot into after session', async () => {
