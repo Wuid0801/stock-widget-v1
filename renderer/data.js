@@ -59,8 +59,10 @@ async function loadQuote(item, live) {
   // 미국 종목은 실시간이 있어도 짧게 둔다 — 야후 미국 일봉은 늦지 않아 RSI 를 그대로 맞춰 주고,
   // 아래에서 일봉을 건드리지 않는다. 미국 지수 · 환율도 일봉을 건드리지 않지만 캐시는 길게 둔다 —
   // 세 개를 1분마다 5년치씩(약 80KB) 받기에는 지수 RSI 가 몇 분 늦는 것이 낫다.
+  // 실시간이 없는 지수 항목(달러 인덱스 · 금 · 구리는 늘, 나머지는 네이버 실패 때)은 5분 — 1분이면 지표 화면을 열지 않아도
+  // 셋이 1분마다 5년치를 받았고, 네이버가 막히면 지수 전부가 그랬다.
   const overseas = isOverseas(item.symbol);
-  const r = await dailyFor(item.symbol, live && !isUs(item.symbol) ? DAILY_TTL : 60000);
+  const r = await dailyFor(item.symbol, live && !isUs(item.symbol) ? DAILY_TTL : isIndex(item.symbol) ? 5 * 60000 : 60000);
   if (!r || r.error) {
     quotes[item.symbol] = { error: r ? r.error : '조회 실패', fetchedAt: Date.now() };
     return;

@@ -412,6 +412,9 @@ await test('US live quote: price from Naver; Yahoo daily untouched and cached br
   await c.loadQuote({ symbol: '^IXIC', name: '나스닥' }, { ...live, price: 130, session: 'regular', priceSession: 'regular' });
   assert.equal(JSON.stringify(run("quotes['^IXIC'].daily.closes")), '[128.4,127.57]', '지수 줄의 미국 지수도 한국 날짜로 봉을 덧붙이지 않는다');
   assert.equal(ttls.at(-1), run('DAILY_TTL'));
+  // 실시간이 없는 지수 항목(달러 인덱스 — 네이버 값이 없다)은 5분 — 1분마다 5년치를 받지 않는다
+  await c.loadQuote({ symbol: 'DX-Y.NYB', name: '달러 인덱스' }, undefined);
+  assert.equal(ttls.at(-1), 5 * 60000);
 });
 
 await test('US header: never 20분지연 — the Naver session when live, 확인중 on Yahoo\'s regular price', () => {
@@ -4029,13 +4032,14 @@ await test('a failing Yahoo daily fetch is retried at most once per refresh, and
   let up = true;
   const d = dailyRun({ yahoo: (s) => (up ? daily(100000) : { ok: false, error: 'HTTP 429' }) });
   d.run(`state.watchlist = [{symbol:'005930.KS',name:'삼성전자'},{symbol:'000660.KS',name:'SK하이닉스'},
-    {symbol:'035420.KS',name:'NAVER'}];`);
-  const all = 3 + d.run('INDICES.length'); // 종목 3 + 지수 줄
+    {symbol:'035420.KS',name:'NAVER'},{symbol:'005380.KS',name:'현대차'}];`);
+  const all = 4 + d.run('INDICES.length'); // 종목 4 + 지수 줄
   await d.refresh(); // 0초 — 다 받는다
   assert.equal(d.calls.length, all);
   up = false;
   d.calls.length = 0;
-  for (const sec of [120, 150, 180, 210]) { d.at(sec); await d.refresh(); } // 캐시 만료(60초) 뒤 네 번
+  // 종목 캐시 만료(60초) 뒤 네 번 — 실시간 없는 지수는 5분 캐시라 아직 묻지 않는다
+  for (const sec of [120, 150, 180, 210]) { d.at(sec); await d.refresh(); }
   assert.equal(d.calls.length, 4, `one request per refresh, not ${all} — got ${d.calls.join(',')}`);
   assert.equal(new Set(d.calls).size, 4, 'each refresh tries a different symbol — the failed ones rest');
   up = true;
