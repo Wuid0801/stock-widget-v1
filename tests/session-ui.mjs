@@ -1321,7 +1321,7 @@ const text = (h) => h.replace(/<[^>]+>/g, ''); // 태그를 뺀 글자 — 항�
 const kst = (d) => Date.parse(`${d}T09:00:00+09:00`); // 국내 일봉 시각(00:00 UTC)
 const days = (from, n) => Array.from({ length: n }, (_, i) => kst(from) + i * 86400000);
 // 지표 화면 HTML 이 부르는 함수들 — 기법 점검(techHtml)까지
-const METRICS_FNS = ['metricsHtml', 'metricsVolume', 'periodReturns', 'techHtml', 'holdWeight', 'dailyVolumesOf'];
+const METRICS_FNS = ['metricsHtml', 'metricsVolume', 'periodReturns', 'techHtml', 'holdWeight', 'heldRows', 'dailyVolumesOf'];
 
 await test('metrics: today volume against the 20 trading days before its own date (KRX), US by its own date', () => {
   const { run } = harness(['metricsVolume']);
@@ -4500,7 +4500,7 @@ await test('trend check: real backtest on a steady climb says 정배열 and 표�
 // 보유 — 어떤 종목을 들고 있는지 목록에서 보이고, 상세에서 바로 넣고 고치며, 합계 줄이 무엇의 합인지 말한다.
 // 이 하네스에는 진짜 DOM 이 없다. 그리는 글자와 상태만 보고, 버튼 · 키 연결은 tests/holdings.mjs(앱)가 본다.
 const HOLD_FNS = ['parseAmount', 'amountText', 'holdingFrom', 'holdingPl', 'plColor', 'holdSub', 'renderHolding',
-  'holdForm', 'startHoldEdit', 'saveHoldEdit', 'cancelHoldEdit', 'clearHolding', 'setHolding', 'redrawHolding'];
+  'holdForm', 'startHoldEdit', 'saveHoldEdit', 'cancelHoldEdit', 'clearHolding', 'setHolding', 'redrawHolding', 'heldRows'];
 const holdHarness = (extra = []) => {
   const h = harness([...HOLD_FNS, ...extra]);
   h.run(formatting);

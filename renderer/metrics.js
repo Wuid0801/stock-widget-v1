@@ -59,8 +59,7 @@ function dailyVolumesOf(symbol) {
 // 보유 종목 평가금액 합계에서 이 종목의 몫(%) — 합계 줄(renderFolio)처럼 수량 · 평단 · 현재가가 있는 종목만 세고, 달러는 받아 둔
 // 환율(fxRate — 달러가 섞여 있으면 합계 줄이 받는다)로. 보유가 아니거나 보유가 하나뿐이면(늘 100%), 환율이 아직 없으면 null.
 function holdWeight(symbol) {
-  const held = state.watchlist.map((i) => ({ i, h: state.holdings[i.symbol], q: quotes[i.symbol] }))
-    .filter((x) => x.h && x.h.qty > 0 && x.h.avg > 0 && x.q && x.q.price != null);
+  const held = heldRows();
   const me = held.find((x) => x.i.symbol === symbol);
   if (!me || held.length < 2) return null;
   if (held.some((x) => curOf(x.i.symbol) !== 'KRW') && !fxRate) return null;

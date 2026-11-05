@@ -121,13 +121,16 @@ function folioLines(held, rate) {
   };
 }
 
+// 합계에 넣는 보유 — 수량 · 평단가가 모두 있고 현재가를 받은 종목(목록 순서). 합계 줄과 지표 화면의 비중(holdWeight)이
+// 같이 쓴다 — 따로 거르면 한쪽만 바뀌어 비중이 합계 줄과 안 맞을 수 있었다(2026-11-05).
+function heldRows() {
+  return state.watchlist.map((i) => ({ i, h: state.holdings[i.symbol], q: quotes[i.symbol] }))
+    .filter((x) => x.h && x.h.qty > 0 && x.h.avg > 0 && x.q && x.q.price != null);
+}
+
 async function renderFolio() {
   const box = document.getElementById('folio');
-
-  // 수량·평단가가 모두 있고 현재가를 받은 종목만 센다
-  const held = state.watchlist
-    .map((i) => ({ i, h: state.holdings[i.symbol], q: quotes[i.symbol] }))
-    .filter((x) => x.h && x.h.qty > 0 && x.h.avg > 0 && x.q && x.q.price != null);
+  const held = heldRows();
 
   if (!held.length) { box.hidden = true; folioView = []; return; }
 
