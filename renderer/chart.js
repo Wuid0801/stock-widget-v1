@@ -618,7 +618,6 @@ function drawChart(arg) {
         order: 2,
         borderColor: candles ? 'transparent' : color,
         borderWidth: 2,
-        pointRadius: 0,
         pointHitRadius: 8,
         tension: 0.15,
         fill: true,
@@ -644,8 +643,6 @@ function drawChart(arg) {
         yAxisID: 'y',
         order: 1,
         borderWidth: 0,
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.15,
         fill: '+1',
         backgroundColor: candles ? 'transparent' : hexA(color, 0.16),
@@ -655,10 +652,7 @@ function drawChart(arg) {
         yAxisID: 'y',
         order: 1,
         borderWidth: 0,
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.15,
-        fill: false,
       }] : []),
       // 볼린저 밴드(보조 지표). 위 · 아래 경계를 얇은 점선으로, 사이를 옅게 채운다 — 고저 밴드처럼
       // 위쪽이 fill:'+1' 로 바로 다음(아래쪽)까지 채우므로 배열에서 붙어 있어야 한다.
@@ -670,12 +664,9 @@ function drawChart(arg) {
         borderColor: cssVar('--bb-line'),
         borderWidth: 1,
         borderDash: [3, 2],
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.2,
         fill: '+1',
         backgroundColor: cssVar('--bb-fill'),
-        spanGaps: false,
       }, {
         data: bands.lower,
         yAxisID: 'y',
@@ -683,11 +674,7 @@ function drawChart(arg) {
         borderColor: cssVar('--bb-line'),
         borderWidth: 1,
         borderDash: [3, 2],
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.2,
-        fill: false,
-        spanGaps: false,
       }] : []),
       // 파라볼릭 SAR(보조 지표) — 선 없이 봉마다 작은 점. 상승 추세(봉 아래)는 옅은 빨강, 하락(봉 위)은 옅은 파랑.
       // 툴팁 · 범례 값은 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
@@ -711,10 +698,7 @@ function drawChart(arg) {
         borderColor: cssVar('--bench-line'),
         borderWidth: 1.2,
         borderDash: [5, 3],
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.15,
-        fill: false,
         spanGaps: true,
       }] : []),
       // VWAP(보조 지표, 1D 정규장 봉만). 시간외 칸은 null 이라 끊긴다.
@@ -724,11 +708,6 @@ function drawChart(arg) {
         order: 3,
         borderColor: cssVar('--vwap-line'),
         borderWidth: 1.4,
-        pointRadius: 0,
-        pointHitRadius: 0,
-        tension: 0,
-        fill: false,
-        spanGaps: false,
       }] : []),
       // 이동평균선 (일봉 타임프레임에서만 전달된다).
       // 전부 80% 불투명도. 주가선은 2px 라 여러 개를 켜도 굵기로 먼저 읽힌다.
@@ -738,11 +717,7 @@ function drawChart(arg) {
         order: 3,
         borderColor: hexA(maColor(m.p), 0.8),
         borderWidth: maWidth(m.p),
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.2,
-        fill: false,
-        spanGaps: false,
       })),
       // 지지·저항 추세선 (3M · 1Y 에서만 전달된다).
       // 점선 1.6px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
@@ -759,11 +734,6 @@ function drawChart(arg) {
         borderColor: cssVar(t.varName),
         borderWidth: 1.6,
         borderDash: [5, 3],
-        pointRadius: 0,
-        pointHitRadius: 0,
-        tension: 0,
-        fill: false,
-        spanGaps: false,
       })),
       // 거래량. label 이 빈 문자열이라 툴팁 본문에는 줄이 생기지 않고,
       // 값은 beforeBody 에서 주가 밑에 따로 붙인다.
@@ -789,11 +759,7 @@ function drawChart(arg) {
         order: 0,
         borderColor: cssVar('--vol-avg'),
         borderWidth: 1,
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.2,
-        fill: false,
-        spanGaps: false,
       }] : []),
       // RSI · 시그널(보조 지표) — 가격 칸 아래 따로 둔 칸(축 yRsi, RSI_PANE)에 그린다. RSI 는 옅은 실선, 시그널은 점선,
       // 30 · 70 은 아주 옅은 점선 — 눈금(rsiFit) 안일 때만. 밖이면 RSI 칸을 벗어나 가격 칸에 그어진다. 시그널을 뚫은
@@ -806,9 +772,6 @@ function drawChart(arg) {
         borderColor: cssVar('--grid'),
         borderWidth: 1,
         borderDash: [2, 3],
-        pointRadius: 0,
-        pointHitRadius: 0,
-        fill: false,
       })), {
         data: rsi.signal,
         yAxisID: 'yRsi',
@@ -816,22 +779,14 @@ function drawChart(arg) {
         borderColor: cssVar('--mute'),
         borderWidth: 1,
         borderDash: [3, 2],
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.2,
-        fill: false,
-        spanGaps: false,
       }, {
         data: rsi.data,
         yAxisID: 'yRsi',
         order: -0.5,
         borderColor: hexA(cssVar('--rsi-line'), 0.7),
         borderWidth: 1.2,
-        pointRadius: 0,
-        pointHitRadius: 0,
         tension: 0.2,
-        fill: false,
-        spanGaps: false,
       }, {
         data: closes.map((_, i) => (rsiDot.has(i) ? rsi.data[i] : null)),
         yAxisID: 'yRsi',
@@ -851,6 +806,9 @@ function drawChart(arg) {
       maintainAspectRatio: false,
       animation: false,
       interaction: { mode: 'index', intersect: false },
+      // 선 위의 점은 그리지 않고 마우스 대상도 아니다 — 주가선(마우스 범위 8) · SAR · RSI 교차 점만 데이터셋에서 따로 정한다.
+      // 채움 없음 · 빈 칸에서 끊기 · 직선(tension 0)은 Chart.js 기본값이라 데이터셋마다 적지 않는다(2026-11-05 정리).
+      elements: { point: { radius: 0, hitRadius: 0 } },
       // 가리키는 시점의 이동평균 값을 범례에 띄운다(툴팁을 늘리지 않기 위해)
       onHover: (_e, els) => {
         const idx = els.length ? els[0].index : null;
