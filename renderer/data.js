@@ -644,42 +644,23 @@ async function loadChart() {
     }
   }
 
-  // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다.
-  // 다시 그리면 차트가 통째로 재생성돼 마우스를 올려둔 범례 값도 같이 지워진다.
-  // 토글은 chartMode 만 바꾸므로 chartMode 도 서명에 넣어야 다시 그려진다(캔들
-  // 여부는 drawChart 가 보이는 봉 수로 정한다). 종가가 같아도 두 폴링 사이 고가·
-  // 저가만 바뀌면 오늘 캔들의 몸통·꼬리가 옛 값으로 남으므로 마지막 봉의 시가·
-  // 고가·저가도 함께 본다.
-  const sig = `${item.symbol}|${state.timeframe}|${closes.length}`
-    + `|${closes[closes.length - 1]}|${up}|${mas.map((m) => m.p).join()}`
-    + `|${hLines.map((l) => `${l.label}:${l.value}`).join()}`
-    + `|${state.chartMode}`
-    // 확대 · 되돌리기는 drawChart 로 바로 그린다. 서명에 확대 구간을 넣어 두면 그 뒤 첫
-    // 갱신에서 차트를 한 번 더 만들지만(hover 범례가 한 번 지워진다), 서명이 늘 화면 상태를
-    // 담아 토글 때처럼 "서명에 빠져 다시 안 그려지는" 일이 생기지 않는다.
-    + `|${zoom ? `${zoom.start}-${zoom.end}` : ''}`
-    + `|${opens[opens.length - 1]}|${highs[highs.length - 1]}|${lows[lows.length - 1]}`
-    // 애프터 봉이 뒤에 붙으면 정규장 끝점(종가)은 마지막 칸이 아니다 — 그 값과 시간외 봉 수도 본다.
-    + `|${ext ? ext.filter(Boolean).length : ''}|${endAt >= 0 ? closes[endAt] : ''}|${lastReg >= 0 ? closes[lastReg] : ''}`
-    // 보조 지표를 켜고 끄면 봉이 그대로여도 다시 그린다
-    + `|${INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join('')}`
-    // 지수 비교선의 끝(실시간 지수) — 종목은 그대로여도 지수가 움직이면 다시 그린다
-    + `|${bline ? bline.data[bline.data.length - 1] : ''}`
-    // RSI — 앞 거래일 봉(1D)이 늦게 와도 봉은 그대로라, 첫 값의 자리와 마지막 값을 본다
-    + `|${rsi ? `${rsi.data.findIndex((v) => v != null)}:${rsi.data[rsi.data.length - 1]}` : ''}`
-    // 차트만 보기 — 이동평균 · 가로선이 없던 화면이면 위 값이 같아도 추세선이 남는다
-    + `|${plain}`
-    // 정규장 / 전체 — NXT 에 없는 종목(ETF 등)은 두 응답이 똑같아, 서명에 없으면 다시 그리지 않아 버튼 글자도 그대로였다
-    + `|${state.extHours !== false}`;
+  const chart = {
+    closes, times, up, mas, cur: curOf(item.symbol),
+    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, rsi, benchLine: bline, tipBases: tips,
+    profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
+  };
+
+  // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다 — 다시 그리면 차트가 통째로 재생성돼 마우스를
+  // 올려둔 범례 값도 같이 지워진다. 그릴 값 전체와, drawChart 가 그 밖에서 읽는 화면 상태(캔들 · 확대 · 칩 · 차트만
+  // 보기 · 정규장/전체)를 견준다. 값을 손으로 골라 이어 붙이던 때는 빠진 값이 바뀌어도 다시 그리지 않았다 — 켠
+  // 직후 시세 없이 그린 첫 차트에 일봉이 와도 볼린저 · SAR · 툴팁 등락률이 빠진 채 남았다(2026-11-05).
+  const sig = JSON.stringify([key, chart, state.chartMode, zoom && [zoom.start, zoom.end],
+    INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join(''), plain, state.extHours !== false]);
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
   drawnKey = key;
 
-  drawChart({
-    closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, rsi, benchLine: bline, tipBases: tips,
-    profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
-  });
+  drawChart(chart);
 }
 
 async function refreshAll() {

@@ -845,6 +845,36 @@ await test('indicators: loadChart passes SAR on 1D, 1W and the daily periods onl
   assert.equal(await show('1M', false), null, '칩을 끄면 없다');
 });
 
+await test('loadChart redraws when only a quote-derived overlay changes (first chart drawn before the daily quote)', async () => {
+  // 켠 직후 첫 차트는 시세 없이 그린다. 이동평균 칩을 다 끈 1M 은 봉 · 가로선이 그대로라, 손으로 고른 서명으로는
+  // 일봉이 와도 다시 그리지 않아 볼린저가 빠진 채 남았다(2026-11-05).
+  const { c, run } = harness(['loadChart', 'bandFor', 'alignByDay']);
+  const draws = [];
+  const day = (i) => Date.parse('2026-08-01T00:00:00Z') + i * 86400000;
+  const n = 8;
+  const bars = { ok: true, closes: Array.from({ length: n }, (_, i) => 100 + (i % 4)),
+    times: Array.from({ length: n }, (_, i) => day(35 + i)), volumes: new Array(n).fill(1),
+    opens: Array.from({ length: n }, (_, i) => 100 + (i % 4)),
+    highs: Array.from({ length: n }, (_, i) => 101 + (i % 4)), lows: Array.from({ length: n }, (_, i) => 99 + (i % 4)) };
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
+    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+  });
+  run("let lastDrawSig = null; delete quotes['005930.KS']; state.timeframe = '1M'; state.indicators = cleanIndicators({ bb: true });");
+  await c.loadChart();
+  assert.equal(draws.length, 1);
+  assert.equal(draws[0].bands, null, '일봉이 오기 전에는 밴드가 없다');
+  run(`quotes['005930.KS'] = { price: 103, prevClose: 102, change: 1, daily: {
+    times: ${JSON.stringify(Array.from({ length: 43 }, (_, i) => day(i)))},
+    closes: ${JSON.stringify(Array.from({ length: 43 }, (_, i) => 100 + (i % 5)))} } };`);
+  await c.loadChart();
+  assert.equal(draws.length, 2, '일봉이 오면 다시 그린다');
+  assert.ok(draws[1].bands, '다시 그린 차트에는 밴드가 있다');
+  await c.loadChart();
+  assert.equal(draws.length, 2, '값이 그대로면 다시 그리지 않는다');
+});
+
 await test('indicators: SAR legend shows the direction and how long it has held, the value on hover', () => {
   const { c, run } = harness(['renderMaLegend', 'labelFor']);
   run(formatting);
