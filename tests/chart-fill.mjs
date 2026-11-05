@@ -120,8 +120,9 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   yahooBody = yahoo([['2026-10-08', 100], ['2026-10-12', null], ['2026-10-13', 110]]);
   for (const s of ['AAPL', '^GSPC', 'BRK-B']) await chart(s);
   check('해외 종목 · 해외 지수는 묻지 않는다(국내 지수는 6번)', naverCalls.length === 0, naverCalls.map((c) => c.url).join(' '));
-  await chart('051910.KS', '30m');
-  check('일봉이 아니면 묻지 않는다', naverCalls.length === 0);
+  // 30m 이 아니라 5m — 1mo · 30m 은 1W RSI 의 앞 거래일 봉이라 네이버 분봉을 묻는다(2026-11-04), 빈 날 채우기와 상관없다
+  await chart('051910.KS', '5m');
+  check('일봉이 아니면 묻지 않는다', naverCalls.length === 0, naverCalls.map((c) => c.url).join(' '));
 
   // 전체 탭: 처음부터 끝까지(max), 봉 크기는 야후가 고른다(월봉 · 주봉 · 분기봉). 1mo 로 물어 일봉용 채우기가 섞이지 않는다.
   yahooCalls.length = 0;
