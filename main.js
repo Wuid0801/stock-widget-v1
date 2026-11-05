@@ -222,22 +222,14 @@ function createWindow() {
 
 // ---- IPC: 창/상태 ----------------------------------------------------------
 
-ipcMain.handle('state:get', () => ({
-  watchlist: store.get('watchlist'),
-  selected: store.get('selected'),
-  timeframe: store.get('timeframe'),
-  alerts: store.get('alerts'),
-  holdings: store.get('holdings'),
-  theme: store.get('theme'),
-  opacity: store.get('opacity'),
-  maPeriods: store.get('maPeriods'),
-  maStyles: store.get('maStyles'),
-  chartMode: store.get('chartMode'),
-  plainChart: store.get('plainChart'),
-  infoOpen: store.get('infoOpen'),
-  indicators: store.get('indicators'),
-  extHours: store.get('extHours'),
-}));
+// 렌더러가 저장하는 설정(save() 가 보내는 키, 창 위치는 뺀다). 읽기(state:get) · 쓰기(state:set) · 백업이 모두 이 목록을
+// 쓴다 — 셋이 따로 적혀 있을 때는 새 설정을 한 곳에 빠뜨리면 조용히 저장 · 복원되지 않았다. save() 와 같은지는
+// tests/state-contract.mjs 가 본다.
+const STATE_KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles',
+  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'];
+const storedState = () => Object.fromEntries(STATE_KEYS.map((k) => [k, store.get(k)]));
+
+ipcMain.handle('state:get', () => storedState());
 
 // 받은 키를 모아 한 번에 쓴다 — conf 는 set 을 부를 때마다 파일 전체를 읽고 다시 써서(fsync 포함), 키마다 부르면
 // save() 한 번(14키)에 47~71ms 메인이 멈췄다(↑↓ 를 누르고 있으면 초당 30번, 2026-10-21 측정). 한 번에 쓰면 4~5ms 이고
@@ -247,27 +239,23 @@ ipcMain.handle('state:set', (_e, patch) => {
   for (const [k, v] of Object.entries(patch || {})) {
     // electron-store 는 undefined 를 거부하며 예외를 던진다. 저장할 값이 없으면 그냥 건너뛴다.
     if (v === undefined) continue;
-    if (['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles', 'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'].includes(k)) next[k] = v;
+    if (STATE_KEYS.includes(k)) next[k] = v;
   }
   if (Object.keys(next).length) store.set(next);
 });
 
 // ---- 설정 백업 · 복원 -----------------------------------------------------------
 // 보유 수량 · 평단가 · 목표가는 이 PC 의 설정 파일에만 있다 — 파일로 내보내고 불러와 PC 를 옮기거나 설정 파일이
-// 깨졌을 때 되살린다. 담는 것은 렌더러가 저장하는 설정 전부(state:set 허용목록과 같다, tests/state-contract.mjs 가
-// 본다)이고 창 위치는 뺀다. 불러올 파일은 믿지 않는다: 1MB 이하 JSON 이어야 하고, 아는 키만, 모양이 맞는 값만
+// 깨졌을 때 되살린다. 담는 것은 렌더러가 저장하는 설정 전부(STATE_KEYS)이고 창 위치는 뺀다. 불러올 파일은 믿지 않는다: 1MB 이하 JSON 이어야 하고, 아는 키만, 모양이 맞는 값만
 // 쓴다(세세한 값은 렌더러가 시작할 때 다시 거른다). 확인 창에서 바꾸기를 눌러야만 바꾸고, 그 직전 설정은 고른
 // 파일과 같은 폴더에 따로 저장해 잘못 불러와도 되돌릴 수 있게 한다. 파일에 없는 설정은 그대로 둔다.
-const BACKUP_KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles',
-  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'];
 const BACKUP_MAX_BYTES = 1024 * 1024;
 const BACKUP_FILTERS = [{ name: '설정 백업(JSON)', extensions: ['json'] }];
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const positive = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const pad2 = (n) => String(n).padStart(2, '0');
 const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const backupState = () => Object.fromEntries(BACKUP_KEYS.map((k) => [k, store.get(k)]));
-const backupJson = () => JSON.stringify({ app: 'stock-widget', version: 1, savedAt: new Date().toISOString(), state: backupState() }, null, 2);
+const backupJson = () => JSON.stringify({ app: 'stock-widget', version: 1, savedAt: new Date().toISOString(), state: storedState() }, null, 2);
 const backupCounts = (s) => ({ watchlist: (s.watchlist || []).length, holdings: Object.keys(s.holdings || {}).length,
   targets: Object.keys((s.alerts && s.alerts.targets) || {}).length });
 // 창이 있으면 그 창에 붙여 띄운다(창 뒤로 숨지 않게)
@@ -318,7 +306,7 @@ ipcMain.handle('backup:export', async () => {
       defaultPath: path.join(app.getPath('documents'), `stock-widget-backup-${ymd(new Date())}.json`) }));
     if (pick.canceled || !pick.filePath) return { ok: false, canceled: true };
     fs.writeFileSync(pick.filePath, backupJson());
-    return { ok: true, path: pick.filePath, counts: backupCounts(backupState()) };
+    return { ok: true, path: pick.filePath, counts: backupCounts(storedState()) };
   } catch (err) {
     return { ok: false, error: err.message || '내보내기 실패' };
   }
@@ -338,7 +326,7 @@ ipcMain.handle('backup:import', async () => {
     }
     const next = cleanBackup(raw);
     if (!next) return { ok: false, error: '백업 파일이 아닙니다(아는 설정이 없음)' };
-    const counts = backupCounts({ ...backupState(), ...next });
+    const counts = backupCounts({ ...storedState(), ...next });
     const now = new Date();
     const before = path.join(path.dirname(file),
       `stock-widget-before-import-${ymd(now)}-${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}.json`);

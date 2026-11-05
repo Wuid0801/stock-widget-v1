@@ -118,7 +118,7 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 | `indicators` | 보조 지표 켜짐 `{ bb, vwap, volAvg, prevHL, vp, rel, sar }` (기본 모두 꺼짐). 아는 키의 `true` 만 믿는다(`cleanIndicators`) |
 | `infoOpen` | 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지 (기본 펼침). 세 줄의 `hidden` 은 각자 그리는 함수가 정하므로, 접기는 손잡이 `#infoToggle` 의 `.off` 와 CSS 형제 선택자로만 숨긴다. 접혀 있으면 손잡이 툴팁이 보이던 줄의 내용을 글자로 미리 보인다(`infoTip`, 갱신마다 다시 씀) |
 
-저장 값을 추가할 때는 렌더러(renderer/actions.js)의 save() 와 main.js 의 state:set · state:get · 설정 백업의 `BACKUP_KEYS` 네 곳을 모두 고쳐야 하며, `tests/state-contract.mjs` 가 이를 검사합니다. 백업에서 불러올 때 그 값의 모양을 보는 검사도 `cleanBackup` 에 넣습니다 — 없으면 불러오기에서 그 값만 조용히 빠집니다.
+저장 값을 추가할 때는 렌더러(renderer/actions.js)의 save() 와 main.js 의 `STATE_KEYS` 두 곳을 고칩니다 — state:get · state:set · 설정 백업이 모두 이 목록을 쓰고(2026-11-05 까지는 세 목록이 따로 있었다), `tests/state-contract.mjs` 가 save() 와 같은지 검사합니다. 백업에서 불러올 때 그 값의 모양을 보는 검사도 `cleanBackup` 에 넣습니다 — 없으면 불러오기에서 그 값만 조용히 빠집니다.
 
 읽어 온 값은 믿지 않습니다. 시작할 때 모르는 이동평균 기간 · 색 · 굵기는 버리고, 모르는 `chartMode` 는 캔들, 없는 선택 종목은 첫 종목, 이 빌드에 없는 `timeframe` 은 `1D` 로 바꿉니다(`validTimeframe`) — 그대로 쓰면 차트가 매 갱신 예외로 끝나 조용히 빕니다. 기간을 빼거나 이름을 바꾸는 빌드가 나와도 같은 설정 폴더를 쓰는 다른 빌드가 멈추지 않게 하려는 것입니다.
 
@@ -130,7 +130,7 @@ Windows  %APPDATA%\kr-stock-widget\config.json
 
 설정 패널 맨 아래 `백업` 의 `내보내기`(`#backupExport`) · `불러오기`(`#backupImport`)입니다. 파일 창 · 확인 창 · 파일 검증은 main 이 맡고(`backup:export` · `backup:import`), 렌더러는 결과 한 줄(`#backupMsg`)만 씁니다(`exportBackup` · `importBackup`).
 
-- **담는 것** — 렌더러가 저장하는 설정 전부(`BACKUP_KEYS`, `state:set` 허용목록과 같다 — `tests/state-contract.mjs`). 창 위치 `bounds` 는 뺍니다. 파일은 `{ app: 'stock-widget', version: 1, savedAt, state }` 를 2칸 들여 쓴 JSON 입니다. 내보내기 전에 `save()` 를 먼저 기다려 마지막 변경까지 담습니다.
+- **담는 것** — 렌더러가 저장하는 설정 전부(`STATE_KEYS` — 읽기 · 쓰기와 같은 목록). 창 위치 `bounds` 는 뺍니다. 파일은 `{ app: 'stock-widget', version: 1, savedAt, state }` 를 2칸 들여 쓴 JSON 입니다. 내보내기 전에 `save()` 를 먼저 기다려 마지막 변경까지 담습니다.
 - **불러올 파일은 믿지 않습니다** — 1MB 이하 · JSON(BOM 은 뗌)이어야 하고, 아는 키 중 모양이 맞는 값만 씁니다(`cleanBackup`). 관심종목은 기호가 맞고 겹치지 않는 줄만, 보유는 수량 · 평단가가 0보다 큰 것만, 목표가는 0보다 큰 값만, 테마 · 차트 모드 · 투명도(30~100) · 이동평균 기간(1~1000 정수)은 아는 값만 받습니다. 모양이 틀린 설정은 그 설정만 건너뛰고, 파일에 없는 설정은 그대로 둡니다. 이동평균 색 · 보조 지표 같은 세부 값은 렌더러가 시작할 때 다시 거릅니다(`cleanMaStyles` · `cleanIndicators` · `validTimeframe`). 내보낸 꼴(`{ state }`)과 설정 파일(`config.json` · `config.broken-….json`) 꼴을 둘 다 받습니다.
 - **바꾸기 전에** 관심종목 · 보유 · 목표가가 불러온 뒤 몇 개가 되는지 확인 창으로 묻습니다(`취소` 가 기본). `바꾸기` 를 누르면 그 직전 설정을 고른 파일과 같은 폴더에 `stock-widget-before-import-YYYY-MM-DD-HHMMSS.json` 으로 쓴 다음 `store.set` 합니다 — 잘못 불러왔으면 그 파일을 다시 불러오면 됩니다.
 - **불러온 뒤** 렌더러는 `location.reload()` 로 처음부터 다시 뜹니다. 시작할 때 설정을 거르는 규칙을 그대로 타게 하려는 것입니다. 렌더러에는 창을 닫을 때 저장하는 코드가 없고 `save()` 는 모두 손으로 고칠 때만 불리므로(확인 창은 창에 붙은 모달), 다시 뜨면서 예전 값을 덮어쓰지 않습니다.
