@@ -231,7 +231,7 @@ let drawnKey = null; // 지금 그려진 차트의 '종목|기간'. 없으면 nu
 let metricsOn = false;
 const metricsCache = new Map(); // symbol -> { at, d(naver:detail 응답) }
 const metricsLoading = new Set();
-let metricsShown = { symbol: null, html: null }; // 지금 화면에 쓴 것
+let metricsShown = { key: null, html: null }; // 지금 화면에 쓴 것(key 는 종목)
 const METRICS_TTL = 60000;
 // 시장 순위 패널. 지금 보는 시장 · 탭은 저장하지 않는다(다시 켜면 국내 인기 검색).
 const RANK_TABS = {
@@ -408,6 +408,36 @@ const rankCache = new Map(); // 'kr|up' · 'kr|industry|278' -> { at, d(naver:ra
 const rankLoading = new Set();
 let rankShown = { key: null, html: null }; // 지금 목록에 쓴 것
 const RANK_TTL = 60000;
+
+// 키마다 받아 기억하는 응답(순위 · 종목 지표) — 받는 중이면 또 묻지 않는다. 다시 받다 실패하면 있던 것을 둔다. 받으면
+// render 로 지금 보는 것을 다시 그린다 — 그사이 다른 화면으로 옮겼으면 늦게 온 응답은 캐시에만 남는다.
+// loadRank · loadMetrics 가 줄마다 같은 코드를 따로 갖고 있던 것을 하나로(2026-11-05).
+async function loadInto(cache, loading, key, call, render) {
+  if (loading.has(key)) return;
+  loading.add(key);
+  let d;
+  try {
+    d = await call();
+  } catch (e) {
+    d = { ok: false, error: e.message };
+  } finally {
+    loading.delete(key);
+  }
+  const prev = cache.get(key);
+  const keep = prev && prev.d && prev.d.ok && !(d && d.ok);
+  cache.set(key, { at: Date.now(), d: keep ? prev.d : d || { ok: false, error: '응답 없음' } });
+  render();
+}
+
+// 바뀐 때만 innerHTML 을 다시 쓴다(30초마다 다시 쓰면 마우스를 올린 줄 · 스크롤이 풀린다). 같은 화면(key)이면 스크롤을
+// 지키고 다른 화면이면 맨 위로. 돌려준 것을 shown 자리에 다시 넣는다.
+function writeIfChanged(el, shown, key, html) {
+  if (html === shown.html && key === shown.key) return shown;
+  const keep = key === shown.key ? el.scrollTop : 0;
+  el.innerHTML = html;
+  el.scrollTop = keep;
+  return { key, html };
+}
 // 지표 화면의 수급 · 일별 종가 · HY OAS(main 의 market:extras). 지표 화면이 열려 있을 때만 받고 1분 쓴다(RANK_TTL).
 let marketExtras = null; // { at, d(market:extras 응답) }
 let marketLoading = false;

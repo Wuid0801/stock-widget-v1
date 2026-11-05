@@ -278,31 +278,12 @@ function renderMetrics() {
   if (!on) return;
   const hit = metricsCache.get(item.symbol);
   const html = metricsHtml(item, hit && hit.d, quotes[item.symbol]);
-  if (html !== metricsShown.html || item.symbol !== metricsShown.symbol) {
-    const keep = item.symbol === metricsShown.symbol ? panel.scrollTop : 0;
-    panel.innerHTML = html;
-    panel.scrollTop = keep;
-    metricsShown = { symbol: item.symbol, html };
-  }
+  metricsShown = writeIfChanged(panel, metricsShown, item.symbol, html);
   if (!hit || Date.now() - hit.at >= METRICS_TTL) loadMetrics(item.symbol);
 }
 
-// 받는 중이면 또 묻지 않는다. 다시 받다 실패하면 있던 것을 둔다. 받으면 다시 그린다 — renderMetrics 는
-// 늘 고른 종목을 그리므로 그사이 다른 종목으로 넘어갔으면 늦게 온 응답은 캐시에만 남는다.
-async function loadMetrics(symbol) {
-  if (metricsLoading.has(symbol)) return;
-  metricsLoading.add(symbol);
-  let d;
-  try {
-    d = await api.detail(symbol);
-  } catch (e) {
-    d = { ok: false, error: e.message };
-  } finally {
-    metricsLoading.delete(symbol);
-  }
-  const prev = metricsCache.get(symbol);
-  const keep = prev && prev.d && prev.d.ok && !(d && d.ok);
-  metricsCache.set(symbol, { at: Date.now(), d: keep ? prev.d : d || { ok: false, error: '응답 없음' } });
-  renderMetrics();
+// 종목 지표를 받아 기억하고 다시 그린다(loadInto) — renderMetrics 는 늘 고른 종목을 그린다.
+function loadMetrics(symbol) {
+  return loadInto(metricsCache, metricsLoading, symbol, () => api.detail(symbol), () => renderMetrics());
 }
 

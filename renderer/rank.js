@@ -364,12 +364,7 @@ function renderRank() {
   const hit = mk ? null : rankCache.get(key);
   const html = mk ? marketHtml() : (group ? rankBackHtml(kind, group) : '') + rankHtml(hit && hit.d, market, kind);
   const list = document.getElementById('rankList');
-  if (html !== rankShown.html || key !== rankShown.key) {
-    const keep = key === rankShown.key ? list.scrollTop : 0;
-    list.innerHTML = html;
-    list.scrollTop = keep;
-    rankShown = { key, html };
-  }
+  rankShown = writeIfChanged(list, rankShown, key, html);
   if (!mk && (!hit || Date.now() - hit.at >= RANK_TTL)) loadRank(market, kind, group ? group.no : undefined);
   if (mk && (!marketExtras || Date.now() - marketExtras.at >= RANK_TTL)) loadMarket();
 }
@@ -397,24 +392,11 @@ async function loadMarket() {
   renderRank();
 }
 
-// 받는 중이면 또 묻지 않는다. 다시 받다 실패하면 있던 것을 둔다. 받으면 지금 보는 것을 다시 그린다 —
-// 그사이 다른 탭으로 옮겼으면 늦게 온 응답은 캐시에만 남는다. no 는 업종 · 테마 안의 묶음 번호.
-async function loadRank(market, kind, no) {
+// 순위 하나를 받아 기억하고 다시 그린다(loadInto). no 는 업종 · 테마 안의 묶음 번호.
+function loadRank(market, kind, no) {
   const key = rankKey({ market, kind, group: no === undefined ? null : { no } });
-  if (rankLoading.has(key)) return;
-  rankLoading.add(key);
-  let d;
-  try {
-    d = await api.rank(no === undefined ? { market, kind } : { market, kind, no });
-  } catch (e) {
-    d = { ok: false, error: e.message };
-  } finally {
-    rankLoading.delete(key);
-  }
-  const prev = rankCache.get(key);
-  const keep = prev && prev.d && prev.d.ok && !(d && d.ok);
-  rankCache.set(key, { at: Date.now(), d: keep ? prev.d : d || { ok: false, error: '응답 없음' } });
-  renderRank();
+  return loadInto(rankCache, rankLoading, key, () => api.rank(no === undefined ? { market, kind } : { market, kind, no }),
+    () => renderRank());
 }
 
 // 시장을 바꿔도 지금 탭이 그 시장에도 있으면 그대로(급등 → 급등), 없으면(국내 인기 검색 · 미국 시총 상위) 첫 탭.
