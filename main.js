@@ -548,6 +548,9 @@ const US_INDICES = { '.IXIC': { code: 'NASDAQ', name: '나스닥' }, '.INX': { c
 ipcMain.handle('quote:indices', async () => {
   // 지수 헤더용 값. 빠진 값은 0 이 아니라 null(numberOrNull) — 0 이면 시가 0 캔들, 전일 대비 0 이 된다.
   const naver = async (url) => (await naverJson(url)).datas || [];
+  // 선물 · 유가 · 미국채의 네이버 코드는 1D 차트와 같은 표(NAVER_DAY)에서 읽는다 — 두 곳에 따로 적으면 한쪽만 고쳐져
+  // 지수 줄 값과 1D 차트가 다른 것을 볼 수 있었다(2026-11-06)
+  const rc = (symbol) => NAVER_DAY[symbol].reutersCode;
   const item = (d, code, name) => ({
     code,
     name,
@@ -570,17 +573,17 @@ ipcMain.handle('quote:indices', async () => {
     naver('https://polling.finance.naver.com/api/realtime/worldstock/index/.IXIC,.INX,.VIX,.SOX')
       .then((ds) => ds.filter((d) => US_INDICES[d.reutersCode])
         .map((d) => item(d, US_INDICES[d.reutersCode].code, US_INDICES[d.reutersCode].name))),
-    naver('https://polling.finance.naver.com/api/realtime/worldstock/futures/NQcv1')
-      .then((ds) => ds.filter((d) => d.reutersCode === 'NQcv1').map((d) => item(d, 'NQ', '나스닥 선물'))),
-    naver('https://polling.finance.naver.com/api/realtime/marketindex/energy/CLcv1')
-      .then((ds) => ds.filter((d) => d.reutersCode === 'CLcv1').map((d) => item(d, 'WTI', 'WTI'))),
-    // 브렌트유(시장 지표 화면, 2026-11-03 사용자 요청) — WTI 와 같은 네이버 에너지 주소. 코드 LCOcv1 은 네이버 모바일 원자재
+    naver(`https://polling.finance.naver.com/api/realtime/worldstock/futures/${rc('NQ=F')}`)
+      .then((ds) => ds.filter((d) => d.reutersCode === rc('NQ=F')).map((d) => item(d, 'NQ', '나스닥 선물'))),
+    naver(`https://polling.finance.naver.com/api/realtime/marketindex/energy/${rc('CL=F')}`)
+      .then((ds) => ds.filter((d) => d.reutersCode === rc('CL=F')).map((d) => item(d, 'WTI', 'WTI'))),
+    // 브렌트유(시장 지표 화면, 2026-11-03 사용자 요청) — WTI 와 같은 네이버 에너지 주소. 코드(LCOcv1)는 네이버 모바일 원자재
     // 페이지의 것으로, 실제 응답은 앱 밖에서 확인하지 못했다(check:sources 가 본다)
-    naver('https://polling.finance.naver.com/api/realtime/marketindex/energy/LCOcv1')
-      .then((ds) => ds.filter((d) => d.reutersCode === 'LCOcv1').map((d) => item(d, 'BRENT', '브렌트유'))),
+    naver(`https://polling.finance.naver.com/api/realtime/marketindex/energy/${rc('BZ=F')}`)
+      .then((ds) => ds.filter((d) => d.reutersCode === rc('BZ=F')).map((d) => item(d, 'BRENT', '브렌트유'))),
     // 국채는 폴링 주소가 없다(404) — 상세를 받는다
-    naverJson('https://api.stock.naver.com/marketindex/bond/US10YT=RR')
-      .then((d) => (d && d.reutersCode === 'US10YT=RR' ? [item(d, 'US10Y', '미국채 10년')] : [])),
+    naverJson(`https://api.stock.naver.com/marketindex/bond/${rc('^TNX')}`)
+      .then((d) => (d && d.reutersCode === rc('^TNX') ? [item(d, 'US10Y', '미국채 10년')] : [])),
     usdKrwItem(),
   ]);
   // 종가 · 등락률이 비면 그 지수는 뺀다 — 0 으로 읽으면 지수 줄에 "코스피 0.00" 이 뜬다.
