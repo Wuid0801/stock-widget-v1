@@ -197,10 +197,15 @@ function rsiFor(symbol, times, closes, warm) {
     const d = quotes[symbol] && quotes[symbol].daily;
     if (!d) return null;
     const r = rsiSeries(d.closes, RSI_PERIOD);
+    const g = rsiSignal(r, RSI_SIGNAL);
     data = alignByDay(d.times, r, times);
     if (!data) return null;
-    signal = alignByDay(d.times, rsiSignal(r, RSI_SIGNAL), times) || times.map(() => null);
-    found = crossings(data, signal);
+    signal = alignByDay(d.times, g, times) || times.map(() => null);
+    // 첫 봉의 교차는 일봉에서 그 앞 거래일과 견준다(1D · 1W 처럼) — 보이는 구간만 견주면 첫 봉에서 뚫은 교차가 늘 빠졌다
+    const first = Math.floor(times[0] / 86400000); // alignByDay 와 같은 UTC 날짜 짝짓기
+    let k = d.times.length - 1;
+    while (k >= 0 && Math.floor(d.times[k] / 86400000) >= first) k--;
+    found = crossings([r[k], ...data], [g[k], ...signal]).map((c) => ({ ...c, i: c.i - 1 }));
   } else {
     const pre = warm || [];
     const r = rsiSeries([...pre, ...closes], RSI_PERIOD);

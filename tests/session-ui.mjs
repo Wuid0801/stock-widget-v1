@@ -992,6 +992,22 @@ await test('indicators: RSI continues from the daily history, 1D from the earlie
   assert.equal(run(`rsiFor('X', ${JSON.stringify(T.slice(-20))}, ${JSON.stringify(C.slice(-20))}, null)`), null, '일봉이 없으면 없다');
 });
 
+await test('indicators: a daily-period RSI cross on the first visible bar counts — compared with the trading day before, like 1D', () => {
+  // 보이는 구간만 잘라 견주던 때는 첫 봉에서 뚫은 교차가 늘 빠졌다 — 그것뿐이면 범례가 "확정된 교차가 없습니다" 였다(2026-11-06)
+  const { c, run } = harness(['rsiFor']);
+  const t0 = Date.parse('2026-06-01T00:00:00Z');
+  const N = 80;
+  const T = Array.from({ length: N }, (_, i) => t0 + i * 86400000);
+  const C = Array.from({ length: N }, (_, i) => 100 + 8 * Math.sin(i / 2.5) + (i % 3));
+  const full = c.rsiSeries(C);
+  const at = c.crossings(full, c.rsiSignal(full)).find((x) => x.i >= 30 && x.i < N - 5);
+  assert.ok(at, '이 가짜 주가에는 가운데쯤 교차가 있다');
+  run(`quotes.X = { daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} } }; state.timeframe = '1M';`);
+  const r = run(`rsiFor('X', ${JSON.stringify(T.slice(at.i))}, ${JSON.stringify(C.slice(at.i))}, null)`);
+  assert.equal(JSON.stringify(r.crosses[0] && [r.crosses[0].i, r.crosses[0].golden]), JSON.stringify([0, at.golden]),
+    '첫 봉의 교차도 점과 범례에 든다');
+});
+
 await test('indicators: 1D RSI warm-up asks 5 days of 5-minute bars once a day and keeps those before the chart', async () => {
   const { c, run } = harness(['rsiWarmFor']);
   const asked = [];
