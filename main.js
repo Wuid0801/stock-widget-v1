@@ -166,6 +166,7 @@ function createWindow() {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
+    // build/ 는 electron-builder 가 기본으로 설치본에서 빼므로 package.json build.files 에 이 파일을 따로 넣는다(2026-11-06)
     icon: path.join(__dirname, 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

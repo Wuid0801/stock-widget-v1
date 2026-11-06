@@ -37,6 +37,8 @@ let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
 
 check('asar 로 묶임', fs.existsSync(path.join(OUT, 'win-unpacked', 'resources', 'app.asar')));
+// 창 아이콘(main.js 의 build/icon.ico) — build/ 는 electron-builder 가 기본으로 빼서 package.json build.files 에 따로 넣는다
+check('창 아이콘이 asar 안에 있다', fs.readFileSync(ASAR).includes('"icon.ico"'));
 check('설치 파일 생성됨', fs.readdirSync(OUT).some((f) => f.endsWith('.exe') && f.includes('Setup')));
 
 fs.writeFileSync(CFG_PATH, '{}');

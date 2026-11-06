@@ -33,6 +33,7 @@
     },
     "files": [
       "**/*",
+      "build/icon.ico",
       "!tests/**",
       "!docs/**",
       "!*.md",
