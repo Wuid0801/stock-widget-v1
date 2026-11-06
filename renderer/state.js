@@ -65,7 +65,7 @@ function cleanMaStyles(raw) {
 const INDICATORS = [
   { key: 'bb', label: '볼린저', varName: '--bb-line', title: '볼린저 밴드 — 20일 평균 ± 2표준편차 (1M · 3M · 1Y · 3Y)' },
   { key: 'vwap', label: 'VWAP', varName: '--vwap-line', title: '거래량 가중 평균가 — 그날 정규장 봉만 (1D)' },
-  { key: 'volAvg', label: '거래량 평균', varName: '--vol-avg', title: '거래량 20봉 평균선 · 평균의 2배 넘는 막대 강조 (모든 기간)' },
+  { key: 'volAvg', label: '거래량 평균', varName: '--vol-avg', title: '거래량 평균선 — 20봉, 1D 는 6봉(30분) · 늘고 주는 모양만(막대 높이와 견주지 않음) · 평균의 2배 넘는 막대 강조 (모든 기간)' },
   { key: 'prevHL', label: '전일 고저', varName: '--prev-line', title: '어제 고가 · 저가 점선 (1D)' },
   { key: 'vp', label: '매물대', varName: '--vp-poc', title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
   { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%포인트)과, 첫 봉을 종목 가격에 맞춘 지수 점선 — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
@@ -76,6 +76,9 @@ const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸
 const BB_PERIOD = 20;
 const BB_K = 2;
 const VOL_AVG = 20;   // 거래량 평균 봉 수
+// 1D(5분봉)는 6봉(30분) — 20봉(100분)이면 장 초반에 몰린 거래에 끌려 오후까지 내려가기만 하고, 중간의 큰 막대 하나는
+// 1/20 만 반영돼 선이 거의 움직이지 않았다(2026-11-06 사용자). 평균의 2배 강조 · 툴팁 배수도 이 평균 기준이다.
+const VOL_AVG_1D = 6;
 const VOL_SURGE = 2;  // 평균의 몇 배부터 막대를 진하게 칠하나
 const SAR_STEP = 0.02; // 파라볼릭 SAR 가속 — 흔한 기본값(와일더)
 const SAR_MAX = 0.2;

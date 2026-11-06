@@ -250,10 +250,10 @@ function dailyVolAvg(symbol, times) {
 }
 
 // 분봉(1D · 1W) · 전체 탭은 받은 봉으로. 1D 시간외 봉과 거래량 0 인 봉(끼운 끝점 · 야후 종가 봉)은
-// 평균에서 빼고 그 칸은 비운다 — 시간외 거래량은 기준이 다르다(미국 프리 0, 국내는 NXT).
-function seriesVolAvg(volumes, ext) {
+// 평균에서 빼고 그 칸은 비운다 — 시간외 거래량은 기준이 다르다(미국 프리 0, 국내는 NXT). period 는 1D 만 VOL_AVG_1D.
+function seriesVolAvg(volumes, ext, period = VOL_AVG) {
   const idx = volumes.map((_, i) => i).filter((i) => !(ext && ext[i]) && volumes[i] > 0);
-  const avg = sma(idx.map((i) => volumes[i]), VOL_AVG);
+  const avg = sma(idx.map((i) => volumes[i]), period);
   const out = new Array(volumes.length).fill(null);
   idx.forEach((i, k) => { out[i] = avg[k]; });
   return out;
@@ -611,7 +611,8 @@ async function loadChart() {
   const vw = ind.vwap && state.timeframe === '1D'
     ? vwap(highs, lows, closes, volumes, (i) => !(ext && ext[i])) : null;
   const vwapLine = vw && vw.some((v) => v != null) ? vw : null;
-  const volAvg = ind.volAvg ? (daily ? dailyVolAvg(item.symbol, times) : seriesVolAvg(volumes, ext)) : null;
+  const volAvg = !ind.volAvg ? null : daily ? dailyVolAvg(item.symbol, times)
+    : seriesVolAvg(volumes, ext, state.timeframe === '1D' ? VOL_AVG_1D : VOL_AVG);
   // SAR 은 1D · 1W 와 일봉 기간만 — 전체(월봉 · 분기봉)는 봉 크기가 들쭉날쭉하다. 1W(30분봉)는 1D 처럼 받은 봉만으로
   // 5일 전 첫 봉부터(더 긴 분봉 이력이 없다). 밤 사이 갭에서 뒤집히기도 하지만 드물었다(2026-10-15 실측).
   const sar = !ind.sar ? null

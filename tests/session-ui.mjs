@@ -684,6 +684,14 @@ await test('indicators: loadChart passes only the enabled overlays — bands and
   d = await draw('1D', { vwap: false, prevHL: false }, oneDay);
   assert.equal(d.vwapLine, null);
   assert.equal(d.hLines.some((l) => l.label === '전고'), false);
+
+  // 1D 거래량 평균은 6봉(30분) — 20봉이면 장 초반 거래에 끌려 오후까지 내려가기만 했다(2026-11-06)
+  const eight = { ok: true, closes: new Array(8).fill(100), volumes: new Array(8).fill(100), opens: new Array(8).fill(100),
+    highs: new Array(8).fill(100), lows: new Array(8).fill(100), ext: new Array(8).fill(null),
+    times: Array.from({ length: 8 }, (_, i) => T1(`09:${String(i * 5).padStart(2, '0')}`)) };
+  d = await draw('1D', { volAvg: true }, eight);
+  assert.equal(d.volAvg[4], null, '다섯째 봉까지는 아직 평균이 없다');
+  assert.equal(d.volAvg[5], 100, '1D 는 여섯째 봉(30분)부터 평균');
 });
 
 await test('indicators: volume average leaves out extended and zero-volume bars; previous day uses the market\'s own date', () => {
@@ -738,6 +746,9 @@ await test('indicators: drawChart draws the band as a filled pair, VWAP on the p
   assert.equal(vw.yAxisID, 'y');
   const avg = sets.find((d) => d.borderColor === '--vol-avg');
   assert.equal(avg.yAxisID, 'yVol', '거래량 평균은 거래량 축');
+  // 보이는 평균의 최저(10)~최고(20)를 막대 칸(0~최대 거래량 50)의 10~100% 로 늘린다 — 막대와 같은 눈금이면 거의 직선이었다
+  assert.equal(JSON.stringify(avg.data.map((v) => (v == null ? v : Math.round(v * 1000) / 1000))), '[null,5,50,27.5]',
+    '평균선은 늘고 주는 모양이 보이게 늘려 그린다');
   const vol = sets.find((d) => d.isVolume);
   assert.equal(JSON.stringify(vol.backgroundColor), '["a0.2","a0.2","a0.55","a0.2"]', '평균의 2배 넘는 막대만 진하게');
 

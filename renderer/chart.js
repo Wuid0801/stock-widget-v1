@@ -580,6 +580,16 @@ function drawChart(arg) {
   // 확대 중에는 보이는 구간의 최댓값으로 — 전체 최댓값이면 막대가 납작해진다.
   const shownVol = zr ? volumes.slice(zr.from, zr.to + 1) : volumes;
   const maxVol = shownVol.length ? Math.max(...shownVol) : 0;
+  // 거래량 평균선은 보이는 구간의 최저~최고를 거래량 칸(막대 0~maxVol) 안의 10~100% 로 늘려 그린다 — 막대와 같은 눈금이면
+  // 평균이 아래 1/4 칸 안에서 거의 직선이라 늘고 주는지가 안 보였다(2026-11-06). 그래서 선 높이는 막대와 견주는 값이
+  // 아니다 — 평균의 2배 막대 강조 · 툴팁의 "평균의 N배" 는 실제 평균(volAvg)으로 센다.
+  const volAvgLine = (() => {
+    const shown = volAvg && maxVol > 0 ? (zr ? volAvg.slice(zr.from, zr.to + 1) : volAvg).filter(Number.isFinite) : [];
+    if (!shown.length) return null;
+    const lo = Math.min(...shown);
+    const hi = Math.max(...shown);
+    return volAvg.map((v) => (Number.isFinite(v) ? maxVol * (hi > lo ? 0.1 + (0.9 * (v - lo)) / (hi - lo) : 0.55) : null));
+  })();
   // RSI 교차 봉 → { golden(위로 뚫었는지), open(1D 진행 중인 마지막 봉 — 테두리 점) }
   const rsiDot = new Map(rsi ? [...rsi.crosses.map((x) => [x.i, { golden: x.golden, open: false }]),
     ...(rsi.pending ? [[rsi.pending.i, { golden: rsi.pending.golden, open: true }]] : [])] : []);
@@ -754,9 +764,9 @@ function drawChart(arg) {
         barPercentage: 1,
         categoryPercentage: 1,
       }] : []),
-      // 거래량 평균선(보조 지표). 거래량 축에 그린다.
-      ...(maxVol > 0 && volAvg ? [{
-        data: volAvg,
+      // 거래량 평균선(보조 지표). 거래량 칸에 늘고 주는 모양만(volAvgLine — 위).
+      ...(volAvgLine ? [{
+        data: volAvgLine,
         yAxisID: 'yVol',
         order: 0,
         borderColor: cssVar('--vol-avg'),
