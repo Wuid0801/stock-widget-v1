@@ -39,7 +39,7 @@ function mcUp(days, date) {
   return i > 0 ? days[i].close > days[i - 1].close : null;
 }
 
-// 외국인 현물: 확정된 마지막 두 날 모두 순매수면 긍정, 마지막 확정일에 코스피가 올랐는데 순매도면 위험. 18:00 전 오늘(잠정)은 안 쓴다.
+// 외국인 현물: 확정된 마지막 두 날 모두 순매수면 긍정, 마지막 확정일에 코스피가 올랐는데 순매도면 위험. 확정 전(main.js FLOW_FINAL, 20:30 전) 오늘(잠정)은 안 쓴다.
 function mcSpot(flows, kospiDays) {
   const done = mcFinal(flows);
   if (!done.length) return mcNone('spot');

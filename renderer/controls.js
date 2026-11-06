@@ -28,6 +28,14 @@ function setTimeframe(key) {
   zoom = zoomByTf[key] || null;
 }
 
+// 기간 버튼 · 숫자 단축키 — 기간을 바꾸고 저장한 뒤 탭과 차트를 다시 그린다(두 곳에 같은 네 줄이 따로 있었다).
+function pickTimeframe(key) {
+  setTimeframe(key);
+  save();
+  renderTabs();
+  return loadChart();
+}
+
 // 종목이 바뀌면 모든 기간의 확대를 버린다 — 다른 종목에 같은 날짜 구간은 뜻이 없다.
 function clearZooms() {
   zoom = null;
@@ -149,12 +157,7 @@ function renderTabs() {
     const b = document.createElement('button');
     b.textContent = key;
     b.className = key === state.timeframe ? 'on' : '';
-    b.onclick = async () => {
-      setTimeframe(key);
-      save();
-      renderTabs();
-      await loadChart();
-    };
+    b.onclick = () => pickTimeframe(key);
     box.appendChild(b);
   }
 }

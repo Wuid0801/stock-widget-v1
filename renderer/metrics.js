@@ -128,9 +128,6 @@ function metricsHtml(item, d, q) {
   const colored = (text, v) => `<b style="color:${plColor(v)}">${text}</b>`;
   const signedVol = (v) => (v > 0 ? '+' : v < 0 ? '-' : '') + fmtVol(Math.abs(v));
   const cell = (v) => (v == null ? '<td>—</td>' : `<td style="color:${plColor(v)}">${signedVol(v)}</td>`);
-  const mmdd = (s) => { const n = String(s).replace(/\D/g, ''); return `${n.slice(4, 6)}/${n.slice(6, 8)}`; };
-  const p2 = (n) => String(n).padStart(2, '0');
-  const stamp = (ms) => { const t = new Date(ms); return `${p2(t.getMonth() + 1)}/${p2(t.getDate())} ${p2(t.getHours())}:${p2(t.getMinutes())}`; };
   const sec = (title, body) => `<section><h5>${title}</h5>${body}</section>`;
   // 항목 하나(1년 +117.89% · 외국인 소진율 45.98%)는 줄바꿈하지 않는다 — 폭 340px 에서 '1 / 년' 으로 쪼개졌다
   const list = (items) => items.map((x) => `<span class="mxi">${x}</span>`).join(' · ');

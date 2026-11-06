@@ -172,10 +172,8 @@ async function refreshNow() {
   // 이동평균 색 · 굵기 — 잘못된 값은 버리고 기본으로 그린다(applyTheme 가 칩을 그리기 전에)
   state.maStyles = cleanMaStyles(state.maStyles);
   state.indicators = cleanIndicators(state.indicators);
-  applyTheme(state.theme);
+  applyTheme(state.theme); // 이동평균 · 보조 지표 칩도 여기서 그린다
   applyOpacity(state.opacity);
-  renderMaChips();
-  renderIndChips();
   state.selected = validSelection(state.selected, state.watchlist); // 지수를 보던 중이면 그대로
   state.timeframe = validTimeframe(state.timeframe);
 

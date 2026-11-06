@@ -635,7 +635,7 @@ await test('indicators: loadChart passes only the enabled overlays — bands and
   run(`quotes['005930.KS'] = { price: ${C[N - 1]}, prevClose: 100, change: 4, live: true,
     daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} },
     dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(V)} },
-    recentBars: { times: [${Date.parse('2026-09-09T00:00:00Z')}, ${Date.parse('2026-09-10T00:00:00Z')}], highs: [110, 120], lows: [90, 95] } };`);
+    dailyHL: { times: [${Date.parse('2026-09-09T00:00:00Z')}, ${Date.parse('2026-09-10T00:00:00Z')}], highs: [110, 120], lows: [90, 95] } };`);
   const daily = { ok: true, closes: C.slice(-22), times: T.slice(-22), volumes: V.slice(-22),
     opens: C.slice(-22), highs: C.slice(-22), lows: C.slice(-22) };
   const draw = async (tf, ind, b) => {
@@ -699,15 +699,15 @@ await test('indicators: volume average leaves out extended and zero-volume bars;
   assert.equal(avg[21], null, '아직 19개');
 
   // 국내 1D 프리 봉(08:30 KST)은 UTC 로 전날이다 — 한국 날짜로 세야 어제(10/14) 일봉을 고른다
-  run(`quotes['005930.KS'] = { recentBars: { times: [${Date.parse('2026-10-13T00:00:00Z')}, ${Date.parse('2026-10-14T00:00:00Z')}],
+  run(`quotes['005930.KS'] = { dailyHL: { times: [${Date.parse('2026-10-13T00:00:00Z')}, ${Date.parse('2026-10-14T00:00:00Z')}],
     highs: [200, 210], lows: [190, 195] } };`);
   assert.deepEqual({ ...c.prevDayRange('005930.KS', [Date.parse('2026-10-15T08:30:00+09:00')]) }, { high: 210, low: 195 });
   // 미국 1D 애프터 봉(08:55 KST = 뉴욕 10/14 19:55)은 UTC 날짜가 뉴욕 날짜다 — 10/14 일봉은 그날이라 빼고 10/13
-  run(`quotes.SOXL = { recentBars: { times: [${Date.parse('2026-10-13T13:30:00Z')}, ${Date.parse('2026-10-14T13:30:00Z')}],
+  run(`quotes.SOXL = { dailyHL: { times: [${Date.parse('2026-10-13T13:30:00Z')}, ${Date.parse('2026-10-14T13:30:00Z')}],
     highs: [128, 130], lows: [115, 110] } };`);
   assert.deepEqual({ ...c.prevDayRange('SOXL', [Date.parse('2026-10-15T08:55:00+09:00')]) }, { high: 128, low: 115 });
   // 서머타임이 끝나면(11/1~) 뉴욕 19:00~20:00 이 UTC 로 다음 날이다 — 11/17 19:55 EST 봉에서 11/17 일봉(그날)을 고르면 안 된다
-  run(`quotes.SOXL = { recentBars: { times: [${Date.parse('2026-11-16T14:30:00Z')}, ${Date.parse('2026-11-17T14:30:00Z')}],
+  run(`quotes.SOXL = { dailyHL: { times: [${Date.parse('2026-11-16T14:30:00Z')}, ${Date.parse('2026-11-17T14:30:00Z')}],
     highs: [128, 130], lows: [115, 110] } };`);
   assert.deepEqual({ ...c.prevDayRange('SOXL', [Date.parse('2026-11-18T00:55:00Z')]) }, { high: 128, low: 115 }, '겨울(EST) 애프터 끝');
   assert.equal(c.prevDayRange('000660.KS', [1]), null, '일봉이 없으면 그리지 않는다');
@@ -1885,7 +1885,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   run(`let lastDrawSig = null; quotes['005930.KS'] = { price: ${C[N - 1]}, prevClose: 100, change: 4, live: true,
     daily: { times: ${JSON.stringify(T)}, closes: ${JSON.stringify(C)} },
     dailyVolume: { times: ${JSON.stringify(T)}, volumes: ${JSON.stringify(V)} },
-    recentBars: { times: [${Date.parse('2026-09-09T00:00:00Z')}, ${Date.parse('2026-09-10T00:00:00Z')}], highs: [110, 120], lows: [90, 95] } };
+    dailyHL: { times: [${Date.parse('2026-09-09T00:00:00Z')}, ${Date.parse('2026-09-10T00:00:00Z')}], highs: [110, 120], lows: [90, 95] } };
     state.maPeriods = [5]; state.holdings = { '005930.KS': { qty: 1, avg: 101 } };
     state.indicators = cleanIndicators({ bb: true, vwap: true, volAvg: true, prevHL: true, vp: true, rel: true, rsi: true });`);
   const daily = { ok: true, closes: C.slice(-22), times: T.slice(-22), volumes: V.slice(-22),

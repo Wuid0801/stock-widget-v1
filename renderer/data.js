@@ -42,10 +42,8 @@ async function dailyFor(symbol, ttl) {
     // (종목당 약 1,250봉 × 2 — 수십 KB).
     highs: r.highs || [],
     lows: r.lows || [],
-    // 보조 지표용. 거래량 평균은 5년치가 있어야 1M 첫 봉부터 그려지고(이동평균과 같은 이유),
-    // 전일 고가 · 저가는 마지막 며칠의 고 · 저만 있으면 된다.
+    // 보조 지표용. 거래량 평균은 5년치가 있어야 1M 첫 봉부터 그려진다(이동평균과 같은 이유).
     volumes: r.volumes || [],
-    recent: { times: r.times.slice(-5), highs: (r.highs || []).slice(-5), lows: (r.lows || []).slice(-5) },
     currency: r.currency,
     week52High: r.week52High,
     week52Low: r.week52Low,
@@ -136,8 +134,7 @@ async function loadQuote(item, live) {
     daily: { times, closes },
     // 거래량 평균 · 전일 고저(보조 지표). 거래량은 받은 일봉 그대로라 시각도 그 일봉의 것이다.
     dailyVolume: { times: r.times, volumes: r.volumes || [] },
-    dailyHL: { times: r.times, highs: r.highs || [], lows: r.lows || [] },
-    recentBars: r.recent || null,
+    dailyHL: { times: r.times, highs: r.highs || [], lows: r.lows || [] }, // SAR · 전일 고저
   };
 }
 
@@ -269,9 +266,10 @@ function marketDay(ms, symbol) {
   return Math.floor((ms + offset * 3600000) / 86400000);
 }
 
-// 1D 가 보여 주는 날의 바로 앞 거래일 고가 · 저가(전고 · 전저). 날짜는 그 시장의 날짜다(marketDay).
+// 1D 가 보여 주는 날의 바로 앞 거래일 고가 · 저가(전고 · 전저). 날짜는 그 시장의 날짜다(marketDay). 일봉 고 · 저(dailyHL)를
+// 끝에서부터 본다 — 마지막 다섯 봉만 따로 떼어 두던 것(recentBars)은 같은 값의 복사라 지웠다(2026-11-05).
 function prevDayRange(symbol, times) {
-  const r = quotes[symbol] && quotes[symbol].recentBars;
+  const r = quotes[symbol] && quotes[symbol].dailyHL;
   if (!r || !times.length) return null;
   const day = (ms) => marketDay(ms, symbol);
   const shown = day(times[times.length - 1]);

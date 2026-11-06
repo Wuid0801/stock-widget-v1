@@ -117,13 +117,17 @@ function renderMaLegend() {
     add(bl.name, bl.data[i], cssVar('--bench-line'),
       `${bl.name} — 차트 첫 봉의 종목 가격에서 시작하게 맞춘 지수. 두 선이 벌어진 만큼이 초과 수익`, true);
   }
+  // SAR · RSI 의 지금 상태가 언제부터인지 — 1D · 1W 는 전환 시각(축과 같은 형식), 일봉 기간은 전환 뒤 봉 수(거래일, 전환한
+  // 날 포함). 둘이 같은 글로 읽히게 한 곳에서 만든다.
+  const intraday = state.timeframe === '1D' || state.timeframe === '1W';
+  const whenOf = (x) => labelFor(x.flipAt, intraday ? state.timeframe : '1M');
+  const heldFor = (dir, x) => (intraday ? `${dir} · ${whenOf(x)}부터` : `${dir} ${x.since}일째`);
   // SAR 은 마우스를 안 올리면 지금 방향과 그 방향이 이어진 기간 — 매수 · 매도 신호가 아니라 상태만 말한다.
-  // 1D · 1W 는 전환 시각(축과 같은 형식), 일봉 기간은 전환 뒤 봉 수(거래일, 전환한 날 포함). 마우스를 올리면 그 봉의 SAR.
+  // 마우스를 올리면 그 봉의 SAR.
   if (sr) {
     const dir = sr.rising ? '상승' : '하락';
-    const intraday = state.timeframe === '1D' || state.timeframe === '1W';
-    const when = labelFor(sr.flipAt, intraday ? state.timeframe : '1M');
-    add('SAR', hoverIdx != null ? sr.data[hoverIdx] : intraday ? `${dir} · ${when}부터` : `${dir} ${sr.since}일째`,
+    const when = whenOf(sr);
+    add('SAR', hoverIdx != null ? sr.data[hoverIdx] : heldFor(dir, sr),
       cssVar(sr.rising ? '--sar-up' : '--sar-down'),
       `파라볼릭 SAR — ${when} ${dir} 전환 (가속 ${SAR_STEP} · 최대 ${SAR_MAX}). 상승 추세면 점이 봉 아래, 하락 추세면 봉 위\n\n${SAR_EVIDENCE}`);
   }
@@ -139,10 +143,8 @@ function renderMaLegend() {
         `${head} — 보이는 구간에 확정된 교차가 없습니다. ${dots}\n\n${RSI_CROSS_EVIDENCE}`);
     } else {
       const dir = rs.rising ? '상향' : '하향';
-      const intraday = state.timeframe === '1D' || state.timeframe === '1W';
-      const when = labelFor(rs.flipAt, intraday ? state.timeframe : '1M');
-      add('RSI', intraday ? `${dir} · ${when}부터` : `${dir} ${rs.since}일째`, cssVar('--rsi-line'),
-        `${head} — ${when} ${dir} 교차. ${dots}\n\n${RSI_CROSS_EVIDENCE}`);
+      add('RSI', heldFor(dir, rs), cssVar('--rsi-line'),
+        `${head} — ${whenOf(rs)} ${dir} 교차. ${dots}\n\n${RSI_CROSS_EVIDENCE}`);
     }
   }
   // 매물대는 가장 많이 거래된 가격대(진하게 칠한 칸)를 늘 보여 준다

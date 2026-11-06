@@ -44,10 +44,8 @@ function rankHtml(d, market, kind) {
     : label ? '등락률 순 · 일반 주식만(ETF · ETN · 우선주 제외) · 거래대금 10억 원 이상'
     : market === 'kr' ? '일반 주식만(ETF · ETN · 우선주 제외) · 거래대금 10억 원 이상 · 코스피 + 코스닥'
       : kind === 'cap' ? '일반 주식만 · 나스닥 + 뉴욕' : '일반 주식만 · 시총 3억 달러 이상 · 나스닥 + 뉴욕';
-  const p2 = (n) => String(n).padStart(2, '0');
-  const t = new Date(d.at ? Date.parse(d.at) : NaN);
-  const when = Number.isFinite(t.getTime())
-    ? `${p2(t.getMonth() + 1)}/${p2(t.getDate())} ${p2(t.getHours())}:${p2(t.getMinutes())} 기준 · ` : '';
+  const at = d.at ? Date.parse(d.at) : NaN;
+  const when = Number.isFinite(at) ? `${stamp(at)} 기준 · ` : '';
   return `<div class="qhint rnote">${when}${basis}</div>${rows}`;
 }
 
@@ -172,8 +170,8 @@ function marketExtraRow(key) {
       d5: null, d5Unit: '%', valueText: `${signed(last.foreign)}억`, dayText: '', dayTone: last.foreign,
       d5Text: n ? `${n}일 연속 순${last.foreign > 0 ? '매수' : '매도'}` : '—',
       // 이름 아래 첫 줄에 오른쪽 값의 날짜, 둘째 줄에 오늘 잠정 — 한 줄로는 기본 너비(340px)에서 잠정 숫자가 잘린다
-      note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 확정${today ? `\n오늘 잠정 ${signed(today.foreign)}억` : ''}`,
-      title: `외국인 순매수(억 원) ${last.date.slice(4, 6)}/${last.date.slice(6)} 확정\n20:30 전 오늘 값은 잠정`,
+      note: `${mmdd(last.date)} 확정${today ? `\n오늘 잠정 ${signed(today.foreign)}억` : ''}`,
+      title: `외국인 순매수(억 원) ${mmdd(last.date)} 확정\n20:30 전 오늘 값은 잠정`,
       spark: done.slice(-20).map((f) => f.foreign) };
   }
   // HYOAS · CURVE(미국 장단기 금리차 10년 − 2년, %p — 2026-11-03)는 FRED 날마다 값이라 같은 모양
@@ -186,7 +184,7 @@ function marketExtraRow(key) {
     return { key, name: MARKET_EXTRA_NAMES[key], symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
       d5: base == null ? null : last.value - base, d5Unit: 'bp',
       valueText: key === 'HYOAS' ? `${last.value.toFixed(2)}%` : `${last.value > 0 ? '+' : ''}${last.value.toFixed(2)}%p`,
-      note: `${last.date.slice(4, 6)}/${last.date.slice(6)} 기준`,
+      note: `${mmdd(last.date)} 기준`,
       title: MARKET_DESC[key],
       spark: rows.slice(-20).map((r) => r.value) };
   }
@@ -270,13 +268,11 @@ function intradayTitle() {
 // closes(일봉 종가), dayPct(오늘 등락률) }. 없는 것은 null(그 판정은 판정 불가).
 function marketCheckInput() {
   const x = marketExtras && marketExtras.d && marketExtras.d.ok ? marketExtras.d : {};
+  // 값 · 오늘 등락은 그 줄(marketRow)과 같은 것 — 따로 고르면 점의 판정과 줄의 값이 다른 "지금" 을 볼 수 있었다
   const series = (code) => {
-    const ix = INDICES.find((i) => i.code === code);
-    const it = indexItems.find((i) => i.code === code);
-    const q = ix && quotes[ix.symbol];
-    const now = it ? it.value : q && q.price;
-    const closes = q && q.daily && q.daily.closes;
-    return now > 0 && closes ? { now, closes, dayPct: it ? it.pct : q.pct != null ? q.pct : null } : null;
+    const r = marketRow(code);
+    const q = r && quotes[r.symbol];
+    return q && q.daily ? { now: r.value, closes: q.daily.closes, dayPct: r.pct } : null;
   };
   return {
     spotFlows: x.spotFlows || null, futFlows: x.futFlows || null, kospiDays: x.kospiDays || null, futDays: x.futDays || null,

@@ -201,10 +201,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key >= '1' && e.key <= String(tabs.length)) {
     const key = tabs[Number(e.key) - 1];
     if (key === state.timeframe) return;
-    setTimeframe(key);
-    save();
-    renderTabs();
-    loadChart();
+    pickTimeframe(key);
     return;
   }
 

@@ -424,6 +424,8 @@ ipcMain.handle('quote:realtime', async (_e, symbols) => {
 
 // 미국 종목 = 접미사 없는 야후 티커(AAPL, BRK-B). 지수(^) · 환율(=) · 국내(.KS)는 걸린다.
 const US_RE = /^[A-Z][A-Z0-9-]{0,9}$/;
+// 국내 종목 = 야후 기호 '코드.KS'(코스피) · '코드.KQ'(코스닥). [1] 이 네이버 종목 코드다.
+const KR_RE = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/;
 
 // 네이버 코드(AAPL.O)를 못 찾은 종목(BRK-B 는 네이버에서 BRK.B)이나 요청 실패는 빠진다.
 async function usRealtime(symbols) {
@@ -452,7 +454,7 @@ async function domesticRealtime(symbols) {
   // 국내 종목만 받는다(미국은 usRealtime).
   // 종목코드 형태를 확인해 URL 경로에 이상한 값이 끼어들지 않게 한다.
   const valid = (symbols || [])
-    .filter((s) => /^[A-Za-z0-9]{1,10}\.(KS|KQ)$/.test(String(s)))
+    .filter((s) => KR_RE.test(String(s)))
     .map(String);
   const codes = valid.map((s) => s.split('.')[0]);
   const symbolOf = new Map(valid.map((s) => [s.split('.')[0], s]));
@@ -822,7 +824,7 @@ async function naverIndustryName(no) {
 
 // 네이버 한글 업종. 없으면 null(→ 야후).
 async function naverIndustry(symbol) {
-  const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol);
+  const kr = KR_RE.exec(symbol);
   if (kr) {
     const d = await naverJson(`https://m.stock.naver.com/api/stock/${kr[1]}/integration`);
     return d.stockEndType === 'stock' && d.industryCode != null ? naverIndustryName(d.industryCode) : null;
@@ -1066,7 +1068,7 @@ ipcMain.handle('naver:detail', async (_e, symbol) => {
   const s = String(symbol ?? '');
   if (!SYMBOL_RE.test(s)) return { ok: false, error: '잘못된 요청' };
   try {
-    const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(s);
+    const kr = KR_RE.exec(s);
     if (kr) return { ok: true, ...(await krDetail(kr[1])) };
     if (!US_RE.test(s)) return { ok: false, error: '지표가 없는 종목' }; // 지수 · 환율
     const code = await naverUsCode(s);
@@ -1166,7 +1168,7 @@ function prelimEvents(rows, announced, now) {
 ipcMain.handle('naver:events', async (_e, symbol) => {
   const s = String(symbol ?? '');
   if (!SYMBOL_RE.test(s)) return { ok: false, error: '잘못된 요청' };
-  const kr = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(s);
+  const kr = KR_RE.exec(s);
   if (!kr && !US_RE.test(s)) return { ok: false, error: '일정이 없는 종목' }; // 지수 · 환율
   try {
     const now = Date.now();
@@ -1515,7 +1517,7 @@ const KR_INDEX_PATH = { '^KS11': 'index/KOSPI', '^KQ11': 'index/KOSDAQ', '^KS200
 // 06:00) 봉이 그날 날짜로 섞여 와도(섞이는지는 확인하지 못했다) 정규장 앞에 붙지 않게.
 const KR_HOURS = { 'index/FUT': ['0845', '1545'] };
 const krPath = (symbol) => {
-  const m = /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol);
+  const m = KR_RE.exec(symbol);
   return m ? `item/${m[1]}` : KR_INDEX_PATH[symbol] || null;
 };
 let krxEnd = { day: null, end: '1530' }; // 그날 정규장 종료 시각 'HHMM'. 모르는 날은 15:30
@@ -1707,7 +1709,7 @@ ipcMain.handle('yf:chart', async (_e, req) => {
   const week = range === '5d' && interval === '30m';
   const ext = extended === true && ((range === '1d' && interval === '5m') || week);
   const usExt = ext && US_RE.test(symbol);
-  const krExt = ext ? /^([A-Za-z0-9]{1,10})\.(KS|KQ)$/.exec(symbol) : null;
+  const krExt = ext ? KR_RE.exec(symbol) : null;
   // 지수 줄의 선물 · 미국채 1D 는 네이버 하루 차트(NAVER_DAY). 실패하거나 비면 아래 야후로 그린다.
   const nd = range === '1d' && interval === '5m' ? NAVER_DAY[symbol] : null;
   if (nd) {

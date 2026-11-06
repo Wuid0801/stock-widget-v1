@@ -23,6 +23,13 @@ const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
 // 헤더의 전일 대비는 현재가 - 전일 종가로 다시 센 값이라 -0.0225 가 -0.02249999… 가 되어 지수 줄(-2.3bp)과 갈렸다
 // (-2.2bp, 2026-10-26) — 네이버 금리의 자릿수(0.0001 = 0.01bp)에서 먼저 반올림한다.
 const fmtBp = (v) => (v > 0 ? '+' : '') + (Math.round(v * 1e4) / 100).toFixed(1) + 'bp';
+// 날짜 'YYYYMMDD'(또는 'YYYY-MM-DD') → 'MM/DD', 시각 ms → 'MM/DD HH:MM'(이 PC 시각) — 순위 · 지표 화면이 같이 쓴다.
+const mmdd = (s) => { const n = String(s).replace(/\D/g, ''); return `${n.slice(4, 6)}/${n.slice(6, 8)}`; };
+const stamp = (ms) => {
+  const t = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(t.getMonth() + 1)}/${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+};
 
 // 색은 CSS 변수 한 곳에서만 정의한다. 차트도 그리는 시점에 여기서 읽어가므로
 // 테마를 바꾸면 같은 값이 따라온다.
