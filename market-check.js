@@ -25,11 +25,18 @@ const mcDate = (d) => `${d.slice(4, 6)}/${d.slice(6)}`;
 const mcNone = (key) => ({ key, verdict: null, detail: '데이터 부족' });
 const mcFinal = (flows) => (Array.isArray(flows) ? flows.filter((f) => f && f.final && Number.isFinite(f.foreign)) : []);
 
-// 일봉의 "5거래일 전" 종가. 모자라면 null.
+// 일봉의 "5거래일 전" 종가. 모자라면 null. 시장 지표 화면의 '5일 변화' 칸(marketRow)도 이것을 써 점의 판정과 같은 날을
+// 본다 — 따로 세던 때는 LOOKBACK 만 바꾸면 같은 줄의 숫자와 점이 다른 날을 보게 됐다(2026-11-06).
 function mcBase(s) {
   const c = s && Array.isArray(s.closes) ? s.closes : null;
   const v = c && c.length > CHECK.LOOKBACK ? c[c.length - 1 - CHECK.LOOKBACK] : null;
   return v > 0 ? v : null;
+}
+
+// 날마다 값 줄({ date, value } 오름차순 — FRED)의 "5영업일 전" 값. 모자라거나 숫자가 아니면 null. 0 · 음수도 값이다(장단기 금리차).
+function mcRowBase(rows) {
+  const v = Array.isArray(rows) && rows.length > CHECK.LOOKBACK ? rows[rows.length - 1 - CHECK.LOOKBACK].value : null;
+  return Number.isFinite(v) ? v : null;
 }
 
 // 그날 종가가 앞 거래일보다 올랐는지 — 일봉에 그날(또는 앞날)이 없으면 null
@@ -106,7 +113,7 @@ function mcVix(s) {
 function mcOas(rows) {
   if (!Array.isArray(rows) || rows.length <= CHECK.LOOKBACK) return mcNone('hyoas');
   const last = rows[rows.length - 1].value;
-  const base = rows[rows.length - 1 - CHECK.LOOKBACK].value;
+  const base = mcRowBase(rows);
   if (!Number.isFinite(last) || !Number.isFinite(base)) return mcNone('hyoas');
   const diff = last - base;
   const detail = `5영업일 전 ${mcNum(base)}% → ${mcNum(last)}% (${mcSigned(diff * 100, 1, 'bp')})`;
@@ -139,5 +146,5 @@ function marketChecks(input = {}) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { CHECK, marketChecks };
+  module.exports = { CHECK, marketChecks, mcBase, mcRowBase };
 }

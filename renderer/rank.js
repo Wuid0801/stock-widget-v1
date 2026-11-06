@@ -76,7 +76,7 @@ function marketRow(key) {
   if (!(value > 0)) return null;
   const cur = curOf(ix.symbol);
   const closes = q && q.daily && q.daily.closes;
-  const base = closes && closes.length >= 6 ? closes[closes.length - 6] : null;
+  const base = mcBase({ closes }); // 5거래일 전 — 데드캣 점의 판정과 같은 날(market-check.js)
   const bp = cur === '%';
   const egg = EGG_INDEX.has(key) && closes ? eggPhase(closes, dailyVolumesOf(ix.symbol)) : null;
   return {
@@ -142,7 +142,8 @@ function marketExtraRow(key) {
       .map((d) => d.close - spotOn.get(d.date));
     const prev = hist.length ? hist[hist.length - 1] : null;
     const change = value != null && prev != null ? value - prev : null;
-    const base = hist.length >= 5 ? hist[hist.length - 5] : null;
+    // 5거래일 전(CHECK.LOOKBACK) — hist 에는 오늘이 없어 끝에서 LOOKBACK 번째가 그날이다
+    const base = hist.length >= CHECK.LOOKBACK ? hist[hist.length - CHECK.LOOKBACK] : null;
     return { key, name: MARKET_EXTRA_NAMES.BASIS, symbol: null, value, pct: null, change,
       d5: value != null && base != null ? value - base : null, d5Unit: 'pt', valueText: value == null ? '—' : pt(value),
       dayText: change == null ? '—' : pt(change), dayTone: change,
@@ -180,7 +181,7 @@ function marketExtraRow(key) {
     if (!rows || !rows.length) return null;
     const last = rows[rows.length - 1];
     const prev = rows.length >= 2 ? rows[rows.length - 2].value : null;
-    const base = rows.length >= 6 ? rows[rows.length - 6].value : null;
+    const base = mcRowBase(rows); // 5영업일 전 — HY OAS 점의 판정과 같은 날
     return { key, name: MARKET_EXTRA_NAMES[key], symbol: null, value: last.value, pct: null, change: prev == null ? null : last.value - prev,
       d5: base == null ? null : last.value - base, d5Unit: 'bp',
       valueText: key === 'HYOAS' ? `${last.value.toFixed(2)}%` : `${last.value > 0 ? '+' : ''}${last.value.toFixed(2)}%p`,
