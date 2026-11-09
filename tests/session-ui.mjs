@@ -2523,6 +2523,30 @@ await test('indicators: profile plugin bars grow leftward from the right edge, t
   assert.equal(rects.length, 0);
 });
 
+await test('candles are drawn right after the volume bars — above them, below every line', () => {
+  // 막대 아래에 깔았더니 평균의 2배를 넘어 진하게 칠한 막대가 같은 색 1px 꼬리를 덮었다(2026-11-09 SK하이닉스 11/06)
+  const { c, run } = harness();
+  run(source.slice(mark('const candlePlugin = {'), mark('// 1D 시간외(프리 · 애프터)')));
+  const plugin = run('candlePlugin');
+  let drawn = 0;
+  const ctx = { save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, moveTo() {}, lineTo() {}, stroke() {},
+    fillRect() { drawn++; } };
+  c.cssVar = (n) => n;
+  const chartOf = (datasets) => ({ ctx, data: { datasets }, chartArea: { left: 0, top: 0, width: 100, height: 100 },
+    scales: { x: { getPixelForValue: (i) => i * 10, width: 100 }, y: { getPixelForValue: (v) => 100 - v } } });
+  const opts = { opens: [10, 20], highs: [30, 40], lows: [5, 15], closes: [20, 10] };
+  const withVol = chartOf([{ isVolume: true }, {}]);
+  plugin.beforeDatasetsDraw(withVol, {}, opts);
+  assert.equal(drawn, 0, '거래량 막대가 있으면 데이터셋보다 먼저 그리지 않는다');
+  plugin.afterDatasetDraw(withVol, { index: 1 }, opts);
+  assert.equal(drawn, 0, '다른 데이터셋 뒤에는 그리지 않는다');
+  plugin.afterDatasetDraw(withVol, { index: 0 }, opts);
+  assert.equal(drawn, 2, '거래량 막대를 그린 직후 캔들 둘');
+  drawn = 0;
+  plugin.beforeDatasetsDraw(chartOf([{}]), {}, opts);
+  assert.equal(drawn, 2, '거래량 막대가 없으면 예전처럼 맨 아래');
+});
+
 // 가로선(평단 · 전일 · 전고 · 전저 · 프리 · 애프터): 가까운 이름표는 합치고, 범위 밖은 가장자리에 이름 · 값.
 await test('horizontal lines: close labels merge instead of vanishing; out-of-range lines go to the edge with their value', () => {
   const { c, run } = harness(['hLineGroups']);
@@ -3912,6 +3936,8 @@ await test('drawChart draws trend lines on top of every other dataset, and drops
   assert.ok(others.length >= 4, 'price, high/low band, MA and volume are there to compare against');
   assert.ok(others.every((d) => trendSet.order < d.order),
     `trend order ${trendSet.order} must be below ${others.map((d) => d.order).join(',')}`);
+  const volSet = sets.find((d) => d.isVolume);
+  assert.ok(sets.every((d) => d === volSet || d.order < volSet.order), '거래량 막대를 맨 먼저 그린다 — 캔들이 그 바로 위');
 
   // 확대 중에는 추세선이 숨는다
   run('zoom = { start: T_[5], end: T_[25] }; drawChart(arg_);');

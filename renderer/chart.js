@@ -355,48 +355,58 @@ function renderTrendBadges(trends, len, times = []) {
 //
 // y축 범위는 투명하게 남겨 둔 고가~저가 밴드 데이터셋이 잡아 준다. 캔버스에만
 // 그리면 꼬리 끝이 축 밖으로 나가 말없이 잘린다(추세선 주석의 그 문제다).
+// 그리는 자리: 거래량 막대(order 4 — 맨 먼저 그린다) 바로 위, 이동평균 · 보조 지표 선 아래. 막대 아래에 깔았더니 평균의
+// 2배를 넘어 진하게 칠한 막대가 같은 색 1px 꼬리를 덮어, 막대 칸까지 내려간 아래 꼬리가 안 보였다(2026-11-09 SK하이닉스
+// 11/06 저가 108만). 거래량 막대가 없는 차트는 맨 아래.
 const candlePlugin = {
   id: 'candle',
   beforeDatasetsDraw(c, _args, opts) {
-    const { opens = [], highs = [], lows = [], closes = [] } = opts || {};
-    if (!opens.length) return;
-
-    const sx = c.scales.x; const sy = c.scales.y;
-    const area = c.chartArea;
-    const ctx = c.ctx;
-    // 봉 간격 = 이웃한 두 봉의 픽셀 거리. 확대하면 전체 봉 수가 아니라 보이는 봉
-    // 수로 나눈 값이 되어야 해서 폭 ÷ 봉 수로는 안 된다. 구간 밖 봉은 아래 clip 이 자른다.
-    const step = opens.length > 1
-      ? Math.abs(sx.getPixelForValue(1) - sx.getPixelForValue(0)) : sx.width;
-    const w = candleWidth(step);
-    const flat = cssVar('--flat');
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(area.left, area.top, area.width, area.height);
-    ctx.clip(); // 축 눈금 위로 삐져나가지 않게
-
-    for (let i = 0; i < opens.length; i++) {
-      const o = opens[i]; const h = highs[i]; const l = lows[i]; const cl = closes[i];
-      if (o == null || h == null || l == null || cl == null) continue;
-
-      const color = cl > o ? UP : cl < o ? DOWN : flat;
-      ctx.fillStyle = color;
-      ctx.strokeStyle = color;
-
-      // 꼬리는 1px 세로선. +0.5 는 캔버스 격자에 맞춰 흐려지지 않게 하는 것이다.
-      const cx = Math.round(sx.getPixelForValue(i));
-      ctx.beginPath();
-      ctx.moveTo(cx + 0.5, sy.getPixelForValue(h));
-      ctx.lineTo(cx + 0.5, sy.getPixelForValue(l));
-      ctx.stroke();
-
-      const b = candleBody(sy.getPixelForValue(o), sy.getPixelForValue(cl));
-      ctx.fillRect(cx - Math.floor(w / 2), b.top, w, b.h);
-    }
-    ctx.restore();
+    if (!c.data.datasets.some((d) => d.isVolume)) drawCandles(c, opts);
+  },
+  afterDatasetDraw(c, args, opts) {
+    if (c.data.datasets[args.index] && c.data.datasets[args.index].isVolume) drawCandles(c, opts);
   },
 };
+
+function drawCandles(c, opts) {
+  const { opens = [], highs = [], lows = [], closes = [] } = opts || {};
+  if (!opens.length) return;
+
+  const sx = c.scales.x; const sy = c.scales.y;
+  const area = c.chartArea;
+  const ctx = c.ctx;
+  // 봉 간격 = 이웃한 두 봉의 픽셀 거리. 확대하면 전체 봉 수가 아니라 보이는 봉
+  // 수로 나눈 값이 되어야 해서 폭 ÷ 봉 수로는 안 된다. 구간 밖 봉은 아래 clip 이 자른다.
+  const step = opens.length > 1
+    ? Math.abs(sx.getPixelForValue(1) - sx.getPixelForValue(0)) : sx.width;
+  const w = candleWidth(step);
+  const flat = cssVar('--flat');
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(area.left, area.top, area.width, area.height);
+  ctx.clip(); // 축 눈금 위로 삐져나가지 않게
+
+  for (let i = 0; i < opens.length; i++) {
+    const o = opens[i]; const h = highs[i]; const l = lows[i]; const cl = closes[i];
+    if (o == null || h == null || l == null || cl == null) continue;
+
+    const color = cl > o ? UP : cl < o ? DOWN : flat;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+
+    // 꼬리는 1px 세로선. +0.5 는 캔버스 격자에 맞춰 흐려지지 않게 하는 것이다.
+    const cx = Math.round(sx.getPixelForValue(i));
+    ctx.beginPath();
+    ctx.moveTo(cx + 0.5, sy.getPixelForValue(h));
+    ctx.lineTo(cx + 0.5, sy.getPixelForValue(l));
+    ctx.stroke();
+
+    const b = candleBody(sy.getPixelForValue(o), sy.getPixelForValue(cl));
+    ctx.fillRect(cx - Math.floor(w / 2), b.top, w, b.h);
+  }
+  ctx.restore();
+}
 
 // 1D 시간외(프리 · 애프터) 구간의 옅은 배경. 선과 캔들 뒤에 깔려야 해서 beforeDatasetsDraw 이고,
 // 플러그인 목록에서 캔들보다 앞에 둔다. 칸 경계는 이웃한 두 봉의 가운데다.
@@ -625,8 +635,8 @@ function drawChart(arg) {
         data: closes,
         yAxisID: 'y',
         // Chart.js 는 order 가 큰 것부터 그린다(4.5.1: 오름차순 정렬 후 뒤에서부터) — 아래부터
-        // 이동평균(3) · 주가선(2) · 고저 밴드(1) · 거래량(0) · RSI(-0.5) · 추세선(-1). 밴드 · 막대는 옅어서
-        // 주가선을 가리지 않는다.
+        // 거래량 막대(4) · 캔들(candlePlugin) · 이동평균(3) · 주가선(2) · 고저 밴드(1) · 거래량 평균선(0) · RSI(-0.5) ·
+        // 추세선(-1). 밴드는 옅어서 주가선을 가리지 않는다.
         order: 2,
         borderColor: candles ? 'transparent' : color,
         borderWidth: 2,
@@ -755,7 +765,7 @@ function drawChart(arg) {
         isVolume: true,
         data: volumes,
         yAxisID: 'yVol',
-        order: 0, // 추세선 바로 아래 — 옅어서(0.2) 주가선 · 이평선이 비쳐 보인다
+        order: 4, // 맨 먼저(맨 아래) — 캔들이 바로 위에(candlePlugin), 선들은 그 위에 그려진다
         // 거래량 평균을 켜면 평균의 VOL_SURGE 배 넘는 막대만 진하게 — 거래가 터진 봉이 바로 보인다
         backgroundColor: volAvg
           ? volumes.map((v, i) => hexA(color, volAvg[i] > 0 && v >= VOL_SURGE * volAvg[i] ? 0.55 : 0.2))
@@ -775,7 +785,7 @@ function drawChart(arg) {
       }] : []),
       // RSI · 시그널(보조 지표) — 가격 칸 아래 따로 둔 칸(축 yRsi, RSI_PANE)에 그린다. RSI 는 옅은 실선, 시그널은 점선,
       // 30 · 70 은 아주 옅은 점선 — 눈금(rsiFit) 안일 때만. 밖이면 RSI 칸을 벗어나 가격 칸에 그어진다. 시그널을 뚫은
-      // 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 막대(0) 위 · 추세선(-1) 아래에 그린다. 그 봉의 값은
+      // 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 평균선(0) 위 · 추세선(-1) 아래에 그린다. 그 봉의 값은
       // 툴팁 footer, 지금 상태는 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
       ...(rsi ? [...[30, 70].filter((v) => v > rsiFit.min && v < rsiFit.max).map((v) => ({
         data: closes.map(() => v),
