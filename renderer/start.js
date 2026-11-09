@@ -195,8 +195,8 @@ async function refreshNow() {
   };
   document.getElementById('extHours').onclick = () => toggleExtHours().catch(console.error);
   document.getElementById('candleVenue').onclick = () => toggleCandleVenue().catch(console.error);
-  document.getElementById('rsiPane').onclick = () => togglePane('rsi').catch(console.error);
-  document.getElementById('stochPane').onclick = () => togglePane('stoch').catch(console.error);
+  // 아래 칸 양옆 ‹ › — 둘 다 RSI ↔ 스토캐스틱
+  document.getElementById('paneNav').onclick = (e) => { if (e.target.closest('button')) flipPane().catch(console.error); };
   document.getElementById('rsiTall').onclick = toggleRsiTall;
   document.getElementById('zoomReset').onclick = resetZoom;
   bindZoom();

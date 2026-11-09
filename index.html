@@ -703,14 +703,23 @@
   /* 덧그림(이동평균 · 보조 지표 · 기준선)이 보이면 또렷하게, 차트만 보기로 껐으면 흐리게 */
   #plainChart.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
   /* 정규장 / 전체(1D · 1W) — 글자가 지금 보는 것. 전체(시간외 켬)면 또렷하게, 정규장만이면 흐리게.
-     RSI 칸 · 스토캐스틱 칸 · 크게 보기 켜고 끄기도 같은 모양 — 켜져 있으면 또렷하게 */
-  #candleVenue, #extHours, #rsiPane, #stochPane, #rsiTall {
+     아래 칸 크게 보기 켜고 끄기도 같은 모양 — 켜져 있으면 또렷하게 */
+  #candleVenue, #extHours, #rsiTall {
     height: 18px; padding: 0 5px; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); font-size: 10px; font-family: inherit; cursor: pointer; opacity: .6;
   }
-  #candleVenue:hover, #extHours:hover, #rsiPane:hover, #stochPane:hover, #rsiTall:hover { opacity: 1; color: var(--text-3); }
-  #candleVenue.on, #extHours.on, #rsiPane.on, #stochPane.on, #rsiTall.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
-  #candleVenue[hidden], #extHours[hidden], #rsiPane[hidden], #stochPane[hidden], #rsiTall[hidden] { display: none; }
+  #candleVenue:hover, #extHours:hover, #rsiTall:hover { opacity: 1; color: var(--text-3); }
+  #candleVenue.on, #extHours.on, #rsiTall.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
+  #candleVenue[hidden], #extHours[hidden], #rsiTall[hidden] { display: none; }
+  /* 아래 칸(RSI · 스토캐스틱) 양옆 ‹ › — 누르면 RSI ↔ 스토캐스틱. 켜고 끄기는 설정 칩(사용자 결정, 2026-11-09).
+     자리 · 크기는 paneNavPlugin(renderer/chart.js)이 그 칸에 맞춘다. 칸 안 선을 가리지 않게 평소엔 흐리게, 지표 화면이 열리면 숨는다 */
+  .panenav { position: absolute; z-index: 1; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+  .panenav[hidden], .metrics:not([hidden]) ~ .panenav { display: none; }
+  .panenav button {
+    pointer-events: auto; width: 14px; height: 18px; padding: 0; border: 1px solid var(--field-border); border-radius: 4px;
+    background: var(--tooltip); color: var(--dim); font-size: 11px; line-height: 1; font-family: inherit; cursor: pointer; opacity: .6;
+  }
+  .panenav button:hover { opacity: 1; color: var(--text-3); }
   #zoomReset {
     height: 18px; padding: 0 6px; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); font-size: 10px; cursor: pointer; opacity: .6;
@@ -809,7 +818,7 @@
       <!-- 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과. 자세한 숫자는 툴팁 -->
       <div class="trendchk" id="trendCheck" hidden></div>
 
-      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><div class="metrics" id="metricsView" hidden></div><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="candleVenue" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="extHours" type="button" hidden></button><button id="rsiPane" type="button" hidden>RSI</button><button id="stochPane" type="button" hidden>스토</button><button id="rsiTall" type="button" hidden>↕</button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
+      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><div class="metrics" id="metricsView" hidden></div><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="candleVenue" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="extHours" type="button" hidden></button><button id="rsiTall" type="button" hidden>↕</button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span><span class="panenav" id="paneNav" hidden><button type="button" title="RSI ↔ 스토캐스틱">‹</button><button type="button" title="RSI ↔ 스토캐스틱">›</button></span></div>
       <div class="err" id="err"></div>
     </div>
 
@@ -861,9 +870,11 @@
         <div class="mastyles" id="maStyles"></div>
         <div class="ohint">흐린 기간은 지금 보고 있는 구간에 비해 너무 길어 그리지 않습니다. 더 긴 타임프레임으로 바꾸면 나타납니다.</div>
 
-        <div class="sect">보조 지표 <span class="sechint">켜 둔 것만 차트에 그립니다</span></div>
+        <div class="sect">상단 지표 <span class="sechint">가격 차트 위에 겹쳐 그립니다</span></div>
         <div class="machips" id="indChips"></div>
         <div class="ohint">볼린저 · 매물대는 1M · 3M · 1Y · 3Y, VWAP · 전일 고저는 1D, 지수 대비는 1M 이상의 기간 배지, 거래량 평균은 모든 기간에 나옵니다. 칩에 마우스를 올리면 설명이 보입니다.</div>
+        <div class="sect">하단 지표 <span class="sechint">차트 아래 칸에 하나만 — 칸 양옆 ‹ › 로 바꿉니다</span></div>
+        <div class="machips" id="paneChips"></div>
         <div class="sect">
           목표가 알림
           <label class="toggle"><input type="checkbox" id="alertOn" /> 사용</label>

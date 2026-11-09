@@ -139,7 +139,7 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
 
 // --- RSI 칸 ------------------------------------------------------------------
 // RSI 를 켜 두면 차트 상자(.chartbox.sub)가 RSI 칸(renderer/state.js RSI_PANE)만큼 커져 가격 칸은 그대로다 — 세 값이 어긋나면
-// 가격 칸이 줄거나 빈 띠가 남는다. 켜고 끄는 버튼(#rsiPane)은 차트 왼쪽 위 버튼 묶음 안에 있다.
+// 가격 칸이 줄거나 빈 띠가 남는다. 켜고 끄기는 설정 칩, RSI ↔ 스토캐스틱은 칸 양옆 ‹ ›(#paneNav)다.
 {
   const pane = +/const RSI_PANE = (\d+);/.exec(rendererSource())[1];
   const base = /\.chartbox\s*\{\s*height:\s*clamp\((\d+)px,\s*26vh,\s*(\d+)px\)/.exec(html);
@@ -153,12 +153,17 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('.chartbox.sub.tall 은 최소 · 보통 · 최대 모두 RSI_TALL 만큼 크다', !!base && !!tall
     && +tall[1] === +base[1] + tallPane && +tall[2] === tallPane && +tall[3] === +base[2] + tallPane, `RSI_TALL ${tallPane}`);
   const ctl = /<span class="chartctl">([\s\S]*?)<\/span>/.exec(html);
-  check('#rsiPane 은 차트 버튼 묶음(.chartctl) 안에 있다', !!ctl && /<button id="rsiPane" type="button" hidden>RSI<\/button>/.test(ctl[1]));
-  // 스토캐스틱(#stochPane)은 RSI 칸 자리에 — RSI · 스토 · 크게 보기 순으로 붙어 있다(같은 칸을 다루는 버튼끼리)
-  check('#rsiPane · #stochPane · #rsiTall 이 차례로 붙어 있다',
-    !!ctl && /<button id="rsiPane"[^>]*>RSI<\/button><button id="stochPane" type="button" hidden>스토<\/button><button id="rsiTall" type="button" hidden>/.test(ctl[1]));
-  check('#stochPane · #rsiTall 도 RSI 버튼과 같은 모양(켜지면 또렷)', /#extHours, #rsiPane, #stochPane, #rsiTall \{/.test(html)
-    && /#rsiPane\.on, #stochPane\.on, #rsiTall\.on \{/.test(html) && /#rsiPane\[hidden\], #stochPane\[hidden\], #rsiTall\[hidden\]/.test(html));
+  // 차트 위 RSI · 스토 버튼은 없앴다(사용자 결정, 2026-11-09) — 크게 보기(↕)만 남는다
+  check('차트 버튼 묶음에 크게 보기는 있고 RSI · 스토 버튼은 없다',
+    !!ctl && /<button id="rsiTall" type="button" hidden>↕<\/button>/.test(ctl[1]) && !/rsiPane|stochPane/.test(html));
+  check('#rsiTall 은 정규장/전체 버튼과 같은 모양(켜지면 또렷)', /#candleVenue, #extHours, #rsiTall \{/.test(html)
+    && /#extHours\.on, #rsiTall\.on \{/.test(html) && /#extHours\[hidden\], #rsiTall\[hidden\]/.test(html));
+  // 아래 칸 양옆 ‹ › — 차트 상자 안 버튼 묶음 뒤. display:flex 라 [hidden] 규칙이 따로 있어야 숨고, 지표 화면이 열리면 숨는다
+  check('#paneNav 는 차트 상자 안에 ‹ · › 두 버튼',
+    /<\/span><span class="panenav" id="paneNav" hidden><button type="button"[^>]*>‹<\/button><button type="button"[^>]*>›<\/button><\/span><\/div>/.test(html));
+  check('#paneNav 는 숨김 · 지표 화면에서 보이지 않는다', /\.panenav\[hidden\], \.metrics:not\(\[hidden\]\) ~ \.panenav \{ display: none; \}/.test(html));
+  // 설정의 보조 지표는 상단 지표(가격 차트 위) · 하단 지표(차트 아래 칸)로 나눈다(사용자 결정, 2026-11-09)
+  check('설정에 상단 지표 · 하단 지표 칩 자리가 차례로 있다', /상단 지표[\s\S]*?id="indChips"[\s\S]*?하단 지표[\s\S]*?id="paneChips"/.test(html));
   check('스토캐스틱 선 색이 두 테마에 있다', (html.match(/--stoch-line: #[0-9a-f]{6};/g) || []).length === 2);
 }
 

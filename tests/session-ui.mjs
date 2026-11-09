@@ -594,15 +594,19 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   assert.equal(JSON.stringify(run('cleanIndicators(undefined)')),
     '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false,"rsi":false,"stoch":false}');
   const kids = [];
+  const paneKids = [];
   let saves = 0;
   let loads = 0;
   c.document.createElement = () => ({ style: {} });
   c.document.getElementById('indChips').appendChild = (b) => kids.push(b);
+  c.document.getElementById('paneChips').appendChild = (b) => paneKids.push(b);
   Object.assign(c, { save: () => { saves++; }, loadChart: () => { loads++; }, cssVar: (n) => n });
   run("state.indicators = cleanIndicators({ bb: true });");
   run('renderIndChips()');
-  const shown = () => kids.slice(-9);
-  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR', 'RSI', '스토캐스틱']);
+  const shown = () => kids.slice(-7);
+  const pane = () => paneKids.slice(-2);
+  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR'], '상단 지표');
+  assert.deepEqual(pane().map((b) => b.textContent), ['RSI', '스토캐스틱'], '하단 지표(차트 아래 칸)는 따로');
   assert.equal(shown()[0].className, 'on');
   assert.equal(shown()[0].style.color, '--bb-line', '켜진 칩은 그 선의 색');
   assert.equal(shown()[1].className, undefined);
@@ -613,11 +617,12 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   assert.equal(loads, 1);
   assert.equal(shown()[1].className, 'on', '칩을 다시 그린다');
   // RSI · 스토캐스틱은 차트 아래 한 칸을 같이 써서 하나만 켜진다
-  shown()[7].onclick();
-  shown()[8].onclick();
+  pane()[0].onclick();
+  pane()[1].onclick();
   assert.ok(run('state.indicators.stoch') === true && run('state.indicators.rsi') === false, '스토캐스틱을 켜면 RSI 칩이 꺼진다');
-  assert.equal(shown()[7].className, undefined);
-  assert.ok(elements.get('indChips'));
+  assert.equal(pane()[0].className, undefined);
+  assert.equal(pane()[1].className, 'on');
+  assert.ok(elements.get('indChips') && elements.get('paneChips'));
 });
 
 await test('indicators: loadChart passes only the enabled overlays — bands and volume average on daily, VWAP and previous high/low on 1D', async () => {
@@ -733,7 +738,7 @@ await test('indicators: drawChart draws the band as a filled pair, VWAP on the p
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
   });
@@ -933,7 +938,7 @@ await test('indicators: drawChart draws SAR as dots on the price axis, red below
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
   });
@@ -1175,7 +1180,7 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
   });
@@ -1272,7 +1277,7 @@ await test('chart: the price axis fits the visible prices and trendlines only, s
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'x', cssVar: (n) => n,
   });
@@ -1297,7 +1302,7 @@ await test('indicators: the RSI pane fits the visible bars when zoomed, like the
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'x', cssVar: (n) => n,
   });
@@ -1330,7 +1335,7 @@ await test('indicators: the stochastic takes the RSI pane with K, D and the 20 /
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, bindChartLeave() {}, maColor: () => '#000',
     hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
   });
@@ -2148,71 +2153,41 @@ await test('ext hours: the switch flips the view, saves it and redraws', async (
   assert.deepEqual(log.splice(0), ['save', 'load:true']);
 });
 
-// RSI 칸 버튼(차트 왼쪽 위) — 설정의 RSI 칩과 같은 값을 켜고 끈다. RSI 를 그릴 수 있는 기간에서만 보이고, 차트만 보기 중엔
-// 숨는다. 켜 두면 차트 상자가 RSI 칸만큼 커진다(.sub) — 기간과 상관없이 켜 둔 동안은 같은 높이.
-await test('rsi pane: the chart switch shows on RSI timeframes, names its state and hides with the chart or the plain view', () => {
-  const { c, run, elements } = harness(['renderChartMode']);
-  c.MODE_ICON = { candle: 'C', line: 'L' };
-  run("state.timeframe = '1D'; state.plainChart = false; state.indicators = { rsi: false }; renderChartMode(0, false);");
-  const b = elements.get('rsiPane');
-  assert.equal(b.hidden, false);
-  assert.equal(b.className, '');
-  assert.equal(b.title, 'RSI 칸 켜기 — 차트 아래에 RSI · 시그널');
-  run('state.indicators = { rsi: true }; renderChartMode(0, false);');
-  assert.equal(b.className, 'on', '켜져 있으면 또렷하게');
-  assert.equal(b.title, 'RSI 칸 끄기');
-  run("state.timeframe = '전체'; renderChartMode(20, true);");
-  assert.equal(b.hidden, true, '전체(월봉 · 분기봉)는 RSI 를 그리지 않는다');
-  run("state.timeframe = '1Y'; state.plainChart = true; renderChartMode(20, true);");
-  assert.equal(b.hidden, true, '차트만 보기는 보조 지표를 다 끈다');
-  run('state.plainChart = false; delete state.indicators; renderChartMode(20, true);');
-  assert.equal(b.className, '', '지표 설정이 없어도 꺼진 것으로');
-  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('rsiPane'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
+// 아래 칸 양옆 ‹ ›(#paneNav) — Chart.js 배치가 끝난 뒤 그 칸(yRsi)의 자리 · 크기에 맞추고, 칸이 없으면 숨는다.
+// 켜고 끄기는 설정 칩만이라 차트 위 RSI · 스토 버튼은 없앴다(사용자 결정, 2026-11-09).
+await test('pane nav: the side arrows sit on the lower pane and hide without it or the chart', () => {
+  const { run, elements } = harness();
+  run(source.match(/^const paneNavPlugin = \{[\s\S]*?\n\};/m)[0]);
+  run('paneNavPlugin').afterLayout({ chartArea: { left: 2, right: 300 }, scales: { yRsi: { top: 150, bottom: 195 } } });
+  const el = elements.get('paneNav');
+  assert.equal(el.hidden, false);
+  assert.deepEqual({ ...el.style }, { left: '2px', width: '298px', top: '150px', height: '45px' }, '그림 영역 좌우 · 아래 칸 위아래');
+  run('paneNavPlugin').afterLayout({ chartArea: { left: 2, right: 300 }, scales: {} });
+  assert.equal(el.hidden, true, '아래 칸이 없으면(둘 다 꺼짐 · 전체 · 차트만 보기) 숨는다');
+  assert.match(realFunction('drawChart'), /plugins: \[[^\]]*paneNavPlugin\]/, '차트마다 붙는다');
+  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('paneNav'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
+  assert.match(source, /getElementById\('paneNav'\)\.onclick = \(e\) => \{ if \(e\.target\.closest\('button'\)\) flipPane\(\)/, '‹ · › 둘 다 바꾸기');
+  assert.ok(!/rsiPane|stochPane|togglePane/.test(source), '차트 위 버튼은 없다');
 });
 
-// 스토캐스틱 칸 버튼(RSI 버튼 옆) — RSI 버튼과 같은 곳에서 보이고, 켜져 있으면 또렷하다
-await test('stoch pane: the switch shows wherever the RSI switch does and names its state', () => {
-  const { c, run, elements } = harness(['renderChartMode']);
-  c.MODE_ICON = { candle: 'C', line: 'L' };
-  run("state.timeframe = '1D'; state.plainChart = false; state.indicators = { rsi: true, stoch: false }; renderChartMode(0, false);");
-  const b = elements.get('stochPane');
-  assert.equal(b.hidden, false);
-  assert.equal(b.className, '');
-  assert.equal(b.title, '스토캐스틱 칸 켜기 — 차트 아래에 K · D(14, 1, 3), RSI 칸 대신');
-  run('state.indicators = { rsi: false, stoch: true }; renderChartMode(0, false);');
-  assert.equal(b.className, 'on');
-  assert.equal(b.title, '스토캐스틱 칸 끄기');
-  assert.equal(elements.get('rsiPane').className, '', 'RSI 버튼은 꺼진 모양');
-  assert.equal(elements.get('rsiTall').hidden, false, '크게 보기는 스토캐스틱 칸에도');
-  run("state.timeframe = '전체'; renderChartMode(20, true);");
-  assert.equal(b.hidden, true, '전체(월봉 · 분기봉)');
-  run("state.timeframe = '1Y'; state.plainChart = true; renderChartMode(20, true);");
-  assert.equal(b.hidden, true, '차트만 보기');
-  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('stochPane'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
-});
-
-// RSI · 스토캐스틱 칸 버튼 — 설정 칩과 같은 값을 바꾼다. 같은 칸이라 하나를 켜면 다른 하나는 꺼진다(사용자 결정, 2026-11-09).
-await test('rsi / stoch pane: the switches flip their indicator, turn the other one off, save, update the chips and redraw', async () => {
-  const { c, run } = harness(['togglePane']);
+// ‹ › — RSI ↔ 스토캐스틱. 설정 칩과 같은 값이라 칩도 다시 그린다. 같은 칸이라 하나만 켜진다(사용자 결정, 2026-11-09).
+await test('pane nav: the arrows flip RSI and stochastic, save, update the chips and redraw', async () => {
+  const { c, run } = harness(['flipPane']);
   const log = [];
   Object.assign(c, { save: () => log.push('save'), renderIndChips: () => log.push('chips'),
     loadChart: async () => log.push(`load:${run('state.indicators.rsi')}/${run('state.indicators.stoch')}`) });
-  run('state.indicators = { sar: true, rsi: false, stoch: false };');
-  await c.togglePane('rsi');
-  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:true/false']);
+  run('state.indicators = { sar: true, rsi: true, stoch: false };');
+  await c.flipPane();
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:false/true'], 'RSI → 스토캐스틱');
   assert.equal(run('state.indicators.sar'), true, '다른 지표는 그대로');
-  await c.togglePane('stoch');
-  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:false/true'], '스토캐스틱을 켜면 RSI 가 꺼진다');
-  await c.togglePane('rsi');
-  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:true/false'], 'RSI 를 켜면 스토캐스틱이 꺼진다');
-  await c.togglePane('rsi');
-  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:false/false'], '켜진 것을 누르면 칸이 꺼진다');
-  assert.equal(run('state.indicators.sar'), true);
+  await c.flipPane();
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:true/false'], '스토캐스틱 → RSI');
   // 설정 칩도 같은 규칙(withIndicator)이다. 저장 · 백업에서 둘 다 켜져 오면 RSI 만(cleanIndicators)
   assert.match(realFunction('renderIndChips'), /state\.indicators = withIndicator\(ind\.key, !on\)/);
   run('state.indicators = { rsi: true, stoch: false, bb: true };');
   assert.equal(JSON.stringify(run("withIndicator('bb', false)")), '{"rsi":true,"stoch":false,"bb":false}', '다른 지표는 서로 상관없다');
   assert.equal(JSON.stringify(run("withIndicator('stoch', false)")), '{"rsi":true,"stoch":false,"bb":true}', '끄는 것은 다른 쪽을 건드리지 않는다');
+  assert.equal(JSON.stringify(run("withIndicator('stoch', true)")), '{"rsi":false,"stoch":true,"bb":true}', '켜면 다른 쪽을 끈다');
   const both = run('cleanIndicators({ rsi: true, stoch: true })');
   assert.ok(both.rsi === true && both.stoch === false);
   assert.equal(run('cleanIndicators({ stoch: true })').stoch, true);
@@ -2250,6 +2225,8 @@ await test('rsi tall: the switch shows only with the RSI pane, names its state, 
   run("state.timeframe = '1D'; state.plainChart = false; state.indicators = { rsi: false }; renderChartMode(0, false);");
   const b = elements.get('rsiTall');
   assert.equal(b.hidden, true, 'RSI 칸이 꺼져 있으면 숨는다');
+  run('state.indicators = { stoch: true }; renderChartMode(0, false);');
+  assert.equal(b.hidden, false, '스토캐스틱 칸에도');
   run('state.indicators = { rsi: true }; renderChartMode(0, false);');
   assert.equal(b.hidden, false);
   assert.equal(b.className, '', '처음에는 꺼짐');
@@ -2511,7 +2488,7 @@ await test('indicators: the comparison line is a dashed line on the price axis w
   const node = () => ({ style: {}, kids: [], append(t) { this.text = t; }, appendChild(k) { this.kids.push(k); } });
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, bindChartLeave() {}, maColor: () => '#000', hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
   });
   c.document.createElement = () => node();
@@ -2568,7 +2545,7 @@ await test('tooltip: the price line carries its change in the up/down colour, wi
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {}, hexA: () => 'x', cssVar: (n) => n,
   });
   run(`lastProfile = null; state.timeframe = '1M';
@@ -2620,7 +2597,7 @@ await test('indicators: volume profile is computed over the visible range and dr
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'x', cssVar: (n) => n,
   });
@@ -2730,7 +2707,7 @@ await test('candle basis: drawChart draws candles, the price axis and the toolti
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {}, hexA: () => 'x', cssVar: (n) => n,
   });
   run(`state.timeframe = '1M'; state.chartMode = 'candle';
@@ -4140,7 +4117,7 @@ await test('drawChart draws trend lines on top of every other dataset, and drops
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
   });
@@ -4266,7 +4243,7 @@ await test('3Y labels read like 1Y: YY/MM axis, full date in the tooltip, MM/DD 
   const configs = [];
   Object.assign(c, {
     Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
-    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {}, paneNavPlugin: {},
     renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {},
     hexA: () => 'rgba(0,0,0,0)', cssVar: () => '#000000',
   });

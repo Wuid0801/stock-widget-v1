@@ -70,10 +70,12 @@ function renderMaChips() {
   renderMaStyleRows();
 }
 
-// 보조 지표 켜고 끄기. 켜진 칩은 이동평균 칩처럼 그 선의 색을 띤다.
+// 보조 지표 켜고 끄기 — 상단 지표(#indChips)와 하단 지표(#paneChips, pane)를 나눠 그린다. 켜진 칩은 이동평균 칩처럼 그 선의 색을 띤다.
 function renderIndChips() {
-  const box = document.getElementById('indChips');
-  box.innerHTML = '';
+  const top = document.getElementById('indChips');
+  const bottom = document.getElementById('paneChips');
+  top.innerHTML = '';
+  bottom.innerHTML = '';
   for (const ind of INDICATORS) {
     const on = state.indicators[ind.key];
     const b = document.createElement('button');
@@ -92,7 +94,7 @@ function renderIndChips() {
       renderIndChips();
       loadChart();
     };
-    box.appendChild(b);
+    (ind.pane ? bottom : top).appendChild(b);
   }
 }
 

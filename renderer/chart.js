@@ -528,6 +528,20 @@ const zoomBoxPlugin = {
   },
 };
 
+// 아래 칸(RSI · 스토캐스틱) 양옆 ‹ ›(#paneNav)를 그 칸에 맞춘다. 칸의 자리는 Chart.js 배치가 끝나야 알 수 있어 여기서 —
+// 창 크기가 바뀌어 다시 배치해도 따라온다. 칸이 없으면(둘 다 꺼짐 · 전체 · 차트만 보기) 숨는다.
+const paneNavPlugin = {
+  id: 'paneNav',
+  afterLayout(c) {
+    const el = document.getElementById('paneNav');
+    const s = c.scales.yRsi;
+    el.hidden = !s;
+    if (!s) return;
+    const a = c.chartArea;
+    Object.assign(el.style, { left: `${a.left}px`, width: `${a.right - a.left}px`, top: `${s.top}px`, height: `${s.bottom - s.top}px` });
+  },
+};
+
 // 차트를 벗어나면 범례를 기간 숫자만 남은 상태로 되돌린다.
 // 캔버스는 다시 만들어지지 않으므로 한 번만 붙인다.
 let leaveBound = false;
@@ -561,8 +575,7 @@ function clearChart() {
   document.getElementById('chartMode').hidden = true; // 차트가 없으면 전환할 것도 없다
   document.getElementById('plainChart').hidden = true;
   document.getElementById('extHours').hidden = true;
-  document.getElementById('rsiPane').hidden = true;
-  document.getElementById('stochPane').hidden = true;
+  document.getElementById('paneNav').hidden = true;
   document.getElementById('rsiTall').hidden = true;
   document.getElementById('zoomReset').hidden = true; // 차트가 없으면 풀 확대도 없다
 }
@@ -663,7 +676,7 @@ function drawChart(arg) {
 
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
-    plugins: [extBandPlugin, profilePlugin, candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin],
+    plugins: [extBandPlugin, profilePlugin, candlePlugin, hLinePlugin, crossMarkPlugin, crosshairPlugin, zoomBoxPlugin, paneNavPlugin],
     data: {
       // 1Y · 3Y 를 확대하면 몇 주 · 몇 달만 보이므로 연/월 라벨로는 눈금이 같은 값으로
       // 반복된다(26/03 · 26/03 · 26/04). 그때는 1M · 3M 과 같은 월/일로 쓴다.

@@ -120,21 +120,11 @@ function renderChartMode(bars, daily) {
   v.textContent = integrated ? '통합' : 'KRX';
   v.className = integrated ? 'on' : '';
   v.title = integrated ? '통합 캔들(KRX + NXT — 증권사 앱의 통합 차트) — 누르면 KRX 만' : 'KRX 캔들(정규장) — 누르면 통합(KRX + NXT)';
-  // RSI 칸 켜고 끄기 — RSI 를 그릴 수 있는 기간(RSI_TF)에서만. 차트만 보기는 보조 지표를 다 끄므로 숨긴다. 켜져 있으면 또렷하게.
-  const s = document.getElementById('rsiPane');
-  const rsiOn = !!(state.indicators && state.indicators.rsi);
-  s.hidden = state.plainChart === true || !RSI_TF.has(state.timeframe);
-  s.className = rsiOn ? 'on' : '';
-  s.title = rsiOn ? 'RSI 칸 끄기' : 'RSI 칸 켜기 — 차트 아래에 RSI · 시그널';
-  // 스토캐스틱 칸 — RSI 칸과 같은 자리라 하나를 켜면 다른 하나가 꺼진다(withIndicator). 보이는 조건도 RSI 버튼과 같다.
-  const k = document.getElementById('stochPane');
-  const stochOn = !!(state.indicators && state.indicators.stoch);
-  k.hidden = s.hidden;
-  k.className = stochOn ? 'on' : '';
-  k.title = stochOn ? '스토캐스틱 칸 끄기' : `스토캐스틱 칸 켜기 — 차트 아래에 K · D(${STOCH_PERIOD}, 1, ${STOCH_D}), RSI 칸 대신`;
-  // 크게 보기 — 아래 칸(RSI · 스토캐스틱)이 보일 때만. 켜져 있으면 또렷하게.
+  // 크게 보기 — 아래 칸(RSI · 스토캐스틱)이 보일 때만: 그 칸을 그리는 기간(RSI_TF)이고 차트만 보기가 아닐 때. 켜져 있으면 또렷하게.
+  // 칸을 켜고 끄는 것은 설정 칩, RSI ↔ 스토캐스틱은 칸 양옆 ‹ ›(#paneNav, paneNavPlugin)다.
   const t = document.getElementById('rsiTall');
-  t.hidden = s.hidden || !(rsiOn || stochOn);
+  const paneOn = !!(state.indicators && (state.indicators.rsi || state.indicators.stoch));
+  t.hidden = state.plainChart === true || !RSI_TF.has(state.timeframe) || !paneOn;
   t.className = rsiTall ? 'on' : '';
   t.title = rsiTall ? '아래 칸 원래 크기로' : '아래 칸 크게 보기 — RSI · 스토캐스틱 칸을 2배로(관심종목 목록이 그만큼 줄어든다)';
 }
@@ -163,10 +153,9 @@ async function toggleCandleVenue() {
   await loadChart();
 }
 
-// RSI · 스토캐스틱 칸 버튼(key 'rsi' | 'stoch') — 설정의 칩과 같은 값을 바꾼다(칩도 다시 그린다). 하나를 켜면 다른 하나는
-// 꺼진다(withIndicator). 차트 상자 높이는 loadChart 가 chartBoxClass 로 맞춘다.
-async function togglePane(key) {
-  state.indicators = withIndicator(key, !state.indicators[key]);
+// 아래 칸 양옆 ‹ › — RSI ↔ 스토캐스틱(설정 칩과 같은 값이라 칩도 다시 그린다). 둘뿐이라 어느 쪽을 눌러도 같다.
+async function flipPane() {
+  state.indicators = withIndicator(state.indicators.rsi ? 'stoch' : 'rsi', true);
   save();
   renderIndChips();
   await loadChart();
