@@ -209,7 +209,7 @@ function rsiFor(symbol, times, closes, warm) {
     while (k >= 0 && Math.floor(d.times[k] / 86400000) >= first) k--;
     found = crossings([r[k], ...data], [g[k], ...signal]).map((c) => ({ ...c, i: c.i - 1 }));
   } else {
-    const pre = warm || [];
+    const pre = warm ? warm.closes : [];
     const r = rsiSeries([...pre, ...closes], RSI_PERIOD);
     const g = rsiSignal(r, RSI_SIGNAL);
     data = r.slice(pre.length);
@@ -225,6 +225,24 @@ function rsiFor(symbol, times, closes, warm) {
   const pending = state.timeframe === '1D' ? found.find((c) => c.i === times.length - 1) || null : null;
   return { data, signal, crosses, pending, rising: last ? last.golden : null, since: last ? times.length - last.i : null,
     flipAt: last ? times[last.i] : null };
+}
+
+// 스토캐스틱(보조 지표, STOCH_PERIOD · 1 · STOCH_D). RSI 처럼 첫 봉부터 값이 있게 앞 봉을 잇는다 — 일봉 기간은 SAR 처럼 차트
+// 첫날 앞의 5년치 일봉 고 · 저 · 종, 1D · 1W 는 앞 거래일 봉(warm, rsiWarmFor — 못 받으면 받은 봉만으로, 앞 13봉이 빈다).
+// 차트 봉은 오늘 봉을 실시간으로 맞춘 값이라 차트 쪽을 쓴다. 돌려주는 값: { k, d } | null
+function stochFor(symbol, times, highs, lows, closes, warm) {
+  const pre = { highs: [], lows: [], closes: [] };
+  const q = quotes[symbol];
+  if (TF[state.timeframe].interval === '1d' && q && q.dailyHL && q.daily && times.length) {
+    const first = Math.floor(times[0] / 86400000); // 이동평균과 같은 UTC 날짜 짝짓기
+    // daily 는 dailyHL 과 같은 일봉이다(끝에 오늘 봉이 하나 더 붙을 수 있다) — 앞쪽 번호가 같다
+    for (let i = 0; i < q.dailyHL.times.length && Math.floor(q.dailyHL.times[i] / 86400000) < first; i++) {
+      pre.highs.push(q.dailyHL.highs[i]); pre.lows.push(q.dailyHL.lows[i]); pre.closes.push(q.daily.closes[i]);
+    }
+  } else if (warm) Object.assign(pre, warm);
+  const s = stochSeries([...pre.highs, ...highs], [...pre.lows, ...lows], [...pre.closes, ...closes], STOCH_PERIOD, STOCH_D);
+  const k = s.k.slice(pre.closes.length);
+  return k.some((v) => v != null) ? { k, d: s.d.slice(pre.closes.length) } : null;
 }
 
 // 국내 일봉 캔들의 시 · 고 · 저 · 종 — 기준(state.candleVenue)에 따라. 통합: 지난 날은 KRX + NXT 일봉을 합친 값(naver:venueDays,
@@ -260,9 +278,9 @@ async function venueDaysFor(symbol, from) {
   return r.days;
 }
 
-// 1D · 1W RSI 의 앞 거래일 봉 — 차트 첫 봉(first) 앞의 종가들. 지금 기간의 RSI_WARM(정규장)을 받는다 — 국내는 main 이 네이버
-// KRX 분봉으로 준다(야후 국내 5분봉은 15:00 뒤 봉이 없다). 지난 날 봉은 바뀌지 않아 차트 첫 봉 뒤에 받은 것이면 다시 받지 않는다
-// (날이 바뀔 때 한 번 꼴). 실패하면
+// 1D · 1W RSI · 스토캐스틱의 앞 거래일 봉 — 차트 첫 봉(first) 앞의 { closes, highs, lows }. 지금 기간의 RSI_WARM(정규장)을
+// 받는다 — 국내는 main 이 네이버 KRX 분봉으로 준다(야후 국내 5분봉은 15:00 뒤 봉이 없다). 지난 날 봉은 바뀌지 않아 차트 첫 봉
+// 뒤에 받은 것이면 다시 받지 않는다(날이 바뀔 때 한 번 꼴). 실패하면
 // null(받은 봉만으로 계산한다 — 앞쪽이 빈다)이고 RSI_WARM_RETRY 동안 다시 묻지 않는다.
 async function rsiWarmFor(symbol, first) {
   const req = RSI_WARM[state.timeframe];
@@ -271,10 +289,13 @@ async function rsiWarmFor(symbol, first) {
   const fresh = hit && (hit.closes ? hit.at >= first : Date.now() - hit.at < RSI_WARM_RETRY);
   if (!fresh) {
     const r = await api.fetchChart({ symbol, ...req }).catch(() => null);
-    hit = { at: Date.now(), times: r && r.ok ? r.times : null, closes: r && r.ok ? r.closes : null };
+    const ok = r && r.ok;
+    hit = { at: Date.now(), times: ok ? r.times : null, closes: ok ? r.closes : null,
+      highs: ok ? r.highs || r.closes : null, lows: ok ? r.lows || r.closes : null };
     rsiWarmCache.set(key, hit);
   }
-  return hit.closes ? hit.closes.filter((_, i) => hit.times[i] < first) : null;
+  const before = (a) => a.filter((_, i) => hit.times[i] < first);
+  return hit.closes ? { closes: before(hit.closes), highs: before(hit.highs), lows: before(hit.lows) } : null;
 }
 
 // 거래량 평균. 일봉 기간은 5년치 일봉 거래량으로(첫 봉부터 평균이 있다).
@@ -516,8 +537,8 @@ async function loadChart() {
       : `${item.name} 차트: ${r.error}`);
     return;
   }
-  // RSI(보조 지표)의 1D · 1W 는 앞 거래일 봉을 앞에 잇는다 — 차트 첫 봉 앞의 종가들(하루 한 번 받는다, rsiWarmFor)
-  const rsiWarm = !plain && state.indicators && state.indicators.rsi && RSI_WARM[state.timeframe] && r.times.length
+  // RSI · 스토캐스틱(보조 지표)의 1D · 1W 는 앞 거래일 봉을 앞에 잇는다 — 차트 첫 봉 앞의 봉들(하루 한 번 받는다, rsiWarmFor)
+  const rsiWarm = !plain && state.indicators && (state.indicators.rsi || state.indicators.stoch) && RSI_WARM[state.timeframe] && r.times.length
     ? await rsiWarmFor(item.symbol, r.times[0]) : null;
   if (seq !== chartSeq) return;
 
@@ -660,6 +681,8 @@ async function loadChart() {
     : daily ? sarFor(item.symbol, times, highs, lows)
       : state.timeframe === '1D' || state.timeframe === '1W' ? sarFor(item.symbol, times, highs, lows, ext) : null;
   const rsi = ind.rsi && RSI_TF.has(state.timeframe) ? rsiFor(item.symbol, times, closes, rsiWarm) : null;
+  // 스토캐스틱은 RSI 칸 자리에 — 둘 중 하나만 켜진다(withIndicator · cleanIndicators)
+  const stoch = ind.stoch && RSI_TF.has(state.timeframe) ? stochFor(item.symbol, times, highs, lows, closes, rsiWarm) : null;
   // 지수 비교선 — 배지 때문에 이미 받은 지수 차트로(새 요청 없음)
   const bline = benchLine(bench, benchGot, times, closes);
   const tips = tipBases(item.symbol, times, closes); // 툴팁 가격 옆 등락률의 기준
@@ -691,7 +714,7 @@ async function loadChart() {
 
   const chart = {
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, rsi, benchLine: bline, tipBases: tips,
+    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, rsi, stoch, benchLine: bline, tipBases: tips,
     profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
     candleBars, // 캔들의 시 · 고 · 저 · 종(통합 / KRX) — 국내 일봉 캔들 모드만, 없으면 위 값으로 그린다
   };

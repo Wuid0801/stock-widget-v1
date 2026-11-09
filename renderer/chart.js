@@ -74,7 +74,8 @@ function renderMaLegend() {
   const sr = (lastChart && lastChart.sar) || null;
   const bl = (lastChart && lastChart.benchLine) || null;
   const rs = (lastChart && lastChart.rsi) || null;
-  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr && !bl && !rs;
+  const st = (lastChart && lastChart.stoch) || null;
+  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr && !bl && !rs && !st;
   box.innerHTML = '';
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
@@ -133,11 +134,11 @@ function renderMaLegend() {
   }
   // RSI 는 SAR 처럼 지금 상태 — 마지막 확정 교차 뒤 RSI 가 시그널 위(상향)인지 아래(하향)인지와 그 기간. 확정된 교차가
   // 없으면 마지막 값. 마우스를 올려도 그대로다 — 그 봉의 값은 툴팁에 있다.
+  const lastOf = (a) => a.filter((v) => v != null).pop();
   if (rs) {
     const head = `RSI(${RSI_PERIOD}) · 시그널(RSI ${RSI_SIGNAL}봉 평균)`;
     const dots = '차트 아래 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점';
     if (rs.rising == null) {
-      const lastOf = (a) => a.filter((v) => v != null).pop();
       const r = lastOf(rs.data); const g = lastOf(rs.signal);
       add('RSI', `${r.toFixed(0)}${g != null ? ` · 시그널 ${g.toFixed(0)}` : ''}`, cssVar('--rsi-line'),
         `${head} — 보이는 구간에 확정된 교차가 없습니다. ${dots}\n\n${RSI_CROSS_EVIDENCE}`);
@@ -146,6 +147,13 @@ function renderMaLegend() {
       add('RSI', heldFor(dir, rs), cssVar('--rsi-line'),
         `${head} — ${whenOf(rs)} ${dir} 교차. ${dots}\n\n${RSI_CROSS_EVIDENCE}`);
     }
+  }
+  // 스토캐스틱은 지금 K · D 값만(교차 점 · 상태 글은 없다 — 사용자와 정함). 그 봉의 값은 툴팁에 있다.
+  if (st) {
+    const k = lastOf(st.k); const d = lastOf(st.d);
+    add('스토', `K ${k.toFixed(0)}${d != null ? ` · D ${d.toFixed(0)}` : ''}`, cssVar('--stoch-line'),
+      `스토캐스틱(${STOCH_PERIOD}, 1, ${STOCH_D}) — 차트 아래 칸에 K 실선(최근 ${STOCH_PERIOD}봉 고가~저가에서 종가의 자리), `
+      + `D 점선(K 의 ${STOCH_D}봉 평균). 80 · 20 기준선`);
   }
   // 매물대는 가장 많이 거래된 가격대(진하게 칠한 칸)를 늘 보여 준다
   if (vp) {
@@ -554,6 +562,7 @@ function clearChart() {
   document.getElementById('plainChart').hidden = true;
   document.getElementById('extHours').hidden = true;
   document.getElementById('rsiPane').hidden = true;
+  document.getElementById('stochPane').hidden = true;
   document.getElementById('rsiTall').hidden = true;
   document.getElementById('zoomReset').hidden = true; // 차트가 없으면 풀 확대도 없다
 }
@@ -564,7 +573,7 @@ function drawChart(arg) {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
     bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, rsi = null, benchLine = null, tipBases = null,
-    candleBars = null,
+    candleBars = null, stoch = null,
   } = arg;
   const color = up ? UP : DOWN;
   // 툴팁 가격 옆 등락률(%). 기준(tipBases, loadChart 가 만든다)이 없으면 null
@@ -608,9 +617,34 @@ function drawChart(arg) {
   const rsiDot = new Map(rsi ? [...rsi.crosses.map((x) => [x.i, { golden: x.golden, open: false }]),
     ...(rsi.pending ? [[rsi.pending.i, { golden: rsi.pending.golden, open: true }]] : [])] : []);
   const rsiDotColor = (i) => (rsiDot.has(i) && rsiDot.get(i).golden ? UP : DOWN);
-  // RSI 칸 눈금 — 보이는 봉의 RSI · 시그널 최저~최고에 맞춘다(rsiScale). 거래량처럼 확대 중에는 그 구간으로.
-  const rsiFit = rsi ? rsiScale(zr ? [...rsi.data.slice(zr.from, zr.to + 1), ...rsi.signal.slice(zr.from, zr.to + 1)]
-    : [...rsi.data, ...rsi.signal]) : null;
+  // 아래 칸(RSI 또는 스토캐스틱) 눈금 — RSI 는 보이는 봉의 RSI · 시그널 최저~최고에 맞춘다(rsiScale). 거래량처럼 확대 중에는
+  // 그 구간으로. 스토캐스틱은 늘 0~100 을 거의 다 쓰므로 0~100 에 20 · 80. null 이면 아래 칸이 없다.
+  const paneFit = rsi ? rsiScale(zr ? [...rsi.data.slice(zr.from, zr.to + 1), ...rsi.signal.slice(zr.from, zr.to + 1)]
+    : [...rsi.data, ...rsi.signal]) : stoch ? { min: 0, max: 100, ticks: [20, 80] } : null;
+  // 아래 칸의 기준선(옅은 점선, 눈금 안일 때만 — 밖이면 가격 칸에 그어진다) · 시그널(점선) · 지표(옅은 실선) 데이터셋
+  const paneLines = (guides, line, signal, varName) => [...guides.filter((v) => v > paneFit.min && v < paneFit.max).map((v) => ({
+    data: closes.map(() => v),
+    yAxisID: 'yRsi',
+    order: -0.5,
+    borderColor: cssVar('--grid'),
+    borderWidth: 1,
+    borderDash: [2, 3],
+  })), {
+    data: signal,
+    yAxisID: 'yRsi',
+    order: -0.5,
+    borderColor: cssVar('--mute'),
+    borderWidth: 1,
+    borderDash: [3, 2],
+    tension: 0.2,
+  }, {
+    data: line,
+    yAxisID: 'yRsi',
+    order: -0.5,
+    borderColor: hexA(cssVar(varName), 0.7),
+    borderWidth: 1.2,
+    tension: 0.2,
+  }];
   // RSI 칸을 둘 때 가격 칸의 stack 비중(RSI 칸은 RSI_PANE, 크게 보기면 RSI_TALL). 그림 높이는 캔버스에서 아래 날짜 줄 · 위
   // 여백(약 22px)을 뺀 만큼이라 RSI 칸이 약 그 px 가 된다. 축 옵션은 다시 배치할 때마다 새로 읽혀 창 높이를 바꿔도 칸 높이가 그대로다.
   const rsiPx = rsiTall ? RSI_TALL : RSI_PANE;
@@ -788,32 +822,10 @@ function drawChart(arg) {
         tension: 0.2,
       }] : []),
       // RSI · 시그널(보조 지표) — 가격 칸 아래 따로 둔 칸(축 yRsi, RSI_PANE)에 그린다. RSI 는 옅은 실선, 시그널은 점선,
-      // 30 · 70 은 아주 옅은 점선 — 눈금(rsiFit) 안일 때만. 밖이면 RSI 칸을 벗어나 가격 칸에 그어진다. 시그널을 뚫은
+      // 30 · 70 은 아주 옅은 점선(paneLines). 시그널을 뚫은
       // 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 평균선(0) 위 · 추세선(-1) 아래에 그린다. 그 봉의 값은
       // 툴팁 footer, 지금 상태는 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
-      ...(rsi ? [...[30, 70].filter((v) => v > rsiFit.min && v < rsiFit.max).map((v) => ({
-        data: closes.map(() => v),
-        yAxisID: 'yRsi',
-        order: -0.5,
-        borderColor: cssVar('--grid'),
-        borderWidth: 1,
-        borderDash: [2, 3],
-      })), {
-        data: rsi.signal,
-        yAxisID: 'yRsi',
-        order: -0.5,
-        borderColor: cssVar('--mute'),
-        borderWidth: 1,
-        borderDash: [3, 2],
-        tension: 0.2,
-      }, {
-        data: rsi.data,
-        yAxisID: 'yRsi',
-        order: -0.5,
-        borderColor: hexA(cssVar('--rsi-line'), 0.7),
-        borderWidth: 1.2,
-        tension: 0.2,
-      }, {
+      ...(rsi ? [...paneLines([30, 70], rsi.data, rsi.signal, '--rsi-line'), {
         data: closes.map((_, i) => (rsiDot.has(i) ? rsi.data[i] : null)),
         yAxisID: 'yRsi',
         order: -0.5,
@@ -825,6 +837,8 @@ function drawChart(arg) {
         pointBorderColor: closes.map((_, i) => rsiDotColor(i)),
         pointBackgroundColor: closes.map((_, i) => (rsiDot.has(i) && rsiDot.get(i).open ? 'transparent' : rsiDotColor(i))),
       }] : []),
+      // 스토캐스틱(보조 지표) — RSI 칸 자리에 K 옅은 실선 · D 점선 · 20 · 80 기준선. 교차 점은 없다.
+      ...(stoch ? paneLines([20, 80], stoch.k, stoch.d, '--stoch-line') : []),
       ],
     },
     options: {
@@ -919,6 +933,9 @@ function drawChart(arg) {
               if (rsi && rsi.data[i] != null) {
                 lines.push(`RSI ${rsi.data[i].toFixed(1)}${rsi.signal[i] != null ? ` · 시그널 ${rsi.signal[i].toFixed(1)}` : ''}`);
               }
+              if (stoch && stoch.k[i] != null) {
+                lines.push(`스토 K ${stoch.k[i].toFixed(1)}${stoch.d[i] != null ? ` · D ${stoch.d[i].toFixed(1)}` : ''}`);
+              }
               return lines;
             },
           },
@@ -936,8 +953,8 @@ function drawChart(arg) {
         },
         y: {
           position: 'right',
-          // RSI 를 그리면 yRsi 와 위아래로 쌓는다(Chart.js stack) — 위가 가격 칸, 아래 rsiPx 만큼이 RSI 칸
-          ...(rsi ? { stack: 'pane', stackWeight: priceWeight } : {}),
+          // RSI · 스토캐스틱을 그리면 yRsi 와 위아래로 쌓는다(Chart.js stack) — 위가 가격 칸, 아래 rsiPx 만큼이 그 칸
+          ...(paneFit ? { stack: 'pane', stackWeight: priceWeight } : {}),
           // 범위는 주가에만(yLo ~ yHi). Chart.js 가 데이터로 끝을 정한 직후 바꿔 두면 그 범위를 1 · 2 · 5 단위로 넓히며 눈금을 단다
           // ("차트만 보기"와 같은 축). min · max 로 못 박으면 그 안의 눈금만 남아 셋 중 하나꼴로 숫자가 하나뿐이었다.
           afterDataLimits: (s) => { if (yHi > yLo) { s.min = yLo; s.max = yHi; } },
@@ -949,19 +966,19 @@ function drawChart(arg) {
         yVol: {
           display: false,
           beginAtZero: true,
-          ...(rsi ? { min: (ctx) => (-maxVol * 4 * rsiPx) / priceWeight(ctx) } : {}),
+          ...(paneFit ? { min: (ctx) => (-maxVol * 4 * rsiPx) / priceWeight(ctx) } : {}),
           max: maxVol * 4,
           grid: { display: false },
         },
-        // RSI 전용 축(보조 지표). y 와 같은 오른쪽 stack 의 아래 칸. 눈금은 보이는 RSI 범위(rsiFit), 숫자는 rsiFit 이 고른
-        // 자리에만 — 쌓인 축은 폭을 같이 써 가격 눈금과 같은 줄에 선다. 기준선은 데이터셋이라 격자 · 축 선은 끈다.
-        ...(rsi ? { yRsi: {
+        // 아래 칸 축(RSI · 스토캐스틱이 같이 쓴다). y 와 같은 오른쪽 stack 의 아래 칸. 눈금은 paneFit 범위, 숫자는 paneFit 이
+        // 고른 자리에만 — 쌓인 축은 폭을 같이 써 가격 눈금과 같은 줄에 선다. 기준선은 데이터셋이라 격자 · 축 선은 끈다.
+        ...(paneFit ? { yRsi: {
           position: 'right',
           stack: 'pane',
           stackWeight: rsiPx,
-          min: rsiFit.min,
-          max: rsiFit.max,
-          afterBuildTicks: (axis) => { axis.ticks = rsiFit.ticks.map((value) => ({ value })); },
+          min: paneFit.min,
+          max: paneFit.max,
+          afterBuildTicks: (axis) => { axis.ticks = paneFit.ticks.map((value) => ({ value })); },
           grid: { display: false },
           border: { display: false },
           ticks: { color: cssVar('--mute'), font: { size: 9 }, autoSkip: false },

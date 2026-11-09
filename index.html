@@ -66,6 +66,7 @@
     --sar-up: #e08a8a; /* 파라볼릭 SAR — 상승 추세(봉 아래 점) */
     --sar-down: #86a6d8; /* 파라볼릭 SAR — 하락 추세(봉 위 점) */
     --rsi-line: #a99cf0; /* RSI 선(보조 지표) — 차트 아래 거래량 칸, 등락 색과 겹치지 않는 보라 */
+    --stoch-line: #4fc1a6; /* 스토캐스틱 K 선(보조 지표) — RSI 칸 자리, RSI 보라와 다른 청록 */
     --bench-line: #c3c8cf; /* 지수 비교선(지수 대비) — 볼린저 · 지지선과 다른 회색 점선 */
     --vol-avg: rgba(232, 236, 242, 0.55); /* 거래량 평균선 */
     --vp-bar: rgba(232, 236, 242, 0.14); /* 매물대 가로 막대 */
@@ -145,6 +146,7 @@
     --sar-up: #c04d4d; /* 파라볼릭 SAR — 상승 추세(봉 아래 점) */
     --sar-down: #3f68a8; /* 파라볼릭 SAR — 하락 추세(봉 위 점) */
     --rsi-line: #6c5fc7; /* RSI 선(보조 지표) */
+    --stoch-line: #17866f; /* 스토캐스틱 K 선(보조 지표) */
     --bench-line: #6a717b; /* 지수 비교선(지수 대비) — 볼린저 · 지지선과 다른 회색 점선 */
     --vol-avg: rgba(26, 31, 39, 0.5); /* 거래량 평균선 */
     --vp-bar: rgba(26, 31, 39, 0.1); /* 매물대 가로 막대 */
@@ -701,14 +703,14 @@
   /* 덧그림(이동평균 · 보조 지표 · 기준선)이 보이면 또렷하게, 차트만 보기로 껐으면 흐리게 */
   #plainChart.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
   /* 정규장 / 전체(1D · 1W) — 글자가 지금 보는 것. 전체(시간외 켬)면 또렷하게, 정규장만이면 흐리게.
-     RSI 칸 · RSI 크게 보기 켜고 끄기도 같은 모양 — 켜져 있으면 또렷하게 */
-  #candleVenue, #extHours, #rsiPane, #rsiTall {
+     RSI 칸 · 스토캐스틱 칸 · 크게 보기 켜고 끄기도 같은 모양 — 켜져 있으면 또렷하게 */
+  #candleVenue, #extHours, #rsiPane, #stochPane, #rsiTall {
     height: 18px; padding: 0 5px; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); font-size: 10px; font-family: inherit; cursor: pointer; opacity: .6;
   }
-  #candleVenue:hover, #extHours:hover, #rsiPane:hover, #rsiTall:hover { opacity: 1; color: var(--text-3); }
-  #candleVenue.on, #extHours.on, #rsiPane.on, #rsiTall.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
-  #candleVenue[hidden], #extHours[hidden], #rsiPane[hidden], #rsiTall[hidden] { display: none; }
+  #candleVenue:hover, #extHours:hover, #rsiPane:hover, #stochPane:hover, #rsiTall:hover { opacity: 1; color: var(--text-3); }
+  #candleVenue.on, #extHours.on, #rsiPane.on, #stochPane.on, #rsiTall.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
+  #candleVenue[hidden], #extHours[hidden], #rsiPane[hidden], #stochPane[hidden], #rsiTall[hidden] { display: none; }
   #zoomReset {
     height: 18px; padding: 0 6px; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); font-size: 10px; cursor: pointer; opacity: .6;
@@ -807,7 +809,7 @@
       <!-- 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과. 자세한 숫자는 툴팁 -->
       <div class="trendchk" id="trendCheck" hidden></div>
 
-      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><div class="metrics" id="metricsView" hidden></div><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="candleVenue" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="extHours" type="button" hidden></button><button id="rsiPane" type="button" hidden>RSI</button><button id="rsiTall" type="button" hidden>↕</button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
+      <div class="chartbox" id="chartBox"><canvas id="chart"></canvas><div class="metrics" id="metricsView" hidden></div><span class="chartctl"><button id="chartMode" type="button" hidden></button><button id="candleVenue" type="button" hidden></button><button id="plainChart" type="button" hidden><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden="true"><path d="M7 .8l6 2.8-6 2.8-6-2.8z" fill="currentColor"/><path d="M1 6.2l6 2.8 6-2.8M1 8.6l6 2.8 6-2.8" fill="none" stroke="currentColor"/></svg></button><button id="extHours" type="button" hidden></button><button id="rsiPane" type="button" hidden>RSI</button><button id="stochPane" type="button" hidden>스토</button><button id="rsiTall" type="button" hidden>↕</button><button id="zoomReset" type="button" title="전체 기간 보기" hidden>전체</button></span></div>
       <div class="err" id="err"></div>
     </div>
 

@@ -126,11 +126,17 @@ function renderChartMode(bars, daily) {
   s.hidden = state.plainChart === true || !RSI_TF.has(state.timeframe);
   s.className = rsiOn ? 'on' : '';
   s.title = rsiOn ? 'RSI 칸 끄기' : 'RSI 칸 켜기 — 차트 아래에 RSI · 시그널';
-  // RSI 크게 보기 — RSI 칸이 보일 때만(RSI 버튼이 보이고 켜져 있을 때). 켜져 있으면 또렷하게.
+  // 스토캐스틱 칸 — RSI 칸과 같은 자리라 하나를 켜면 다른 하나가 꺼진다(withIndicator). 보이는 조건도 RSI 버튼과 같다.
+  const k = document.getElementById('stochPane');
+  const stochOn = !!(state.indicators && state.indicators.stoch);
+  k.hidden = s.hidden;
+  k.className = stochOn ? 'on' : '';
+  k.title = stochOn ? '스토캐스틱 칸 끄기' : `스토캐스틱 칸 켜기 — 차트 아래에 K · D(${STOCH_PERIOD}, 1, ${STOCH_D}), RSI 칸 대신`;
+  // 크게 보기 — 아래 칸(RSI · 스토캐스틱)이 보일 때만. 켜져 있으면 또렷하게.
   const t = document.getElementById('rsiTall');
-  t.hidden = s.hidden || !rsiOn;
+  t.hidden = s.hidden || !(rsiOn || stochOn);
   t.className = rsiTall ? 'on' : '';
-  t.title = rsiTall ? 'RSI 원래 크기로' : 'RSI 크게 보기 — RSI 칸을 2배로(관심종목 목록이 그만큼 줄어든다)';
+  t.title = rsiTall ? '아래 칸 원래 크기로' : '아래 칸 크게 보기 — RSI · 스토캐스틱 칸을 2배로(관심종목 목록이 그만큼 줄어든다)';
 }
 
 // RSI 크게 보기 버튼 — RSI 칸을 RSI_PANE ↔ RSI_TALL 로. 차트 상자가 그만큼 커져 가격 칸은 그대로, 관심종목 목록이 줄어든다
@@ -150,7 +156,6 @@ async function toggleExtHours() {
   await loadChart();
 }
 
-// RSI 칸 버튼 — 설정의 RSI 칩과 같은 값을 바꾼다(칩도 다시 그린다). 차트 상자 높이는 loadChart 가 chartBoxClass 로 맞춘다.
 // 통합 / KRX 버튼 — 국내 일봉의 캔들 기준을 바꾼다(캔들 모양만, 선 · 지표는 그대로).
 async function toggleCandleVenue() {
   state.candleVenue = state.candleVenue === 'krx' ? 'integrated' : 'krx';
@@ -158,8 +163,10 @@ async function toggleCandleVenue() {
   await loadChart();
 }
 
-async function toggleRsiPane() {
-  state.indicators = { ...state.indicators, rsi: !state.indicators.rsi };
+// RSI · 스토캐스틱 칸 버튼(key 'rsi' | 'stoch') — 설정의 칩과 같은 값을 바꾼다(칩도 다시 그린다). 하나를 켜면 다른 하나는
+// 꺼진다(withIndicator). 차트 상자 높이는 loadChart 가 chartBoxClass 로 맞춘다.
+async function togglePane(key) {
+  state.indicators = withIndicator(key, !state.indicators[key]);
   save();
   renderIndChips();
   await loadChart();

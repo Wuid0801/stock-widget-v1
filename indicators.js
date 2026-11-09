@@ -67,6 +67,20 @@ function rsiScale(values) {
   return { min, max, ticks: [30, 70].filter((t) => t >= min + pad && t <= max - pad) };
 }
 
+// --- 스토캐스틱 ---------------------------------------------------------------
+// K = 최근 period 봉의 고가~저가에서 그 봉 종가의 자리(0~100), D = K 의 dPeriod 봉 평균. K 를 다시 평균하지 않는
+// 14 · 1 · 3 이다(토스증권 값, 사용자 확인 2026-11-09). 앞 period - 1 봉은 null, 범위가 0(고가 = 저가)이면 50.
+// 종가도 범위에 넣는다 — 오늘 봉처럼 종가와 고 · 저의 출처가 다르면 100 을 넘을 수 있다.
+function stochSeries(highs, lows, closes, period = 14, dPeriod = 3) {
+  const k = closes.map((c, i) => {
+    if (i < period - 1 || !Number.isFinite(c)) return null;
+    const hi = Math.max(c, ...highs.slice(i - period + 1, i + 1).filter(Number.isFinite));
+    const lo = Math.min(c, ...lows.slice(i - period + 1, i + 1).filter(Number.isFinite));
+    return hi > lo ? ((c - lo) / (hi - lo)) * 100 : 50;
+  });
+  return { k, d: rsiSignal(k, dPeriod) }; // rsiSignal = 앞 빈 칸을 건너뛴 단순 평균
+}
+
 // 단순이동평균. 구간이 모자라는 앞부분은 null (Chart.js가 알아서 비워 둔다)
 function sma(closes, period) {
   const out = new Array(closes.length).fill(null);
@@ -676,7 +690,7 @@ function eggPhase(closes, volumes) {
 // 렌더러에는 contextIsolation 이 걸려 있어 module 이 없다 → 이 줄은 건너뛴다.
 if (typeof module !== 'undefined') {
   module.exports = {
-    calcRSI, rsiSeries, rsiSignal, RSI_MIN_SPAN, rsiScale, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, monthsBack, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
+    calcRSI, rsiSeries, rsiSignal, RSI_MIN_SPAN, rsiScale, stochSeries, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, monthsBack, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,

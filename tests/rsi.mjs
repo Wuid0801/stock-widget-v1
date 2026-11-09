@@ -4,7 +4,7 @@
 // 널리 쓰이는 technicalindicators 라이브러리의 RSI 와 소수 2자리까지
 // 전부 일치함을 확인했다(Wilder 예제 + 실제 국내 5종목 일봉, 총 1166개 값).
 // 여기서는 외부 의존성 없이 그 결과를 고정해 두어 구현이 바뀌면 잡히게 한다.
-import { calcRSI, weekCloses, rsiSeries, rsiSignal, sma, rsiScale, RSI_MIN_SPAN } from '../indicators.js';
+import { calcRSI, weekCloses, rsiSeries, rsiSignal, sma, rsiScale, RSI_MIN_SPAN, stochSeries } from '../indicators.js';
 
 let fails = 0;
 const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : 'FAIL'} ${t}${x ? '  ' + x : ''}`); };
@@ -108,6 +108,19 @@ check('빈 배열도 안전하게 null', calcRSI([]) === null);
   check('둘 다 보이면 둘 다', ticks(rsiScale([25, 75])) === '[30,70]', ticks(rsiScale([25, 75])));
   check('칸 끝에 붙으면 뺀다', ticks(rsiScale([30.5, 60])) === '[]', ticks(rsiScale([30.5, 60])));
   check('값이 없으면 0~100', JSON.stringify(rsiScale([null, null])) === JSON.stringify({ min: 0, max: 100, ticks: [30, 70] }));
+}
+
+// 스토캐스틱 — K = 최근 기간 고가~저가에서 종가의 자리(0~100, 다시 평균하지 않는다 — 14 · 1 · 3), D = K 의 평균
+{
+  const s = stochSeries([10, 11, 12, 13, 14], [8, 9, 10, 11, 12], [9, 10, 12, 10, 13], 3, 2);
+  check('K: 3봉 고가~저가에서 종가의 자리', JSON.stringify(s.k) === '[null,null,100,25,75]', JSON.stringify(s.k));
+  check('D: K 의 2봉 평균, K 가 모인 봉부터', JSON.stringify(s.d) === '[null,null,null,62.5,50]', JSON.stringify(s.d));
+  check('고가 = 저가면 50', stochSeries([5, 5, 5], [5, 5, 5], [5, 5, 5], 3, 2).k[2] === 50);
+  check('종가가 고가 밖(출처가 다른 오늘 봉)이어도 100 을 넘지 않는다', stochSeries([10, 10, 10], [8, 8, 8], [9, 9, 11], 3, 2).k[2] === 100);
+  check('빈 종가는 null', stochSeries([10, 10, 10], [8, 8, 8], [9, 9, null], 3, 2).k[2] === null);
+  const n = (len) => Array.from({ length: len }, (_, i) => 100 + (i % 5));
+  const def = stochSeries(n(14), n(14).map((v) => v - 3), n(14));
+  check('기본은 14봉 — 앞 13봉은 null', def.k.slice(0, 13).every((v) => v === null) && def.k[13] != null && def.d[13] === null);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);

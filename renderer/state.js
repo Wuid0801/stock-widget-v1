@@ -71,6 +71,7 @@ const INDICATORS = [
   { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%포인트)과, 첫 봉을 종목 가격에 맞춘 지수 점선 — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
   { key: 'sar', label: 'SAR', varName: '--sar-up', title: '파라볼릭 SAR — 상승 추세면 봉 아래, 하락 추세면 봉 위에 점. 범례에 지금 방향과 전환 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
   { key: 'rsi', label: 'RSI', varName: '--rsi-line', title: 'RSI(14)와 시그널(RSI 9봉 평균) — 차트 아래 따로 둔 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점. 범례에 지금 방향과 교차 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
+  { key: 'stoch', label: '스토캐스틱', varName: '--stoch-line', title: '스토캐스틱(14, 1, 3) — 차트 아래 칸에 K 실선 · D 점선, 80 · 20 기준선. RSI 칸과 같은 자리라 둘 중 하나만 켜진다 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
 ];
 const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸 약 7px
 const BB_PERIOD = 20;
@@ -87,21 +88,33 @@ const RSI_SIGNAL = 9;  // 시그널 = RSI 의 이 봉 수 평균(증권사에 �
 const RSI_PANE = 45;   // RSI 칸 높이(px) — 가격 칸 아래 따로 둔다. 켜 두면 차트 상자도 이만큼 커진다(index.html .chartbox.sub)
 const RSI_TALL = 90;   // RSI 크게 보기(#rsiTall) 칸 높이(px) — 상자도 RSI_PANE 대신 이만큼 커진다(.chartbox.sub.tall, 가격 칸 그대로)
 let rsiTall = false;   // RSI 크게 보기 버튼으로 켜고 끈다. 저장하지 않는다(앱을 다시 켜면 꺼짐)
-const RSI_TF = new Set(['1D', '1W', '1M', '3M', '1Y', '3Y']); // 전체(월봉 · 분기봉)는 SAR 처럼 뺀다
-// 1D · 1W RSI 의 앞 거래일 봉(rsiWarmFor) — 1D 는 5일치 5분봉, 1W 는 한 달치 30분봉(국내는 main 이 네이버 열 거래일)
+const RSI_TF = new Set(['1D', '1W', '1M', '3M', '1Y', '3Y']); // 전체(월봉 · 분기봉)는 SAR 처럼 뺀다. 스토캐스틱도 같다
+const STOCH_PERIOD = 14; // 스토캐스틱 K 의 고가~저가 봉 수 — 14 · 1 · 3(토스증권과 같은 값)
+const STOCH_D = 3;       //   D = K 의 이 봉 수 평균
+// 1D · 1W RSI · 스토캐스틱의 앞 거래일 봉(rsiWarmFor) — 1D 는 5일치 5분봉, 1W 는 한 달치 30분봉(국내는 main 이 네이버 열 거래일)
 const RSI_WARM = { '1D': { range: '5d', interval: '5m' }, '1W': { range: '1mo', interval: '30m' } };
 const RSI_WARM_RETRY = 5 * 60000; // 앞 거래일 봉을 못 받으면 이만큼 뒤에 다시 묻는다
-const rsiWarmCache = new Map(); // '종목 봉 크기' → { at, times, closes } — RSI 의 앞 거래일 봉(closes null = 실패)
-// 차트 상자의 class. RSI 를 켜 두면 그 칸만큼 키운다(sub) — 기간 · 차트만 보기와 상관없이 켜 둔 동안은 같은 높이라 기간을
-// 바꿀 때마다 아래 관심종목 목록이 들썩이지 않는다. RSI 를 그리지 않는 화면(전체 · 차트만 보기)은 가격이 그 칸까지 쓴다.
-// RSI 크게 보기면 그 칸(RSI_TALL)만큼(tall).
-const chartBoxClass = (loading) => `chartbox${state.indicators && state.indicators.rsi ? (rsiTall ? ' sub tall' : ' sub') : ''}${loading ? ' loading' : ''}`;
+const rsiWarmCache = new Map(); // '종목 봉 크기' → { at, times, closes, highs, lows } — 앞 거래일 봉(closes null = 실패)
+// 차트 상자의 class. RSI · 스토캐스틱(같은 칸)을 켜 두면 그 칸만큼 키운다(sub) — 기간 · 차트만 보기와 상관없이 켜 둔 동안은
+// 같은 높이라 기간을 바꿀 때마다 아래 관심종목 목록이 들썩이지 않는다. 그 칸을 그리지 않는 화면(전체 · 차트만 보기)은 가격이
+// 그 칸까지 쓴다. 크게 보기면 그 칸(RSI_TALL)만큼(tall).
+const chartBoxClass = (loading) => `chartbox${state.indicators && (state.indicators.rsi || state.indicators.stoch)
+  ? (rsiTall ? ' sub tall' : ' sub') : ''}${loading ? ' loading' : ''}`;
+// 보조 지표 하나를 켜고 끈 새 값. RSI · 스토캐스틱은 차트 아래 한 칸을 같이 써서 하나를 켜면 다른 하나는 꺼진다(사용자 결정, 2026-11-09).
+function withIndicator(key, on) {
+  const other = { rsi: 'stoch', stoch: 'rsi' }[key];
+  return { ...state.indicators, ...(on && other ? { [other]: false } : {}), [key]: on };
+}
 const FOLLOW_MA = 200;    // 기법 점검(지표 화면) — 추세 추종의 장기 이동평균
 const DCA_MONTHS = 12;    //   적립식 기간(달, 이번 달 포함)
 const REBOUND_DAYS = 60;  //   반등 점검 — 이 거래일 안의 최고 종가에서
 const REBOUND_DROP = 15;  //   이만큼(%) 넘게 빠진 뒤 반등 중일 때만
-// 저장된 값을 믿지 않는다 — 아는 키만, true 일 때만 켠다.
-const cleanIndicators = (raw) => Object.fromEntries(INDICATORS.map(({ key }) => [key, !!raw && raw[key] === true]));
+// 저장된 값을 믿지 않는다 — 아는 키만, true 일 때만 켠다. RSI · 스토캐스틱이 둘 다 켜져 오면(백업) RSI 만.
+const cleanIndicators = (raw) => {
+  const out = Object.fromEntries(INDICATORS.map(({ key }) => [key, !!raw && raw[key] === true]));
+  if (out.rsi) out.stoch = false;
+  return out;
+};
 
 // 골든/데드크로스를 볼 이동평균 조합.
 // 60/80 처럼 가까운 기간끼리는 횡보 구간에서 계속 교차해 신호 가치가 없어 넣지 않는다.

@@ -590,9 +590,9 @@ await test('1D with extended bars: the regular end point sits before the after b
 await test('indicators: saved value is cleaned; chips toggle, save and redraw', () => {
   const { c, run, elements } = harness(['renderIndChips']);
   assert.equal(JSON.stringify(run("cleanIndicators({ bb: true, vwap: 'yes', bogus: true })")),
-    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false,"rsi":false}', '아는 키만, true 일 때만');
+    '{"bb":true,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false,"rsi":false,"stoch":false}', '아는 키만, true 일 때만');
   assert.equal(JSON.stringify(run('cleanIndicators(undefined)')),
-    '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false,"rsi":false}');
+    '{"bb":false,"vwap":false,"volAvg":false,"prevHL":false,"vp":false,"rel":false,"sar":false,"rsi":false,"stoch":false}');
   const kids = [];
   let saves = 0;
   let loads = 0;
@@ -601,8 +601,8 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   Object.assign(c, { save: () => { saves++; }, loadChart: () => { loads++; }, cssVar: (n) => n });
   run("state.indicators = cleanIndicators({ bb: true });");
   run('renderIndChips()');
-  const shown = () => kids.slice(-8);
-  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR', 'RSI']);
+  const shown = () => kids.slice(-9);
+  assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR', 'RSI', '스토캐스틱']);
   assert.equal(shown()[0].className, 'on');
   assert.equal(shown()[0].style.color, '--bb-line', '켜진 칩은 그 선의 색');
   assert.equal(shown()[1].className, undefined);
@@ -612,6 +612,11 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   assert.equal(saves, 1);
   assert.equal(loads, 1);
   assert.equal(shown()[1].className, 'on', '칩을 다시 그린다');
+  // RSI · 스토캐스틱은 차트 아래 한 칸을 같이 써서 하나만 켜진다
+  shown()[7].onclick();
+  shown()[8].onclick();
+  assert.ok(run('state.indicators.stoch') === true && run('state.indicators.rsi') === false, '스토캐스틱을 켜면 RSI 칩이 꺼진다');
+  assert.equal(shown()[7].className, undefined);
   assert.ok(elements.get('indChips'));
 });
 
@@ -980,7 +985,7 @@ await test('indicators: RSI continues from the daily history, 1D from the earlie
 
   // 1D: 앞 거래일 봉(warm)을 앞에 잇는다 — 첫 봉부터 RSI · 시그널, 교차도 이은 흐름에서
   run("state.timeframe = '1D';");
-  const d = run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, ${JSON.stringify(C.slice(0, 60))})`);
+  const d = run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, { closes: ${JSON.stringify(C.slice(0, 60))} })`);
   assert.equal(JSON.stringify(d.data), JSON.stringify(full.slice(60)), '앞 거래일을 이은 값');
   assert.equal(JSON.stringify(d.signal), JSON.stringify(sig.slice(60)));
   assert.ok(d.data[0] != null && d.signal[0] != null, '장 초반(첫 봉)부터 있다');
@@ -989,10 +994,10 @@ await test('indicators: RSI continues from the daily history, 1D from the earlie
   // 1D 는 진행 중인 마지막 봉의 교차를 따로 준다 — drawChart 가 테두리 점으로 그린다(확정 교차 · 범례에는 넣지 않는다)
   assert.equal(JSON.stringify(d.pending && [d.pending.i, d.pending.golden]), JSON.stringify([19, raw.at(-1).golden]));
   assert.ok(!d.crosses.some((x) => x.i === 19));
-  const calm = run(`rsiFor('X', ${JSON.stringify(T.slice(60, 79))}, ${JSON.stringify(C.slice(60, 79))}, ${JSON.stringify(C.slice(0, 60))})`);
+  const calm = run(`rsiFor('X', ${JSON.stringify(T.slice(60, 79))}, ${JSON.stringify(C.slice(60, 79))}, { closes: ${JSON.stringify(C.slice(0, 60))} })`);
   assert.equal(calm.pending, null, '마지막 봉에서 뚫지 않았으면 없다');
   run("state.timeframe = '1W';");
-  assert.equal(run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, ${JSON.stringify(C.slice(0, 60))})`).pending,
+  assert.equal(run(`rsiFor('X', ${JSON.stringify(T.slice(60))}, ${JSON.stringify(C.slice(60))}, { closes: ${JSON.stringify(C.slice(0, 60))} })`).pending,
     null, '1W 도 보이지 않는다(1D 만)');
   run("state.timeframe = '1D';");
   // 앞 거래일 봉을 못 받으면 오늘 봉만으로 — 앞 14봉은 빈다
@@ -1026,10 +1031,12 @@ await test('indicators: 1D RSI warm-up asks 5 days of 5-minute bars once a day a
   let reply;
   c.api.fetchChart = async (req) => { asked.push(req); return reply; };
   const t = (hhmm, d = '10') => Date.parse(`2026-09-${d}T${hhmm}:00+09:00`); // 하네스의 지금은 9/10 18:30
-  reply = { ok: true, times: [t('15:20', '09'), t('15:25', '09'), t('09:00'), t('09:05')], closes: [1, 2, 3, 4] };
-  assert.deepEqual([...await c.rsiWarmFor('X', t('09:00'))], [1, 2], '차트 첫 봉 앞의 종가만');
+  reply = { ok: true, times: [t('15:20', '09'), t('15:25', '09'), t('09:00'), t('09:05')], closes: [1, 2, 3, 4],
+    highs: [5, 6, 7, 8], lows: [0, 1, 2, 3] };
+  // 스토캐스틱도 같은 봉을 쓴다 — 고가 · 저가도 함께
+  assert.equal(JSON.stringify(await c.rsiWarmFor('X', t('09:00'))), '{"closes":[1,2],"highs":[5,6],"lows":[0,1]}', '차트 첫 봉 앞의 봉만');
   assert.deepEqual(asked.map((q) => ({ ...q })), [{ symbol: 'X', range: '5d', interval: '5m' }]);
-  assert.deepEqual([...await c.rsiWarmFor('X', t('09:00'))], [1, 2]);
+  assert.deepEqual([...(await c.rsiWarmFor('X', t('09:00'))).closes], [1, 2]);
   assert.equal(asked.length, 1, '차트 첫 봉 뒤에 받은 것이면 다시 받지 않는다 — 지난 날 봉은 바뀌지 않는다');
   await c.rsiWarmFor('X', t('09:00', '11'));
   assert.equal(asked.length, 2, '다음 날 차트(첫 봉이 받은 시각보다 뒤)는 새로 받는다');
@@ -1043,7 +1050,8 @@ await test('indicators: 1D RSI warm-up asks 5 days of 5-minute bars once a day a
   // 1W 는 한 달치 30분봉 — 1D 의 5분봉과 따로 기억한다
   run("state.timeframe = '1W';");
   reply = { ok: true, times: [t('15:00', '02'), t('15:30', '02'), t('09:00')], closes: [7, 8, 9] };
-  assert.deepEqual([...await c.rsiWarmFor('X', t('09:00'))], [7, 8]);
+  assert.equal(JSON.stringify(await c.rsiWarmFor('X', t('09:00'))), '{"closes":[7,8],"highs":[7,8],"lows":[7,8]}',
+    '고가 · 저가가 없으면 종가로');
   assert.deepEqual({ ...asked.at(-1) }, { symbol: 'X', range: '1mo', interval: '30m' });
   assert.equal(asked.length, 5, '1D 에 받은 5분봉을 쓰지 않는다');
 });
@@ -1057,7 +1065,7 @@ await test('indicators: loadChart passes RSI on 1D, 1W and the daily periods onl
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
     renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
-    rsiWarmFor: async (symbol, first) => { warms.push([symbol, first]); return Array.from({ length: 30 }, (_, i) => 100 + (i % 7)); },
+    rsiWarmFor: async (symbol, first) => { warms.push([symbol, first]); return { closes: Array.from({ length: 30 }, (_, i) => 100 + (i % 7)) }; },
   });
   const n = 20;
   const T = Array.from({ length: n }, (_, i) => Date.parse('2026-08-20T00:00:00Z') + i * 86400000);
@@ -1080,6 +1088,53 @@ await test('indicators: loadChart passes RSI on 1D, 1W and the daily periods onl
   warms.length = 0;
   assert.equal(await show('1D', false), null, '칩을 끄면 없다');
   assert.equal(warms.length, 0, '칩이 꺼져 있으면 앞 거래일 봉도 받지 않는다');
+});
+
+// 스토캐스틱(14 · 1 · 3)은 RSI 칸 자리에 — 일봉 기간은 SAR 처럼 차트 앞 일봉 고 · 저 · 종을, 1D · 1W 는 RSI 의 앞 거래일 봉을 이어
+// 첫 봉부터 값이 있다. RSI 와 함께 켜져 오면(백업) RSI 만.
+await test('indicators: loadChart passes the stochastic in the RSI pane spot, warmed up so it starts at the first bar', async () => {
+  const { c, run } = harness(['loadChart', 'rsiFor', 'stochFor']);
+  const draws = [];
+  const warms = [];
+  let bars;
+  const W = Array.from({ length: 30 }, (_, i) => 100 + (i % 7));
+  Object.assign(c, {
+    fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
+    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    drawChart: (data) => draws.push(data),
+    rsiWarmFor: async (symbol, first) => { warms.push(first); return { closes: W, highs: W.map((v) => v + 2), lows: W.map((v) => v - 2) }; },
+  });
+  const n = 20;
+  const T = Array.from({ length: n }, (_, i) => Date.parse('2026-08-20T00:00:00Z') + i * 86400000);
+  const C = Array.from({ length: n }, (_, i) => 100 + (i % 4));
+  const D = Array.from({ length: 60 }, (_, i) => Date.parse('2026-07-11T00:00:00Z') + i * 86400000); // 앞 40일이 차트 앞
+  const DC = D.map((_, i) => 100 + (i % 5));
+  run(`let lastDrawSig = null; quotes['005930.KS'] = { price: 104, prevClose: 100, change: 4,
+    daily: { times: ${JSON.stringify(D)}, closes: ${JSON.stringify(DC)} },
+    dailyHL: { times: ${JSON.stringify(D)}, highs: ${JSON.stringify(DC.map((v) => v + 3))}, lows: ${JSON.stringify(DC.map((v) => v - 3))} } };`);
+  const show = async (tf, ind) => {
+    bars = { ok: true, closes: C.slice(), times: T.slice(), volumes: new Array(n).fill(1), opens: C.slice(),
+      highs: C.map((v) => v + 1), lows: C.map((v) => v - 1) };
+    run(`lastDrawSig = null; state.timeframe = '${tf}'; state.chartMode = 'line'; state.indicators = cleanIndicators(${JSON.stringify(ind)});`);
+    await c.loadChart();
+    return draws.at(-1);
+  };
+  const m = await show('1M', { stoch: true });
+  assert.equal(m.rsi, null);
+  // 차트 앞 40일의 일봉 고 · 저 · 종을 앞에 이은 값
+  const want = indicators.stochSeries([...DC.slice(0, 40).map((v) => v + 3), ...C.map((v) => v + 1)],
+    [...DC.slice(0, 40).map((v) => v - 3), ...C.map((v) => v - 1)], [...DC.slice(0, 40), ...C]);
+  assert.deepEqual([...m.stoch.k], want.k.slice(40), '일봉 기간은 차트 앞 일봉을 이어 첫 봉부터');
+  assert.deepEqual([...m.stoch.d], want.d.slice(40));
+  assert.ok(m.stoch.k[0] != null && m.stoch.d[0] != null);
+  assert.equal(warms.length, 0, '일봉 기간은 앞 거래일 봉을 받지 않는다');
+  const day = await show('1D', { stoch: true });
+  assert.ok(day.stoch.k[0] != null, '1D 는 앞 거래일 봉을 이어 첫 봉부터');
+  assert.deepEqual(warms, [T[0]], '스토캐스틱만 켜도 앞 거래일 봉을 받는다');
+  assert.equal((await show('전체', { stoch: true })).stoch, null, '전체(월봉 · 분기봉)는 그리지 않는다');
+  assert.equal((await show('1M', { stoch: false })).stoch, null, '칩을 끄면 없다');
+  const both = await show('1M', { rsi: true, stoch: true });
+  assert.ok(both.rsi && both.stoch === null, '둘 다 켜져 오면(백업) RSI 만');
 });
 
 await test('indicators: RSI legend says which side of the signal RSI has stayed on since the last cross', () => {
@@ -1265,6 +1320,56 @@ await test('indicators: the RSI pane fits the visible bars when zoomed, like the
   const s = { min: 0, max: 999 };
   configs.at(-1).options.scales.y.afterDataLimits(s);
   assert.deepEqual([s.min, s.max], [110, 119], '확대하면 가격 축도 보이는 봉으로');
+});
+
+// 스토캐스틱은 RSI 칸 자리(같은 축 yRsi · 같은 높이)에 K 실선 · D 점선 · 20 · 80 기준선. 늘 0~100 을 거의 다 써서 눈금은 0~100 에
+// 20 · 80. 교차 점은 없다. 범례는 지금 K · D, 툴팁은 그 봉의 K · D.
+await test('indicators: the stochastic takes the RSI pane with K, D and the 20 / 80 guides, and shows in the legend and tooltip', () => {
+  const { c, run } = harness(['drawChart', 'labelFor', 'renderMaLegend']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, bindChartLeave() {}, maColor: () => '#000',
+    hexA: (_hex, a) => `a${a}`, cssVar: (n) => n,
+  });
+  const items = [];
+  const node = () => ({ style: {}, kids: [], append(t) { this.text = t; }, appendChild(k) { this.kids.push(k); } });
+  c.document.createElement = () => node();
+  c.document.getElementById('maLegend').appendChild = (s) => items.push(s);
+  run(`state.timeframe = '1M'; lastProfile = null;
+    var C_ = [100, 101, 102, 103];
+    var arg_ = { closes: C_, times: [1, 2, 3, 4], up: true, volumes: [1, 1, 1, 1], highs: C_, lows: C_, mas: [], trends: [],
+      stoch: { k: [null, 40, 72.4, 30], d: [null, null, 65.2, 47.5] } };
+    drawChart(arg_);`);
+  const cfg = configs.at(-1);
+  const axis = cfg.options.scales.yRsi;
+  assert.equal(axis.min, 0);
+  assert.equal(axis.max, 100);
+  const tickAxis = {};
+  axis.afterBuildTicks(tickAxis);
+  assert.deepEqual([...tickAxis.ticks].map((t) => t.value), [20, 80], '눈금 숫자는 20 · 80');
+  assert.equal(axis.stackWeight, run('RSI_PANE'), 'RSI 칸과 같은 높이');
+  assert.ok(axis.stack && axis.stack === cfg.options.scales.y.stack, '가격 칸 아래에 쌓는다');
+  const on = cfg.data.datasets.filter((d) => d.yAxisID === 'yRsi');
+  const k = on.find((d) => JSON.stringify(d.data) === '[null,40,72.4,30]');
+  assert.equal(k.borderColor, 'a0.7', 'K 는 옅은 실선');
+  assert.equal(k.borderDash, undefined);
+  assert.ok(on.find((d) => JSON.stringify(d.data) === '[null,null,65.2,47.5]').borderDash, 'D 는 점선');
+  assert.ok(on.some((d) => d.data.every((v) => v === 20)) && on.some((d) => d.data.every((v) => v === 80)), '20 · 80 기준선');
+  assert.ok(!on.some((d) => d.showLine === false), '교차 점은 없다');
+  assert.ok(on.every((d) => d.order < 0 && d.order > -1 && !d.pointHitRadius));
+  const footer = cfg.options.plugins.tooltip.callbacks.footer([{ datasetIndex: 0, dataIndex: 2, dataset: {} }]);
+  assert.ok(footer.includes('스토 K 72.4 · D 65.2'), '툴팁에 그 봉의 K · D');
+  assert.equal(cfg.options.plugins.tooltip.callbacks.footer([{ datasetIndex: 0, dataIndex: 0, dataset: {} }])
+    .some((l) => l.startsWith('스토')), false, '값이 없는 봉은 줄이 없다');
+  const legend = items.map((s) => `${s.text}=${s.kids[0].textContent}`);
+  assert.deepEqual(legend, ['스토=K 30 · D 48'], '범례는 지금 K · D');
+  assert.equal(items[0].kids[1].style.background, '--stoch-line');
+  assert.equal(c.document.getElementById('maLegend').hidden, false, '스토캐스틱만 켜져 있어도 범례가 보인다');
+  run('arg_.stoch = null; drawChart(arg_);');
+  assert.equal(configs.at(-1).options.scales.yRsi, undefined, '끄면 칸도 없다');
 });
 
 // 지수 대비 수익률(보조 지표): 기간 배지에 종목 수익률 - 같은 기간 지수 수익률(%p).
@@ -1951,7 +2056,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   assert.equal(periods.length, shownPeriods);
   assert.deepEqual(badges.slice(-2), ['cross 0', 'trend 0'], '교차 · 추세 배지도 비운다');
   assert.equal(JSON.stringify(run('state.indicators')),
-    '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true,"sar":false,"rsi":true}', '칩 설정은 지우지 않는다');
+    '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true,"sar":false,"rsi":true,"stoch":false}', '칩 설정은 지우지 않는다');
   assert.equal(JSON.stringify(run('state.maPeriods')), '[5]');
 
   d = await show('1D', true, oneDay);
@@ -2065,17 +2170,52 @@ await test('rsi pane: the chart switch shows on RSI timeframes, names its state 
   assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('rsiPane'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
 });
 
-await test('rsi pane: the switch flips the RSI indicator, saves it, updates the settings chip and redraws', async () => {
-  const { c, run } = harness(['toggleRsiPane']);
+// 스토캐스틱 칸 버튼(RSI 버튼 옆) — RSI 버튼과 같은 곳에서 보이고, 켜져 있으면 또렷하다
+await test('stoch pane: the switch shows wherever the RSI switch does and names its state', () => {
+  const { c, run, elements } = harness(['renderChartMode']);
+  c.MODE_ICON = { candle: 'C', line: 'L' };
+  run("state.timeframe = '1D'; state.plainChart = false; state.indicators = { rsi: true, stoch: false }; renderChartMode(0, false);");
+  const b = elements.get('stochPane');
+  assert.equal(b.hidden, false);
+  assert.equal(b.className, '');
+  assert.equal(b.title, '스토캐스틱 칸 켜기 — 차트 아래에 K · D(14, 1, 3), RSI 칸 대신');
+  run('state.indicators = { rsi: false, stoch: true }; renderChartMode(0, false);');
+  assert.equal(b.className, 'on');
+  assert.equal(b.title, '스토캐스틱 칸 끄기');
+  assert.equal(elements.get('rsiPane').className, '', 'RSI 버튼은 꺼진 모양');
+  assert.equal(elements.get('rsiTall').hidden, false, '크게 보기는 스토캐스틱 칸에도');
+  run("state.timeframe = '전체'; renderChartMode(20, true);");
+  assert.equal(b.hidden, true, '전체(월봉 · 분기봉)');
+  run("state.timeframe = '1Y'; state.plainChart = true; renderChartMode(20, true);");
+  assert.equal(b.hidden, true, '차트만 보기');
+  assert.match(source, /function clearChart\(\) \{[\s\S]*?getElementById\('stochPane'\)\.hidden = true;[\s\S]*?\n\}/, '차트를 지우면 같이 숨는다');
+});
+
+// RSI · 스토캐스틱 칸 버튼 — 설정 칩과 같은 값을 바꾼다. 같은 칸이라 하나를 켜면 다른 하나는 꺼진다(사용자 결정, 2026-11-09).
+await test('rsi / stoch pane: the switches flip their indicator, turn the other one off, save, update the chips and redraw', async () => {
+  const { c, run } = harness(['togglePane']);
   const log = [];
   Object.assign(c, { save: () => log.push('save'), renderIndChips: () => log.push('chips'),
-    loadChart: async () => log.push(`load:${run('state.indicators.rsi')}`) });
-  run('state.indicators = { sar: true, rsi: false };');
-  await c.toggleRsiPane();
-  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:true']);
+    loadChart: async () => log.push(`load:${run('state.indicators.rsi')}/${run('state.indicators.stoch')}`) });
+  run('state.indicators = { sar: true, rsi: false, stoch: false };');
+  await c.togglePane('rsi');
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:true/false']);
   assert.equal(run('state.indicators.sar'), true, '다른 지표는 그대로');
-  await c.toggleRsiPane();
-  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:false']);
+  await c.togglePane('stoch');
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:false/true'], '스토캐스틱을 켜면 RSI 가 꺼진다');
+  await c.togglePane('rsi');
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:true/false'], 'RSI 를 켜면 스토캐스틱이 꺼진다');
+  await c.togglePane('rsi');
+  assert.deepEqual(log.splice(0), ['save', 'chips', 'load:false/false'], '켜진 것을 누르면 칸이 꺼진다');
+  assert.equal(run('state.indicators.sar'), true);
+  // 설정 칩도 같은 규칙(withIndicator)이다. 저장 · 백업에서 둘 다 켜져 오면 RSI 만(cleanIndicators)
+  assert.match(realFunction('renderIndChips'), /state\.indicators = withIndicator\(ind\.key, !on\)/);
+  run('state.indicators = { rsi: true, stoch: false, bb: true };');
+  assert.equal(JSON.stringify(run("withIndicator('bb', false)")), '{"rsi":true,"stoch":false,"bb":false}', '다른 지표는 서로 상관없다');
+  assert.equal(JSON.stringify(run("withIndicator('stoch', false)")), '{"rsi":true,"stoch":false,"bb":true}', '끄는 것은 다른 쪽을 건드리지 않는다');
+  const both = run('cleanIndicators({ rsi: true, stoch: true })');
+  assert.ok(both.rsi === true && both.stoch === false);
+  assert.equal(run('cleanIndicators({ stoch: true })').stoch, true);
 });
 
 await test('rsi pane: the chart box grows by the RSI pane while RSI is on, loading or not', () => {
@@ -2086,6 +2226,8 @@ await test('rsi pane: the chart box grows by the RSI pane while RSI is on, loadi
   run('state.indicators = { rsi: false };');
   assert.equal(run('chartBoxClass()'), 'chartbox');
   assert.equal(run('chartBoxClass(true)'), 'chartbox loading');
+  run('state.indicators = { rsi: false, stoch: true };');
+  assert.equal(run('chartBoxClass()'), 'chartbox sub', '스토캐스틱도 같은 칸');
   run('delete state.indicators;');
   assert.equal(run('chartBoxClass()'), 'chartbox', '지표 설정이 없어도');
   // RSI 크게 보기(#rsiTall)를 켜면 RSI 칸이 RSI_TALL 이라 상자도 그만큼(tall) — RSI 를 끄면 상관없다
@@ -2111,7 +2253,7 @@ await test('rsi tall: the switch shows only with the RSI pane, names its state, 
   run('state.indicators = { rsi: true }; renderChartMode(0, false);');
   assert.equal(b.hidden, false);
   assert.equal(b.className, '', '처음에는 꺼짐');
-  assert.equal(b.title, 'RSI 크게 보기 — RSI 칸을 2배로(관심종목 목록이 그만큼 줄어든다)');
+  assert.equal(b.title, '아래 칸 크게 보기 — RSI · 스토캐스틱 칸을 2배로(관심종목 목록이 그만큼 줄어든다)');
   run("state.timeframe = '전체'; renderChartMode(20, true);");
   assert.equal(b.hidden, true, 'RSI 를 그리지 않는 기간');
   run("state.timeframe = '1Y'; state.plainChart = true; renderChartMode(20, true);");
@@ -2123,7 +2265,7 @@ await test('rsi tall: the switch shows only with the RSI pane, names its state, 
   assert.deepEqual(drawn.map((d) => d.id || d), ['last'], '저장하지 않고 다시 그린다');
   run('renderChartMode(20, true);');
   assert.equal(b.className, 'on', '켜져 있으면 또렷하게');
-  assert.equal(b.title, 'RSI 원래 크기로');
+  assert.equal(b.title, '아래 칸 원래 크기로');
   run("document.getElementById('chartBox').className = 'chartbox sub tall loading';");
   c.toggleRsiTall();
   assert.equal(elements.get('chartBox').className, 'chartbox sub loading', '받는 중이면 불러오는 중은 그대로');

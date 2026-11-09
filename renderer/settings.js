@@ -87,7 +87,7 @@ function renderIndChips() {
       b.style.borderColor = c;
     }
     b.onclick = () => {
-      state.indicators = { ...state.indicators, [ind.key]: !on };
+      state.indicators = withIndicator(ind.key, !on); // RSI · 스토캐스틱은 하나만
       save();
       renderIndChips();
       loadChart();

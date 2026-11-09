@@ -195,7 +195,8 @@ async function refreshNow() {
   };
   document.getElementById('extHours').onclick = () => toggleExtHours().catch(console.error);
   document.getElementById('candleVenue').onclick = () => toggleCandleVenue().catch(console.error);
-  document.getElementById('rsiPane').onclick = () => toggleRsiPane().catch(console.error);
+  document.getElementById('rsiPane').onclick = () => togglePane('rsi').catch(console.error);
+  document.getElementById('stochPane').onclick = () => togglePane('stoch').catch(console.error);
   document.getElementById('rsiTall').onclick = toggleRsiTall;
   document.getElementById('zoomReset').onclick = resetZoom;
   bindZoom();

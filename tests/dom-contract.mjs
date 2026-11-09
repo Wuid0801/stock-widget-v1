@@ -154,9 +154,12 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
     && +tall[1] === +base[1] + tallPane && +tall[2] === tallPane && +tall[3] === +base[2] + tallPane, `RSI_TALL ${tallPane}`);
   const ctl = /<span class="chartctl">([\s\S]*?)<\/span>/.exec(html);
   check('#rsiPane 은 차트 버튼 묶음(.chartctl) 안에 있다', !!ctl && /<button id="rsiPane" type="button" hidden>RSI<\/button>/.test(ctl[1]));
-  check('#rsiTall 은 #rsiPane 바로 다음에 있다(같은 칸을 다루는 버튼끼리)',
-    !!ctl && /<button id="rsiPane"[^>]*>RSI<\/button><button id="rsiTall" type="button" hidden>/.test(ctl[1]));
-  check('#rsiTall 도 RSI 버튼과 같은 모양(켜지면 또렷)', /#extHours, #rsiPane, #rsiTall \{/.test(html) && /#rsiPane\.on, #rsiTall\.on \{/.test(html));
+  // 스토캐스틱(#stochPane)은 RSI 칸 자리에 — RSI · 스토 · 크게 보기 순으로 붙어 있다(같은 칸을 다루는 버튼끼리)
+  check('#rsiPane · #stochPane · #rsiTall 이 차례로 붙어 있다',
+    !!ctl && /<button id="rsiPane"[^>]*>RSI<\/button><button id="stochPane" type="button" hidden>스토<\/button><button id="rsiTall" type="button" hidden>/.test(ctl[1]));
+  check('#stochPane · #rsiTall 도 RSI 버튼과 같은 모양(켜지면 또렷)', /#extHours, #rsiPane, #stochPane, #rsiTall \{/.test(html)
+    && /#rsiPane\.on, #stochPane\.on, #rsiTall\.on \{/.test(html) && /#rsiPane\[hidden\], #stochPane\[hidden\], #rsiTall\[hidden\]/.test(html));
+  check('스토캐스틱 선 색이 두 테마에 있다', (html.match(/--stoch-line: #[0-9a-f]{6};/g) || []).length === 2);
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
