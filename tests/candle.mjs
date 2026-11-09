@@ -173,5 +173,20 @@ const live = (candle, price, extra = {}) => ({
   check('모르는 값은 캔들로 본다', C.candleMode(62, true, undefined) === true);
 }
 
+// --- 12. 일봉 차트의 캔들 기준(통합 / KRX) ---------------------------------------
+// 통합은 증권사 앱의 통합 캔들 — 시 · 고 · 저는 통합(KRX + NXT), 종가는 지금 마지막 체결(애프터 포함). KRX 는 KRX 시 · 고 · 저에
+// 정규장 종가 규칙. 2026-11-06 SK하이닉스 애프터(통합 1,172,000 · 1,217,000 · 1,070,000, KRX 1,089,000 · 1,217,000 · 1,089,000).
+{
+  const after = { candle: { open: 1172000, high: 1217000, low: 1070000 }, krxCandle: { open: 1089000, high: 1217000, low: 1089000 },
+    price: 1176000, priceSession: 'after', regularClose: 1132000 };
+  const i = C.candleOf(after, 'integrated');
+  check('통합: 통합 시 · 고 · 저에 종가는 애프터까지 마지막 체결', i.open === 1172000 && i.low === 1070000 && i.close === 1176000, JSON.stringify(i));
+  const k = C.candleOf(after, 'krx');
+  check('KRX: KRX 시 · 고 · 저에 정규장 종가', k.open === 1089000 && k.low === 1089000 && k.close === 1132000, JSON.stringify(k));
+  const d = C.candleOf(after);
+  check('기준을 주지 않으면 지금까지처럼(헤더 캔들 — 통합 시 · 고 · 저, 정규장 종가)', d.open === 1172000 && d.close === 1132000);
+  check('KRX 시 · 고 · 저가 없으면(야후 폴백) 받은 캔들', C.candleOf({ ...after, krxCandle: null }, 'krx').open === 1172000);
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails ? 1 : 0);

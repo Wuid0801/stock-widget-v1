@@ -63,8 +63,9 @@ function candidate(data, kind, now) {
 // chart the integrated session, so integratedPriceInfo wins where it exists;
 // it carries no ...Raw variants, and numberOrNull strips the thousands commas.
 // The over-market object is never a source here: it has a price, not a range.
-function dayCandle(data) {
-  const p = data?.integratedPriceInfo || data;
+// krxOnly: the KRX-only candle, for the chart's KRX candle basis (the user can switch 통합 / KRX).
+function dayCandle(data, krxOnly = false) {
+  const p = (!krxOnly && data?.integratedPriceInfo) || data;
   const open = numberOrNull(p?.openPriceRaw ?? p?.openPrice);
   if (open == null || open <= 0) return null;
   return {
@@ -151,6 +152,7 @@ function normalizeQuote(data, { now = Date.now(), regularClose = null, nxt = nul
     session, priceSession: selected.priceSession, isTrading,
     regularClose: close?.price ?? null,
     candle: dayCandle(data),
+    krxCandle: dayCandle(data, true),
     fromClose: overFromClose(close?.price, selected.price, selected.priceSession),
     market: selected.market,
     source: selected.source, tradedAt: selected.tradedAt,

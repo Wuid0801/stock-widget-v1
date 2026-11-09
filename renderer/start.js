@@ -165,6 +165,8 @@ async function refreshNow() {
   state.plainChart = state.plainChart === true;
   // 정규장 / 전체 — 정규장만 보기로 저장된 때만 정규장
   state.extHours = state.extHours !== false;
+  // 국내 일봉 캔들 기준 — KRX 로 저장된 때만 KRX, 그 밖은 통합(증권사 앱의 통합 캔들)
+  state.candleVenue = state.candleVenue === 'krx' ? 'krx' : 'integrated';
   // 보유 · 52주 · 추세 점검은 접었다고 저장된 때만 접는다
   state.infoOpen = state.infoOpen !== false;
   applyInfoOpen();
@@ -192,6 +194,7 @@ async function refreshNow() {
     await loadChart(); // 서명에 plainChart 가 있어 다시 그려지고, drawChart 가 버튼 강조도 바꾼다
   };
   document.getElementById('extHours').onclick = () => toggleExtHours().catch(console.error);
+  document.getElementById('candleVenue').onclick = () => toggleCandleVenue().catch(console.error);
   document.getElementById('rsiPane').onclick = () => toggleRsiPane().catch(console.error);
   document.getElementById('rsiTall').onclick = toggleRsiTall;
   document.getElementById('zoomReset').onclick = resetZoom;

@@ -197,5 +197,34 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
     naverCalls.map((c) => c.url).join(' '));
 }
 
+// --- 7. 통합(KRX + NXT) 일봉 — 일봉 캔들 기준 '통합'(증권사 앱의 통합 캔들) -----------------------------------------
+// 실측 모양(2026-11-06 SK하이닉스): KRX 1,089,000 · 1,217,000 · 1,089,000 · 1,176,000(네이버 KRX 일봉 종가는 하루 마지막 체결) /
+// NXT 1,172,000 · 1,216,000 · 1,070,000 · 1,176,000 → 증권사 앱 통합 1,172,000 · 1,217,000 · 1,070,000 · 1,176,000
+{
+  naverCalls.length = 0;
+  const row = (d, o, h, l, c, v = 100) => ({ localDate: d, openPrice: o, highPrice: h, lowPrice: l, closePrice: c, accumulatedTradingVolume: v });
+  naverReply = (url) => ({ ok: true, status: 200, body: url.includes('/NXT/')
+    ? [row('20261006', 500, 500, 500, 500, 0), row('20261008', 1172000, 1216000, 1070000, 1176000), row('20261012', 10, 12, 9, 11)]
+    : [row('20261006', 1, 2, 1, 2), row('20261008', 1089000, 1217000, 1089000, 1176000)] });
+  const r = await handlers['naver:venueDays']({}, '000660.KS', '20261001');
+  check('통합 = 시가 NXT · 고저 두 시장 · 종가 KRX 일봉(하루 마지막 체결) — 증권사 앱과 같다',
+    r.ok && same(r.days['20261008'], { open: 1172000, high: 1217000, low: 1070000, close: 1176000 }), JSON.stringify(r.days));
+  check('NXT 거래가 없는 날(거래량 0)은 담지 않는다 — 렌더러가 KRX 캔들 그대로 둔다', r.ok && !('20261006' in r.days));
+  check('KRX 줄이 없으면 NXT 값', r.ok && same(r.days['20261012'], { open: 10, high: 12, low: 9, close: 11 }));
+  const B = 'https://api.stock.naver.com/chart/domestic';
+  check('KRX · NXT 일봉을 첫 날부터 오늘까지 한 번씩', naverCalls.length === 2
+    && naverCalls.some((x) => x.url === `${B}/item/000660/day?startDateTime=20261001&endDateTime=20261013`)
+    && naverCalls.some((x) => x.url === `${B}/NXT/item/000660/day?startDateTime=20261001&endDateTime=20261013`),
+  naverCalls.map((x) => x.url).join(' '));
+  naverCalls.length = 0;
+  await handlers['naver:venueDays']({}, '000660.KS', '20240101');
+  check('NXT 가 열리기 전(2025-03-04) 날짜부터는 묻지 않는다', naverCalls.length === 2
+    && naverCalls.every((x) => x.url.includes('startDateTime=20250304')), naverCalls.map((x) => x.url).join(' '));
+  check('국내 종목만 — 지수 · 해외는 거절', (await handlers['naver:venueDays']({}, '^KS11', '20261001')).ok === false);
+  naverReply = () => ({ ok: false, status: 500, body: null });
+  const fail = await handlers['naver:venueDays']({}, '000660.KS', '20261001');
+  check('받기에 실패하면 ok: false — 렌더러가 KRX 캔들로 그린다', fail.ok === false && /HTTP 500/.test(fail.error), JSON.stringify(fail));
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

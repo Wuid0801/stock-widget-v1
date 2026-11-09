@@ -112,6 +112,14 @@ function renderChartMode(bars, daily) {
   e.textContent = full ? '전체' : '정규장';
   e.className = full ? 'on' : '';
   e.title = full ? '전체(장전 · 장후 포함) — 누르면 정규장만' : '정규장만 — 누르면 장전 · 장후까지';
+  // 통합 / KRX — 국내 종목 일봉의 캔들 기준. 캔들이 보일 때만(일봉 · 캔들 모드). 글자가 지금 보는 것이고, 통합이면 또렷하게.
+  // 캔들 모양만 바뀐다 — 이동평균 · RSI 같은 선은 늘 KRX 정규장 종가다(사용자 결정, 2026-11-09).
+  const v = document.getElementById('candleVenue');
+  const integrated = state.candleVenue !== 'krx';
+  v.hidden = !candleMode(bars, daily, state.chartMode) || !item || !KR_STOCK_RE.test(item.symbol);
+  v.textContent = integrated ? '통합' : 'KRX';
+  v.className = integrated ? 'on' : '';
+  v.title = integrated ? '통합 캔들(KRX + NXT — 증권사 앱의 통합 차트) — 누르면 KRX 만' : 'KRX 캔들(정규장) — 누르면 통합(KRX + NXT)';
   // RSI 칸 켜고 끄기 — RSI 를 그릴 수 있는 기간(RSI_TF)에서만. 차트만 보기는 보조 지표를 다 끄므로 숨긴다. 켜져 있으면 또렷하게.
   const s = document.getElementById('rsiPane');
   const rsiOn = !!(state.indicators && state.indicators.rsi);
@@ -143,6 +151,13 @@ async function toggleExtHours() {
 }
 
 // RSI 칸 버튼 — 설정의 RSI 칩과 같은 값을 바꾼다(칩도 다시 그린다). 차트 상자 높이는 loadChart 가 chartBoxClass 로 맞춘다.
+// 통합 / KRX 버튼 — 국내 일봉의 캔들 기준을 바꾼다(캔들 모양만, 선 · 지표는 그대로).
+async function toggleCandleVenue() {
+  state.candleVenue = state.candleVenue === 'krx' ? 'integrated' : 'krx';
+  save();
+  await loadChart();
+}
+
 async function toggleRsiPane() {
   state.indicators = { ...state.indicators, rsi: !state.indicators.rsi };
   save();

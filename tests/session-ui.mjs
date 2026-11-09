@@ -45,7 +45,8 @@ function harness(extra = []) {
       if (!elements.has(id)) elements.set(id, { style: {}, innerHTML: '', textContent: '', title: '' });
       return elements.get(id);
     } },
-    api: { notify: (n) => notifications.push(n) },
+    // venueDays: 국내 일봉 캔들의 통합(KRX + NXT) 지난 날 값 — 기본은 NXT 거래가 없는 것처럼 빈 값(캔들 = 받은 값)
+    api: { notify: (n) => notifications.push(n), venueDays: async () => ({ ok: true, days: {} }) },
     setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; },
     clearTimeout: () => {},
   });
@@ -64,7 +65,7 @@ function harness(extra = []) {
     cssVar: (n) => n, // 0 · 값 없음의 색(plColor) — 화면이 없는 하네스에서는 변수 이름 그대로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'plColor', 'rankCount', 'rankKey', 'rankBackHtml', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'plColor', 'rankCount', 'rankKey', 'rankBackHtml', 'venueCandles', 'venueDaysFor', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -2545,6 +2546,88 @@ await test('candles are drawn right after the volume bars — above them, below 
   drawn = 0;
   plugin.beforeDatasetsDraw(chartOf([{}]), {}, opts);
   assert.equal(drawn, 2, '거래량 막대가 없으면 예전처럼 맨 아래');
+});
+
+// 국내 일봉 캔들의 기준(통합 / KRX 버튼). 통합은 증권사 앱의 통합 캔들 — 2026-11-06 SK하이닉스가 증권사 앱과 같았다
+// (KRX + NXT 일봉을 합친 값, 2026-11-09 사용자 확인). 캔들 모양만 바뀌고 선 · 지표가 쓰는 받은 배열은 그대로다.
+await test('candle basis: 통합 puts KRX + NXT day values into the candles only, KRX keeps the received bars, today follows the live quote', async () => {
+  const { c, run } = harness();
+  const T = ['2026-09-08', '2026-09-09', '2026-09-10'].map((d) => Date.parse(`${d}T00:00:00Z`)); // 국내 일봉 시각(09:00 KST)
+  const asked = [];
+  c.api.venueDays = async (s, from) => { asked.push(`${s} ${from}`); return { ok: true, days: { 20260909: { open: 117, high: 122, low: 107, close: 118 } } }; };
+  run(`quotes['000660.KS'] = { price: 116, priceSession: 'after', regularClose: 113,
+    candle: { open: 115, high: 120, low: 110 }, krxCandle: { open: 111, high: 119, low: 111 } };`);
+  const opens = [100, 109, 111]; const highs = [102, 122, 119]; const lows = [99, 109, 111]; const closes = [101, 113, 113];
+  const bars = async (venue) => {
+    run(`state.candleVenue = '${venue}';`);
+    const r = await c.venueCandles('000660.KS', T, opens, highs, lows, closes, run("quotes['000660.KS']"));
+    return JSON.stringify([r.opens, r.highs, r.lows, r.closes]);
+  };
+  assert.equal(await bars('integrated'), JSON.stringify([[100, 117, 115], [102, 122, 120], [99, 107, 110], [101, 118, 116]]),
+    '9/8 은 NXT 거래가 없어 받은 값, 9/9 는 통합 일봉, 오늘(9/10)은 실시간 통합 시 · 고 · 저에 마지막 체결');
+  assert.deepEqual([...asked], ['000660.KS 20260908'], '차트 첫 날부터 묻는다');
+  assert.equal(JSON.stringify([opens, highs, lows, closes]), '[[100,109,111],[102,122,119],[99,109,111],[101,113,113]]',
+    '받은 배열(선 · 지표)은 그대로');
+  await bars('integrated');
+  assert.equal(asked.length, 1, '같은 날 다시 그릴 때는 기억한 값 — 지난 날은 바뀌지 않는다');
+  assert.equal(await bars('krx'), JSON.stringify([[100, 109, 111], [102, 122, 119], [99, 109, 111], [101, 113, 113]]),
+    'KRX: 지난 날은 받은 값(야후 = KRX), 오늘은 KRX 시 · 고 · 저에 정규장 종가');
+  assert.equal(asked.length, 1, 'KRX 는 묻지 않는다');
+
+  // 받기에 실패하면 그동안 받은 값(KRX)으로 그리고, DAILY_RETRY 동안 다시 묻지 않는다
+  run('venueCache.clear();');
+  c.api.venueDays = async () => { asked.push('fail'); return { ok: false, error: 'x' }; };
+  assert.equal(JSON.parse(await bars('integrated'))[0][1], 109, '실패하면 그날은 받은 값');
+  await bars('integrated');
+  assert.equal(asked.filter((x) => x === 'fail').length, 1, '실패 바로 뒤에는 다시 묻지 않는다');
+});
+
+await test('candle basis: drawChart draws candles, the price axis and the tooltip from the basis values, the price line from the received ones', () => {
+  const { c, run } = harness(['drawChart', 'labelFor']);
+  run(formatting);
+  const configs = [];
+  Object.assign(c, {
+    Chart: class { constructor(_el, cfg) { configs.push(cfg); } destroy() {} },
+    extBandPlugin: {}, profilePlugin: {}, candlePlugin: {}, hLinePlugin: {}, crossMarkPlugin: {}, crosshairPlugin: {}, zoomBoxPlugin: {},
+    renderChartMode() {}, renderMaLegend() {}, bindChartLeave() {}, hexA: () => 'x', cssVar: (n) => n,
+  });
+  run(`state.timeframe = '1M'; state.chartMode = 'candle';
+    var arg_ = { closes: [101, 113], times: [1, 2], up: true, volumes: [1, 1], opens: [100, 109], highs: [102, 122], lows: [99, 109],
+      candleBars: { opens: [100, 117], highs: [102, 122], lows: [99, 95], closes: [101, 118] } };`);
+  run('drawChart(arg_);');
+  let cfg = configs.at(-1);
+  assert.equal(JSON.stringify(cfg.options.plugins.candle.lows), '[99,95]', '캔들은 기준 값');
+  assert.equal(JSON.stringify(cfg.data.datasets[0].data), '[101,113]', '주가선(선 · 지표)은 받은 값');
+  const lim = {};
+  cfg.options.scales.y.afterDataLimits(lim);
+  assert.equal(lim.min, 95, '가격 축이 통합 저가까지 — 꼬리가 잘리지 않는다');
+  const cb = cfg.options.plugins.tooltip.callbacks;
+  assert.equal(cb.label({ datasetIndex: 0, dataIndex: 1, parsed: { y: 113 } }), '118', '툴팁 가격은 그 캔들의 종가');
+  assert.deepEqual([...cb.footer([{ datasetIndex: 0, dataIndex: 1, dataset: {} }])], ['시 117', '고저 95 ~ 122']);
+
+  run("state.chartMode = 'line'; drawChart(arg_);");
+  cfg = configs.at(-1);
+  assert.equal(JSON.stringify(cfg.options.plugins.candle), '{}', '라인이면 캔들이 없다');
+  assert.equal(cfg.options.plugins.tooltip.callbacks.label({ datasetIndex: 0, dataIndex: 1, parsed: { y: 113 } }), '113');
+});
+
+await test('candle basis: the 통합 / KRX switch shows only for a domestic stock drawn as daily candles, its text the basis in use', () => {
+  const { c, run, elements } = harness(['renderChartMode']);
+  c.MODE_ICON = { candle: 'C', line: 'L' };
+  run("state.selected = '005930.KS'; state.timeframe = '1M'; state.chartMode = 'candle'; state.candleVenue = 'integrated'; renderChartMode(22, true);");
+  const b = elements.get('candleVenue');
+  assert.equal(b.hidden, false);
+  assert.equal(b.textContent, '통합');
+  assert.equal(b.className, 'on', '통합이면 또렷하게 — 정규장/전체 버튼처럼');
+  run("state.candleVenue = 'krx'; renderChartMode(22, true);");
+  assert.equal(b.textContent, 'KRX');
+  assert.equal(b.className, '');
+  run("state.chartMode = 'line'; renderChartMode(22, true);");
+  assert.equal(b.hidden, true, '라인이면 숨는다');
+  run("state.chartMode = 'candle'; renderChartMode(5, false);");
+  assert.equal(b.hidden, true, '분봉(1D · 1W)이면 숨는다 — 거기는 정규장 / 전체 버튼');
+  run("state.selected = '^KS11'; renderChartMode(22, true);");
+  assert.equal(b.hidden, true, '지수에는 없다');
 });
 
 // 가로선(평단 · 전일 · 전고 · 전저 · 프리 · 애프터): 가까운 이름표는 합치고, 범위 밖은 가장자리에 이름 · 값.

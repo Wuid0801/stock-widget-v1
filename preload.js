@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   backupImport: () => ipcRenderer.invoke('backup:import'),
   realtimeQuotes: (symbols) => ipcRenderer.invoke('quote:realtime', symbols),
   indices: () => ipcRenderer.invoke('quote:indices'),
+  venueDays: (symbol, from) => ipcRenderer.invoke('naver:venueDays', symbol, from),
   getState: () => ipcRenderer.invoke('state:get'),
   setState: (patch) => ipcRenderer.invoke('state:set', patch),
   dockWindow: (on, height) => ipcRenderer.send('win:dock', on, height),

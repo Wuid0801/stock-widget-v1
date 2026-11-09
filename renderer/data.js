@@ -117,6 +117,8 @@ async function loadQuote(item, live) {
     // 오늘 캔들. 실시간이 정규장 시·고·저를 함께 주면 그것을 쓰고(30초마다 최신),
     // 없으면 일봉 마지막 봉에서 가져온다 — 가격과 같은 폴백 순서다.
     candle: (live && live.candle) || r.candle || null,
+    // KRX 만의 오늘 시 · 고 · 저 — 일봉 차트의 캔들 기준이 KRX 일 때(candleOf(q, 'krx')). 야후 폴백은 원래 KRX 다.
+    krxCandle: (live && live.krxCandle) || r.candle || null,
     market: live && live.market || null,
     source: live && live.source || (live ? 'Naver' : 'Yahoo'),
     tradedAt: live && live.tradedAt || null,
@@ -223,6 +225,39 @@ function rsiFor(symbol, times, closes, warm) {
   const pending = state.timeframe === '1D' ? found.find((c) => c.i === times.length - 1) || null : null;
   return { data, signal, crosses, pending, rising: last ? last.golden : null, since: last ? times.length - last.i : null,
     flipAt: last ? times[last.i] : null };
+}
+
+// 국내 일봉 캔들의 시 · 고 · 저 · 종 — 기준(state.candleVenue)에 따라. 통합: 지난 날은 KRX + NXT 일봉을 합친 값(naver:venueDays,
+// NXT 거래가 없는 날은 받은 값 그대로), 오늘은 실시간 통합 시 · 고 · 저에 지금 마지막 체결(candleOf 'integrated'). KRX: 지난 날은
+// 받은 값(야후 = KRX 정규장) 그대로, 오늘은 KRX 시 · 고 · 저(candleOf 'krx'). 받은 배열은 고치지 않는다(선 · 지표가 쓴다).
+async function venueCandles(symbol, times, opens, highs, lows, closes, q) {
+  const venue = state.candleVenue === 'krx' ? 'krx' : 'integrated';
+  const out = { opens: opens.slice(), highs: highs.slice(), lows: lows.slice(), closes: closes.slice() };
+  const n = times.length;
+  const put = (i, b) => { out.opens[i] = b.open; out.highs[i] = b.high; out.lows[i] = b.low; out.closes[i] = b.close; };
+  if (venue === 'integrated' && n) {
+    const days = await venueDaysFor(symbol, kstYmd(times[0]));
+    if (days) times.forEach((t, i) => { if (days[kstYmd(t)]) put(i, days[kstYmd(t)]); });
+  }
+  const today = n && daysAgo(times[n - 1]) === 0 ? candleOf(q, venue) : null;
+  if (today) put(n - 1, today);
+  return out;
+}
+
+// 통합 캔들의 지난 날 값(naver:venueDays) — 지난 날은 바뀌지 않아 날이 바뀌거나 더 앞 날짜가 필요할 때만 다시 받는다(오늘 봉은
+// 실시간 캔들이 맡는다). 실패하면 DAILY_RETRY 동안 묻지 않고 null — 그동안 KRX 캔들로 그린다.
+async function venueDaysFor(symbol, from) {
+  const today = kstYmd(Date.now());
+  const hit = venueCache.get(symbol);
+  if (hit && hit.days && hit.day === today && hit.from <= from) return hit.days;
+  if (hit && hit.failAt && Date.now() - hit.failAt < DAILY_RETRY) return null;
+  const r = await api.venueDays(symbol, from).catch(() => null);
+  if (!r || !r.ok) {
+    venueCache.set(symbol, { failAt: Date.now() });
+    return null;
+  }
+  venueCache.set(symbol, { day: today, from, days: r.days });
+  return r.days;
 }
 
 // 1D · 1W RSI 의 앞 거래일 봉 — 차트 첫 봉(first) 앞의 종가들. 지금 기간의 RSI_WARM(정규장)을 받는다 — 국내는 main 이 네이버
@@ -591,6 +626,12 @@ async function loadChart() {
     lows[lastReg] = Math.min(lows[lastReg], q.price);
   }
 
+  // 국내 종목 일봉의 캔들 기준(통합 / KRX 버튼) — 캔들 모양만 바꾼다. 위 값(선 · 지표의 KRX 정규장 종가)은 그대로다.
+  // 라인 모드면 만들지 않는다(캔들이 없다).
+  const candleBars = daily && state.chartMode !== 'line' && KR_STOCK_RE.test(item.symbol)
+    ? await venueCandles(item.symbol, times, opens, highs, lows, closes, q) : null;
+  if (seq !== chartSeq) return;
+
   // 추세선은 3M · 1Y 에서만. 검사를 통과 못 한 쪽은 빠지므로
   // 지지선만, 저항선만, 또는 둘 다 없는 상태가 정상이다.
   const trends = [];
@@ -652,6 +693,7 @@ async function loadChart() {
     closes, times, up, mas, cur: curOf(item.symbol),
     volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, rsi, benchLine: bline, tipBases: tips,
     profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
+    candleBars, // 캔들의 시 · 고 · 저 · 종(통합 / KRX) — 국내 일봉 캔들 모드만, 없으면 위 값으로 그린다
   };
 
   // 30초마다 캐시에서 같은 데이터가 나오면 다시 그릴 이유가 없다 — 다시 그리면 차트가 통째로 재생성돼 마우스를
@@ -659,7 +701,7 @@ async function loadChart() {
   // 보기 · 정규장/전체)를 견준다. 값을 손으로 골라 이어 붙이던 때는 빠진 값이 바뀌어도 다시 그리지 않았다 — 켠
   // 직후 시세 없이 그린 첫 차트에 일봉이 와도 볼린저 · SAR · 툴팁 등락률이 빠진 채 남았다(2026-11-05).
   const sig = JSON.stringify([key, chart, state.chartMode, zoom && [zoom.start, zoom.end],
-    INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join(''), plain, state.extHours !== false]);
+    INDICATORS.map((i) => (ind[i.key] ? 1 : 0)).join(''), plain, state.extHours !== false, state.candleVenue]);
   if (sig === lastDrawSig) return;
   lastDrawSig = sig;
   drawnKey = key;

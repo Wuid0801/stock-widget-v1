@@ -564,6 +564,7 @@ function drawChart(arg) {
     closes, times, up, mas = [], cur = 'KRW',
     volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
     bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, rsi = null, benchLine = null, tipBases = null,
+    candleBars = null,
   } = arg;
   const color = up ? UP : DOWN;
   // 툴팁 가격 옆 등락률(%). 기준(tipBases, loadChart 가 만든다)이 없으면 null
@@ -577,6 +578,9 @@ function drawChart(arg) {
   if (!zr) zoom = null;
   const bars = zr ? zr.to - zr.from + 1 : closes.length; // 화면에 보이는 봉 수
   const candles = candleMode(bars, daily, state.chartMode) && opens.length > 0;
+  // 캔들 · 가격 축 · 툴팁의 시 · 고 · 저 · 종 — 국내 일봉은 통합 / KRX 기준 값(candleBars, loadChart), 없으면 받은 값.
+  // 선(이동평균 · 주가선 등)은 늘 받은 값이다.
+  const cb = candles && candleBars ? candleBars : { opens, highs, lows, closes };
   renderChartMode(bars, daily); // 전환 아이콘도 같은 기준으로 보인다
   document.getElementById('zoomReset').hidden = !zr;
   // 매물대(보조 지표)는 보이는 구간으로 — 확대하면 그 구간의 매물대다. 범례도 이 값을 쓴다.
@@ -617,7 +621,7 @@ function drawChart(arg) {
   let yLo = Infinity;
   let yHi = -Infinity;
   for (let i = zr ? zr.from : 0; i <= (zr ? zr.to : closes.length - 1); i++) {
-    for (const v of [lows[i], highs[i], closes[i], ...(zr ? [] : trends).map((t) => t.data[i])]) {
+    for (const v of [cb.lows[i], cb.highs[i], cb.closes[i], closes[i], ...(zr ? [] : trends).map((t) => t.data[i])]) {
       if (v != null && Number.isFinite(v)) { yLo = Math.min(yLo, v); yHi = Math.max(yHi, v); }
     }
   }
@@ -845,7 +849,7 @@ function drawChart(arg) {
         legend: { display: false },
         hLine: { lines: hLines, cur },
         crossMark: { list: crosses },
-        candle: candles ? { opens, highs, lows, closes } : {},
+        candle: candles ? cb : {},
         extBand: { ext },
         profile: { profile: lastProfile },
         tooltip: {
@@ -883,13 +887,15 @@ function drawChart(arg) {
             // afterBody 는 마지막 본문 항목의 글자색을 물려받아, 가격(order 2)이 마지막 항목이면(이동평균이 없을 때)
             // 시가 · 고저 · 거래량까지 빨강 · 파랑이 된다(Chart.js 4.5.1 drawBody). footer 는 제 색을 쓴다.
             // 빈 배열을 주면 Chart.js 가 그 줄을 통째로 건너뛴다 → 다른 데이터셋은 줄을 만들지 않는다.
+            // 캔들이면 그 캔들의 종가(통합이면 하루 마지막 체결), 아니면 주가선 값
             label: (it) => {
               if (it.datasetIndex !== 0) return [];
-              const pct = tipPct(it.dataIndex, it.parsed.y);
-              return `${money(it.parsed.y, cur)}${pct == null ? '' : ` ${fmtPct(pct)}`}`;
+              const y = candles ? cb.closes[it.dataIndex] : it.parsed.y;
+              const pct = tipPct(it.dataIndex, y);
+              return `${money(y, cur)}${pct == null ? '' : ` ${fmtPct(pct)}`}`;
             },
             labelTextColor: (it) => {
-              const pct = it.datasetIndex === 0 ? tipPct(it.dataIndex, it.parsed.y) : null;
+              const pct = it.datasetIndex === 0 ? tipPct(it.dataIndex, candles ? cb.closes[it.dataIndex] : it.parsed.y) : null;
               return pct == null ? cssVar('--text') : plColor(pct);
             },
             footer: (items) => {
@@ -897,9 +903,9 @@ function drawChart(arg) {
               const p = items.find((i) => i.datasetIndex === 0);
               const i = p ? p.dataIndex : -1;
               // 캔들은 시가 대비로 색이 갈리므로 시가가 없으면 몸통의 근거가 안 보인다.
-              if (candles && opens[i] != null) lines.push(`시 ${money(opens[i], cur)}`);
+              if (candles && cb.opens[i] != null) lines.push(`시 ${money(cb.opens[i], cur)}`);
 
-              const hi = highs[i]; const lo = lows[i];
+              const hi = cb.highs[i]; const lo = cb.lows[i];
               if (hi != null && lo != null && hi !== lo) {
                 lines.push(`고저 ${money(lo, cur)} ~ ${money(hi, cur)}`);
               }

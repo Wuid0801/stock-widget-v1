@@ -230,6 +230,10 @@ let busy = false;
 let lastRefreshAt = 0; // 마지막 갱신이 끝난 시각 — ↻ 연타 제한에 쓴다
 let chartSeq = 0; // 차트 요청 순번 — 응답이 역순으로 도착해도 마지막 것만 반영
 let drawnKey = null; // 지금 그려진 차트의 '종목|기간'. 없으면 null
+// 국내 일봉 캔들의 통합(KRX + NXT) 지난 날 값(venueDaysFor) — 종목 → { day(받은 날), from, days } | { failAt }
+const venueCache = new Map();
+const KR_STOCK_RE = /\.(KS|KQ)$/; // 국내 종목(지수 · 해외 제외) — 통합 / KRX 캔들 기준이 있는 것
+const kstYmd = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // 'YYYYMMDD'(한국 날짜)
 // 지표 보기(차트 대신 보는 화면). 저장하지 않는다 — 다시 켜면 차트부터.
 let metricsOn = false;
 const metricsCache = new Map(); // symbol -> { at, d(naver:detail 응답) }

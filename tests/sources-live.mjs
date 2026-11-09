@@ -104,6 +104,19 @@ export const CHECKS = [
     ] : [])],
   },
   {
+    // 일봉 캔들 기준 '통합'(증권사 앱의 통합 캔들) — 네이버 KRX · NXT 일봉을 합친 값. 삼성전자는 NXT 에서 날마다 거래된다.
+    name: '통합 일봉 (KRX + NXT)', source: '네이버 KRX · NXT 일봉',
+    call: (h) => h['naver:venueDays']({}, '005930.KS', new Date(Date.now() - 30 * DAY + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, '')),
+    verify: (r) => {
+      const days = r && r.ok && r.days ? Object.entries(r.days).sort(([a], [b]) => a.localeCompare(b)) : [];
+      return [...okOf(r),
+        ...need(days.length >= 10, `NXT 거래일이 30일에 ${days.length}일뿐`),
+        ...need(days.every(([d, v]) => /^\d{8}$/.test(d) && [v.open, v.high, v.low, v.close].every(pos)
+          && v.low <= Math.min(v.open, v.close) && v.high >= Math.max(v.open, v.close)), '시 · 고 · 저 · 종이 맞지 않는 날이 있음'),
+        ...need(days.length && recent(days[days.length - 1][0], 7), '마지막 날이 7일보다 오래됨')];
+    },
+  },
+  {
     name: '일봉 5년', source: '야후 chart (국내 · 미국 · 지수)',
     call: async (h) => ({
       kr: await h['yf:chart']({}, { symbol: '005930.KS', range: '5y', interval: '1d' }),

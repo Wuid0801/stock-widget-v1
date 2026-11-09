@@ -16,6 +16,7 @@ const save = () => api.setState({
   infoOpen: state.infoOpen,
   indicators: state.indicators,
   extHours: state.extHours,
+  candleVenue: state.candleVenue,
 });
 
 // 저장된 선택이 관심종목도 지수도 아니면 첫 관심종목. 관심종목이 비어 있으면 null —

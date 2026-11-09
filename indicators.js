@@ -243,11 +243,13 @@ function daysAgo(ms, now = Date.now()) {
 // 종가를 쓰고, 아직 못 받았으면 현재가로 버틴다.
 // 마지막에 고가·저가를 시가·종가로 조인다. 네이버 고저가 현재가보다 한 틱 늦게
 // 오는 순간이 있어, 그대로 두면 몸통이 제 꼬리를 뚫고 나간다.
-function candleOf(q) {
-  const c = q && q.candle;
+// venue(일봉 차트의 캔들 기준): 'integrated' 는 통합 시 · 고 · 저에 종가는 지금 마지막 체결(애프터 포함 — 증권사 앱의 통합
+// 캔들), 'krx' 는 KRX 시 · 고 · 저(krxCandle)에 위 종가 규칙. 주지 않으면 지금까지처럼 통합 시 · 고 · 저에 위 종가 규칙(헤더 캔들).
+function candleOf(q, venue) {
+  const c = q && (venue === 'krx' ? q.krxCandle || q.candle : q.candle);
   if (!c || !Number.isFinite(c.open) || c.open <= 0) return null;
 
-  const close = q.priceSession === 'regular' || q.regularClose == null
+  const close = venue === 'integrated' || q.priceSession === 'regular' || q.regularClose == null
     ? q.price
     : q.regularClose;
   if (!Number.isFinite(close) || close <= 0) return null;

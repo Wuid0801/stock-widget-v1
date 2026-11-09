@@ -95,6 +95,7 @@ const storeOptions = {
     chartMode: 'candle', // 'candle' | 'line'
     plainChart: false, // 차트만 보기(이동평균 · 보조 지표 · 기준선을 그리지 않는다)
     extHours: true, // 1D · 1W 를 장전 · 장후까지(전체) 볼지, 정규장만 볼지
+    candleVenue: 'integrated', // 국내 일봉 캔들 기준 'integrated'(KRX + NXT, 증권사 앱의 통합) | 'krx'
     infoOpen: true, // 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지
     // 보조 지표(설정의 칩). 기본은 모두 꺼짐 — 이동평균 · 추세선과 겹치면 작은 차트가 빽빽해진다.
     indicators: { bb: false, vwap: false, volAvg: false, prevHL: false, vp: false, rel: false, sar: false },
@@ -227,7 +228,7 @@ function createWindow() {
 // 쓴다 — 셋이 따로 적혀 있을 때는 새 설정을 한 곳에 빠뜨리면 조용히 저장 · 복원되지 않았다. save() 와 같은지는
 // tests/state-contract.mjs 가 본다.
 const STATE_KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles',
-  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours'];
+  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours', 'candleVenue'];
 const storedState = () => Object.fromEntries(STATE_KEYS.map((k) => [k, store.get(k)]));
 
 ipcMain.handle('state:get', () => storedState());
@@ -296,6 +297,7 @@ function cleanBackup(raw) {
   if (Array.isArray(s.maPeriods)) out.maPeriods = s.maPeriods.filter((p) => Number.isInteger(p) && p > 0 && p <= 1000).slice(0, 20);
   if (isPlain(s.maStyles)) out.maStyles = JSON.parse(JSON.stringify(s.maStyles)); // 렌더러가 시작할 때 다시 거른다(cleanMaStyles)
   if (s.chartMode === 'candle' || s.chartMode === 'line') out.chartMode = s.chartMode;
+  if (s.candleVenue === 'integrated' || s.candleVenue === 'krx') out.candleVenue = s.candleVenue;
   for (const k of ['plainChart', 'infoOpen', 'extHours']) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (isPlain(s.indicators)) out.indicators = Object.fromEntries(Object.entries(s.indicators).filter(([, v]) => typeof v === 'boolean'));
   return Object.keys(out).length ? out : null;
@@ -1604,6 +1606,48 @@ async function naverDaily(path, range, now) {
   }
   return bars;
 }
+
+// --- 통합(KRX + NXT) 일봉 — 일봉 차트의 캔들 기준 '통합'(증권사 앱의 통합 캔들) -------------------------------------
+// 시가는 NXT 시가(08:00 프리마켓 첫 체결), 고가 · 저가는 두 시장 하루 전체의 가장 높은 · 낮은 값, 종가는 하루 마지막 체결이다.
+// 네이버 KRX 일봉의 종가가 그 값이다 — KRX 분봉 주소도 15:40~19:59 봉을 주는데 KRX 시간외는 18:00 에 끝나니, 장 마감 뒤는
+// 통합 시세다(2026-11-09 실측). 2026-11-06 SK하이닉스: KRX 1,089,000 · 1,217,000 · 1,089,000 / NXT 1,172,000 · 1,216,000 ·
+// 1,070,000 · 1,176,000 → 통합 1,172,000 · 1,217,000 · 1,070,000 · 1,176,000 — 증권사 앱과 같았다. 정규장 종가(1,132,000)가
+// 아니므로 선 · 지표는 이것을 쓰지 않는다(캔들 모양만, 사용자 결정). NXT 거래가 없는 날(2025-03-04 전 · NXT 밖 종목)은 담지 않는다 —
+// 렌더러가 그날은 KRX 캔들 그대로 둔다. 한계: NXT 프리마켓 거래가 없는 날은 NXT 시가가 09:00 뒤 첫 체결이라 증권사 앱 시가와
+// 조금 다를 수 있다(일봉에는 체결 시각이 없다).
+const NXT_START = '20250304';
+function venueDays(krxRows, nxtRows) {
+  const ohlc = (r) => {
+    const v = [r?.openPrice, r?.highPrice, r?.lowPrice, r?.closePrice].map(numberOrNull);
+    return v.every((x) => x > 0) ? { open: v[0], high: v[1], low: v[2], close: v[3] } : null;
+  };
+  const krx = new Map((Array.isArray(krxRows) ? krxRows : []).map((r) => [String(r?.localDate ?? ''), ohlc(r)]));
+  const days = {};
+  for (const r of Array.isArray(nxtRows) ? nxtRows : []) {
+    const day = String(r?.localDate ?? '');
+    const n = ohlc(r);
+    if (!/^\d{8}$/.test(day) || !n || !(numberOrNull(r.accumulatedTradingVolume) > 0)) continue;
+    const k = krx.get(day);
+    days[day] = { open: n.open, high: Math.max(n.high, k ? k.high : n.high), low: Math.min(n.low, k ? k.low : n.low),
+      close: k ? k.close : n.close };
+  }
+  return days;
+}
+ipcMain.handle('naver:venueDays', async (_e, symbol, from) => {
+  const m = KR_RE.exec(String(symbol ?? ''));
+  if (!m || !/^\d{8}$/.test(String(from ?? ''))) return { ok: false, error: '잘못된 요청' };
+  const start = from > NXT_START ? from : NXT_START;
+  const end = kstDay(Date.now());
+  if (start > end) return { ok: true, days: {} };
+  const q = `?startDateTime=${start}&endDateTime=${end}`;
+  try {
+    const [krx, nxt] = await Promise.all([naverJson(`https://api.stock.naver.com/chart/domestic/item/${m[1]}/day${q}`),
+      naverJson(`https://api.stock.naver.com/chart/domestic/NXT/item/${m[1]}/day${q}`)]);
+    return { ok: true, days: venueDays(krx, nxt) };
+  } catch (err) {
+    return { ok: false, error: err.message || '요청 실패' };
+  }
+});
 
 // 국내는 NXT 시간외 봉을 붙이고, 시간외가 있으면 빈 칸을 채운다. 없으면 응답 모양은 예전 그대로(ext 없음).
 async function withExt(series, krExt, now, week) {

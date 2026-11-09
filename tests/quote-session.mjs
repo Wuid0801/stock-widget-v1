@@ -435,6 +435,8 @@ await test('IPC US and domestic fail independently', async () => {
 await test('day candle uses the integrated session, not KRX alone', () => {
   const q = normalizeQuote(paused.datas[0], { now });
   assert.deepEqual(q.candle, { open: 245500, high: 252000, low: 245000 });
+  // KRX 만의 값도 같이 준다 — 일봉 차트의 캔들 기준을 KRX 로 고르면 오늘 캔들이 이것이다
+  assert.deepEqual(q.krxCandle, { open: 248000, high: 252000, low: 246000 });
 });
 await test('day candle falls back to KRX when no integrated block is given', () => {
   const q = normalizeQuote(row({ integratedPriceInfo: null }), { now });
