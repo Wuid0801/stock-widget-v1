@@ -2153,15 +2153,18 @@ await test('ext hours: the switch flips the view, saves it and redraws', async (
   assert.deepEqual(log.splice(0), ['save', 'load:true']);
 });
 
-// 아래 칸 양옆 ‹ ›(#paneNav) — Chart.js 배치가 끝난 뒤 그 칸(yRsi)의 자리 · 크기에 맞추고, 칸이 없으면 숨는다.
+// 아래 칸 양옆 ‹ ›(#paneNav) — Chart.js 배치가 끝난 뒤 위아래는 그 칸(yRsi), 좌우는 그림 영역 바로 바깥(버튼 폭만큼)에
+// 맞추고, 칸이 없으면 숨는다. 칸 안 양끝에 두니 양끝 봉을 가렸다.
 // 켜고 끄기는 설정 칩만이라 차트 위 RSI · 스토 버튼은 없앴다(사용자 결정, 2026-11-09).
 await test('pane nav: the side arrows sit on the lower pane and hide without it or the chart', () => {
   const { run, elements } = harness();
+  run(source.match(/^const PANE_NAV_W = .*$/m)[0]);
   run(source.match(/^const paneNavPlugin = \{[\s\S]*?\n\};/m)[0]);
   run('paneNavPlugin').afterLayout({ chartArea: { left: 2, right: 300 }, scales: { yRsi: { top: 150, bottom: 195 } } });
   const el = elements.get('paneNav');
   assert.equal(el.hidden, false);
-  assert.deepEqual({ ...el.style }, { left: '2px', width: '298px', top: '150px', height: '45px' }, '그림 영역 좌우 · 아래 칸 위아래');
+  assert.equal(run('PANE_NAV_W'), 11, 'index.html .panenav button 폭과 같다');
+  assert.deepEqual({ ...el.style }, { left: '-9px', width: '320px', top: '150px', height: '45px' }, '그림 영역 바로 바깥 양옆 · 아래 칸 위아래');
   run('paneNavPlugin').afterLayout({ chartArea: { left: 2, right: 300 }, scales: {} });
   assert.equal(el.hidden, true, '아래 칸이 없으면(둘 다 꺼짐 · 전체 · 차트만 보기) 숨는다');
   assert.match(realFunction('drawChart'), /plugins: \[[^\]]*paneNavPlugin\]/, '차트마다 붙는다');

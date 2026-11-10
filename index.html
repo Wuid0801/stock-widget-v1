@@ -712,14 +712,16 @@
   #candleVenue.on, #extHours.on, #rsiTall.on { opacity: 1; color: var(--text); border-color: var(--text-3); }
   #candleVenue[hidden], #extHours[hidden], #rsiTall[hidden] { display: none; }
   /* 아래 칸(RSI · 스토캐스틱) 양옆 ‹ › — 누르면 RSI ↔ 스토캐스틱. 켜고 끄기는 설정 칩(사용자 결정, 2026-11-09).
-     자리 · 크기는 paneNavPlugin(renderer/chart.js)이 그 칸에 맞춘다. 칸 안 선을 가리지 않게 평소엔 흐리게, 지표 화면이 열리면 숨는다 */
+     그림 영역(차트 선) 바로 양옆 바깥에 둔다 — 칸 안 양끝에 두니 양끝 봉을 가렸고, 창 가장자리에 두니 오른쪽이 숫자 눈금 뒤로
+     멀어졌다(2026-11-09). 자리 · 크기는 paneNavPlugin(renderer/chart.js)이 맞춘다. 지표 화면이 열리면 숨는다 */
   .panenav { position: absolute; z-index: 1; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
   .panenav[hidden], .metrics:not([hidden]) ~ .panenav { display: none; }
+  /* 폭 11px 은 paneNavPlugin 의 PANE_NAV_W 와 같아야 한다 */
   .panenav button {
-    pointer-events: auto; width: 14px; height: 18px; padding: 0; border: 1px solid var(--field-border); border-radius: 4px;
-    background: var(--tooltip); color: var(--dim); font-size: 11px; line-height: 1; font-family: inherit; cursor: pointer; opacity: .6;
+    pointer-events: auto; width: 11px; height: 18px; padding: 0; border: 0; background: none;
+    color: var(--dim); font-size: 13px; line-height: 1; font-family: inherit; cursor: pointer; opacity: .7;
   }
-  .panenav button:hover { opacity: 1; color: var(--text-3); }
+  .panenav button:hover { opacity: 1; color: var(--text); }
   #zoomReset {
     height: 18px; padding: 0 6px; border: 1px solid var(--field-border); border-radius: 4px;
     background: var(--tooltip); color: var(--dim); font-size: 10px; cursor: pointer; opacity: .6;

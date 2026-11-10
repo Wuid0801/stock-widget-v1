@@ -528,8 +528,10 @@ const zoomBoxPlugin = {
   },
 };
 
-// 아래 칸(RSI · 스토캐스틱) 양옆 ‹ ›(#paneNav)를 그 칸에 맞춘다. 칸의 자리는 Chart.js 배치가 끝나야 알 수 있어 여기서 —
-// 창 크기가 바뀌어 다시 배치해도 따라온다. 칸이 없으면(둘 다 꺼짐 · 전체 · 차트만 보기) 숨는다.
+// 아래 칸(RSI · 스토캐스틱) 양옆 ‹ ›(#paneNav)를 그 칸에 맞춘다 — 위아래는 그 칸, 좌우는 그림 영역 바로 바깥(‹ 는 첫 봉 앞,
+// › 는 마지막 봉 뒤 · 숫자 눈금 앞). 칸의 자리는 Chart.js 배치가 끝나야 알 수 있어 여기서 — 창 크기가 바뀌어 다시 배치해도
+// 따라온다. 칸이 없으면(둘 다 꺼짐 · 전체 · 차트만 보기) 숨는다.
+const PANE_NAV_W = 11; // 화살표 버튼 폭(index.html .panenav button)
 const paneNavPlugin = {
   id: 'paneNav',
   afterLayout(c) {
@@ -538,7 +540,8 @@ const paneNavPlugin = {
     el.hidden = !s;
     if (!s) return;
     const a = c.chartArea;
-    Object.assign(el.style, { left: `${a.left}px`, width: `${a.right - a.left}px`, top: `${s.top}px`, height: `${s.bottom - s.top}px` });
+    Object.assign(el.style, { left: `${a.left - PANE_NAV_W}px`, width: `${a.right - a.left + 2 * PANE_NAV_W}px`,
+      top: `${s.top}px`, height: `${s.bottom - s.top}px` });
   },
 };
 

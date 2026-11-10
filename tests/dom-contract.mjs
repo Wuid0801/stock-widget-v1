@@ -162,6 +162,9 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('#paneNav 는 차트 상자 안에 ‹ · › 두 버튼',
     /<\/span><span class="panenav" id="paneNav" hidden><button type="button"[^>]*>‹<\/button><button type="button"[^>]*>›<\/button><\/span><\/div>/.test(html));
   check('#paneNav 는 숨김 · 지표 화면에서 보이지 않는다', /\.panenav\[hidden\], \.metrics:not\(\[hidden\]\) ~ \.panenav \{ display: none; \}/.test(html));
+  // 화살표 폭은 paneNavPlugin 이 그림 영역 바깥으로 비키는 폭(PANE_NAV_W)과 같아야 봉을 가리지도, 떨어지지도 않는다
+  check('.panenav button 폭 = PANE_NAV_W', +/const PANE_NAV_W = (\d+);/.exec(rendererSource())[1]
+    === +(/\.panenav button \{[^}]*?width: (\d+)px/.exec(html) || [])[1]);
   // 설정의 보조 지표는 상단 지표(가격 차트 위) · 하단 지표(차트 아래 칸)로 나눈다(사용자 결정, 2026-11-09)
   check('설정에 상단 지표 · 하단 지표 칩 자리가 차례로 있다', /상단 지표[\s\S]*?id="indChips"[\s\S]*?하단 지표[\s\S]*?id="paneChips"/.test(html));
   check('스토캐스틱 선 색이 두 테마에 있다', (html.match(/--stoch-line: #[0-9a-f]{6};/g) || []).length === 2);
