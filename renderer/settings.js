@@ -6,7 +6,6 @@
 function applyTheme(theme) {
   state.theme = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = state.theme;
-  DOWN = cssVar('--down'); // 하락 파랑은 테마마다 다르다 — 아래에서 다시 그리기 전에
   for (const b of document.querySelectorAll('#themeSeg button')) {
     b.classList.toggle('on', b.dataset.theme === state.theme);
   }

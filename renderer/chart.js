@@ -404,7 +404,7 @@ function drawCandles(c, opts) {
     const o = opens[i]; const h = highs[i]; const l = lows[i]; const cl = closes[i];
     if (o == null || h == null || l == null || cl == null) continue;
 
-    const color = cl > o ? UP : cl < o ? DOWN : flat;
+    const color = cl > o ? CHART_UP : cl < o ? DOWN : flat;
     ctx.fillStyle = color;
     ctx.strokeStyle = color;
 
@@ -497,7 +497,7 @@ const crossMarkPlugin = {
       const y = c.scales.y.getPixelForValue(k.y);
       const dir = k.golden ? 1 : -1; // 골든은 아래쪽, 데드는 위쪽
       const tip = y + dir * 6;
-      ctx.fillStyle = k.golden ? UP : DOWN;
+      ctx.fillStyle = k.golden ? CHART_UP : DOWN;
       ctx.beginPath();
       ctx.moveTo(x, tip);
       ctx.lineTo(x - 3.5, tip + dir * 5);
@@ -596,7 +596,7 @@ function drawChart(arg) {
     bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, rsi = null, benchLine = null, tipBases = null,
     candleBars = null, stoch = null,
   } = arg;
-  const color = up ? UP : DOWN;
+  const color = up ? CHART_UP : DOWN;
   // 툴팁 가격 옆 등락률(%). 기준(tipBases, loadChart 가 만든다)이 없으면 null
   const tipPct = (i, y) => { const b = tipBases && tipBases[i]; return b > 0 && y != null ? ((y - b) / b) * 100 : null; };
   // 빠진 시가는 main.js 와 pad 가 종가로 채운다(그 봉은 회색 십자). opens 를 아예 안
@@ -637,7 +637,7 @@ function drawChart(arg) {
   // RSI 교차 봉 → { golden(위로 뚫었는지), open(1D 진행 중인 마지막 봉 — 테두리 점) }
   const rsiDot = new Map(rsi ? [...rsi.crosses.map((x) => [x.i, { golden: x.golden, open: false }]),
     ...(rsi.pending ? [[rsi.pending.i, { golden: rsi.pending.golden, open: true }]] : [])] : []);
-  const rsiDotColor = (i) => (rsiDot.has(i) && rsiDot.get(i).golden ? UP : DOWN);
+  const rsiDotColor = (i) => (rsiDot.has(i) && rsiDot.get(i).golden ? CHART_UP : DOWN);
   // 아래 칸(RSI 또는 스토캐스틱) 눈금 — RSI 는 보이는 봉의 RSI · 시그널 최저~최고에 맞춘다(rsiScale). 거래량처럼 확대 중에는
   // 그 구간으로. 스토캐스틱은 늘 0~100 을 거의 다 쓰므로 0~100 에 20 · 80. null 이면 아래 칸이 없다.
   const paneFit = rsi ? rsiScale(zr ? [...rsi.data.slice(zr.from, zr.to + 1), ...rsi.signal.slice(zr.from, zr.to + 1)]
