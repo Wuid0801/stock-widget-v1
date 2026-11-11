@@ -4433,6 +4433,26 @@ await test('undo after re-adding the same stock restores its holding and target 
   assert.equal(b.run("state.watchlist.map((i) => i.symbol).join()"), '005930.KS,000660.KS', 'still one row each');
 });
 
+// 보유만 지운 것(상세의 삭제 · 설정의 ✕)도 6초 되돌리기 — 줄은 그대로 두고 보유만 되살린다(2026-11-11).
+// 전에는 관심종목 ✕ 에만 있어, 취소 옆의 삭제를 잘못 누르면 손으로 넣은 평단가가 그대로 없어졌다.
+await test('undo after deleting only a holding brings the holding back and leaves the row alone', async () => {
+  const a = undoRun(['clearHolding', 'setHolding']);
+  a.c.alertsEl = { hidden: true };
+  a.run(`state.watchlist = ${JSON.stringify([SAM, HYNIX])}; state.selected = '000660.KS';
+    state.holdings = { '005930.KS': { qty: 10, avg: 200000 } };`);
+  a.c.clearHolding('005930.KS');
+  assert.equal(a.run("state.holdings['005930.KS']"), undefined);
+  assert.equal(a.elements.get('undoText').textContent, '삼성전자 보유 삭제됨');
+  assert.equal(a.elements.get('undo').hidden, false);
+  await a.c.undoRemove();
+  assert.deepEqual({ ...a.run("state.holdings['005930.KS']") }, { qty: 10, avg: 200000 }, '보유가 돌아온다');
+  assert.equal(a.run("state.watchlist.map((i) => i.symbol).join()"), '005930.KS,000660.KS', '줄은 그대로');
+  assert.equal(a.elements.get('undo').hidden, true);
+  a.c.clearHolding('000660.KS');
+  assert.equal(a.elements.get('undo').hidden, true, '보유가 없으면 되돌릴 것도 없다');
+  assert.match(realFunction('renderAlerts'), /del\.onclick = \(\) => \{ clearHolding\(item\.symbol\)/, '설정의 ✕ 도 같은 길');
+});
+
 // 선택 중이던 종목을 지웠다 되돌리면 select → loadChart 가 시세를 다시 받기 전에 돈다. 시세가 없으면
 // 이동평균 · 교차 배지 · 색(늘 빨강)이 빠진 채 그려지고 다음 갱신(장 마감 후 5분)까지 남았다.
 await test('undoing a selected stock redraws its chart once its quote is back', async () => {
@@ -4755,6 +4775,33 @@ await test('trend check: real backtest on a steady climb says 정배열 and 표�
   assert.ok(el.title.includes('진입 1회 — 적어서 판정하지 않음'));
 });
 
+// 목표가 칸 — 쉼표를 받고, 빈 칸은 지우고, 잘못 넣으면 지우지 않는다(2026-11-11). 숫자 칸일 때는 "1,250,000" 이
+// 빈 값이 되어 그 목표가가 말없이 지워졌다.
+await test('alerts: a target accepts commas, a blank clears it, a bad entry keeps the old one', () => {
+  const { c } = harness(['parseAmount', 'targetFrom']);
+  assert.deepEqual({ ...c.targetFrom('1,250,000', 1) }, { value: 1250000 });
+  assert.deepEqual({ ...c.targetFrom(' 182.5 ', null) }, { value: 182.5 }, '해외 소수');
+  assert.deepEqual({ ...c.targetFrom('', 300000) }, {}, '빈 칸은 지우기');
+  assert.deepEqual({ ...c.targetFrom('abc', 300000) }, { value: 300000, bad: true }, '잘못 넣으면 있던 값');
+  assert.deepEqual({ ...c.targetFrom('-5', undefined) }, { value: undefined, bad: true }, '0 이하도 잘못');
+  assert.match(realFunction('renderAlerts'), /cls: 'up', ph: '상한', value: [^\n]*text: true/, '글자 칸(쉼표를 보인다)');
+});
+
+// 하락 파랑은 테마마다 — 다크는 더 밝게(배경 대비 2.9:1 → 5.7:1, 2026-11-11 사용자 결정). applyTheme 이 --down 을 읽는다.
+await test('theme: the falling blue follows the theme, lighter on dark', () => {
+  const { c, run } = harness(['applyTheme']);
+  const root = { dataset: {} };
+  c.document.documentElement = root;
+  c.document.querySelectorAll = () => [];
+  Object.assign(c, { lastChart: null, renderList() {}, renderDetail() {}, renderMaChips() {}, renderIndChips() {},
+    cssVar: (n) => (n === '--down' ? { dark: '#4d8fd6', light: '#185fa5' }[root.dataset.theme] : n) });
+  assert.equal(run('DOWN'), '#185fa5', '테마를 입히기 전 기본은 라이트 값');
+  run("applyTheme('dark')");
+  assert.equal(run('DOWN'), '#4d8fd6');
+  run("applyTheme('light')");
+  assert.equal(run('DOWN'), '#185fa5');
+});
+
 // 보유 — 어떤 종목을 들고 있는지 목록에서 보이고, 상세에서 바로 넣고 고치며, 합계 줄이 무엇의 합인지 말한다.
 // 이 하네스에는 진짜 DOM 이 없다. 그리는 글자와 상태만 보고, 버튼 · 키 연결은 tests/holdings.mjs(앱)가 본다.
 const HOLD_FNS = ['parseAmount', 'amountText', 'holdingFrom', 'holdingPl', 'plColor', 'holdSub', 'renderHolding',
@@ -5042,9 +5089,13 @@ await test('holdings: detail adds, validates, edits, cancels and deletes; refres
   c.renderHolding('005930.KS', 225000);
   assert.ok(el.innerHTML.startsWith('<span class="hqty">'), '돌아와도 입력 칸이 아니다');
 
+  const undos = [];
+  c.showUndo = (s) => undos.push(s);
   c.clearHolding('005930.KS');
   assert.equal(run(`state.holdings['005930.KS']`), undefined);
   assert.equal(el.innerHTML, '<button type="button" class="hadd" data-act="edit">＋ 보유 입력</button>');
+  assert.deepEqual(undos.map((s) => [s.item.symbol, { ...s.holding }, s.holdingOnly]), [['005930.KS', { qty: 10, avg: 200000 }, true]],
+    '지운 보유를 되돌릴 기회를 준다 — 평단가는 위젯 밖에서 되살릴 수 없다');
 });
 
 await test('holdings: folio names its numbers and steps through total and each holding', async () => {

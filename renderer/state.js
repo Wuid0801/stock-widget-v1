@@ -5,7 +5,8 @@
 
 
 const UP = '#e24b4a';   // 상승 = 빨강 (한국 관례)
-const DOWN = '#185fa5'; // 하락 = 파랑
+// 하락 = 파랑. 테마마다 다르다 — 다크는 더 밝은 파랑(index.html --down), applyTheme 이 바꾼다(2026-11-11 사용자 결정)
+let DOWN = '#185fa5';
 
 const TF = {
   // 1D · 1W 는 시간외(프리 · 애프터) 봉까지 받는다 — 미국은 야후, 국내는 네이버 NXT 분봉(main.js).

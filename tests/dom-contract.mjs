@@ -167,6 +167,10 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
     === +(/\.panenav button \{[^}]*?width: (\d+)px/.exec(html) || [])[1]);
   // 설정의 보조 지표는 상단 지표(가격 차트 위) · 하단 지표(차트 아래 칸)로 나눈다(사용자 결정, 2026-11-09)
   check('설정에 상단 지표 · 하단 지표 칩 자리가 차례로 있다', /상단 지표[\s\S]*?id="indChips"[\s\S]*?하단 지표[\s\S]*?id="paneChips"/.test(html));
+  // 하락 파랑은 다크만 밝게(사용자 결정 2026-11-11) — 라이트 값은 renderer/state.js DOWN 의 기본값과 같다
+  check('--down 이 다크 #4d8fd6 · 라이트 #185fa5', /--down: #4d8fd6;/.test(html) && /--down: #185fa5;/.test(html)
+    && /let DOWN = '#185fa5';/.test(rendererSource()));
+  check('보유 삭제는 취소에서 떨어진 오른쪽 끝 · 지우는 색', /\.hold button\[data-act="del"\] \{ margin-left: auto; color: var\(--del-fg\); \}/.test(html));
   check('스토캐스틱 선 색이 두 테마에 있다', (html.match(/--stoch-line: #[0-9a-f]{6};/g) || []).length === 2);
 }
 

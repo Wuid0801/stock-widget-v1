@@ -20,8 +20,8 @@
     --text-2: #cfd6e2;
     --text-3: #dfe5ee;
     --dim: #8a94a6;
-    --mute: #6f7a8c;
-    --faint: #5d6675;
+    --mute: #7d889a;  /* 배경 대비 약 5.2:1 — 9px 52주 · 축 숫자가 흐려 #6f7a8c(4.3:1)에서 밝혔다(2026-11-11) */
+    --faint: #6f7a8c; /* 약 4.3:1 — #5d6675(3.2:1)에서 */
     --placeholder: #667187;
     --dname: #97a1b2;
 
@@ -44,6 +44,9 @@
 
     --dot-off: #4a5261;
     --flat: #9aa4b5;
+    /* 하락 파랑 — 다크는 #185fa5 가 배경 대비 2.9:1(마우스를 떼면 2:1)이라 흘끗 볼 때 안 읽혀 밝혔다(교차 배지와 같은 파랑, 5.7:1).
+       라이트는 그대로. renderer/state.js DOWN 이 applyTheme 에서 이 값을 읽는다(2026-11-11 사용자 결정) */
+    --down: #4d8fd6;
     --err: #d9714f;
     --del-bg: rgba(226, 75, 74, 0.22);
     --del-fg: #ff9a99;
@@ -102,8 +105,8 @@
     --text-2: #2c3440;
     --text-3: #11151b;
     --dim: #5b6472;
-    --mute: #79828f;
-    --faint: #9aa2ad;
+    --mute: #687180;  /* 배경 대비 약 4.7:1 — #79828f(3.7:1)에서 진하게(2026-11-11) */
+    --faint: #808996; /* 약 3.4:1 — #9aa2ad(2.5:1)에서 */
     --placeholder: #a3abb6;
     --dname: #5b6472;
 
@@ -126,6 +129,7 @@
 
     --dot-off: #c2c8d0;
     --flat: #6b7480;
+    --down: #185fa5;
     --err: #c0392b;
     --del-bg: rgba(226, 75, 74, 0.16);
     --del-fg: #c0272d;
@@ -529,7 +533,7 @@
     background: transparent; color: var(--faint); cursor: pointer; font-size: 10px;
   }
   .arow .hdel:hover { color: var(--text); background: var(--hover); }
-  #holdRows .ohint { color: #e8862a; } /* 보유를 잘못 넣었을 때 안내 — 상세의 .hmsg 와 같은 색 */
+  #holdRows .ohint, #alertRows .ohint { color: #e8862a; } /* 보유 · 목표가를 잘못 넣었을 때 안내 — 상세의 .hmsg 와 같은 색 */
   .arow input.up:focus { border-color: #e24b4a; }
   .arow input.dn:focus { border-color: #185fa5; }
   /* 알림이 꺼져 있으면 입력은 되지만 동작하지 않음을 시각적으로 알린다 */
@@ -560,6 +564,8 @@
   }
   .hold button:hover { color: var(--text); background: var(--hover); }
   .hold .hadd { padding-left: 0; }
+  /* 삭제는 취소 옆에 붙어 있으면 잘못 누르기 쉬워 오른쪽 끝으로 떼고 지우는 색(되돌리기는 showUndo) */
+  .hold button[data-act="del"] { margin-left: auto; color: var(--del-fg); }
   .hold .hmsg { flex-basis: 100%; color: #e8862a; }
 
   /* --- 하단 상세 + 차트 --- */

@@ -53,9 +53,13 @@ function setHolding(symbol, h) {
   if (symbol === state.selected) loadChart().catch(console.error);
 }
 
+// 보유 지우기(상세의 삭제 · 설정의 ✕). 평단가는 위젯 밖에서 되살릴 수 없어 관심종목 삭제처럼 잠깐 되돌릴 기회를 준다(showUndo).
 function clearHolding(symbol) {
-  holdEdit = null;
+  const item = state.watchlist.find((i) => i.symbol === symbol);
+  const holding = state.holdings[symbol];
+  if (holdEdit && holdEdit.symbol === symbol) holdEdit = null;
   setHolding(symbol, null);
+  if (item && holding) showUndo({ item, holding, holdingOnly: true });
 }
 
 // --- 보유 종목 합계 ---------------------------------------------------------------

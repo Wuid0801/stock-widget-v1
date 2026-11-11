@@ -58,7 +58,7 @@ function hideUndo() {
 
 function showUndo(snap) {
   undoSnap = snap;
-  document.getElementById('undoText').textContent = `${snap.item.name} 삭제됨`;
+  document.getElementById('undoText').textContent = `${snap.item.name} ${snap.holdingOnly ? '보유 ' : ''}삭제됨`;
   document.getElementById('undo').hidden = false;
   clearTimeout(undoTimer);
   undoTimer = setTimeout(hideUndo, UNDO_MS);
@@ -68,6 +68,12 @@ async function undoRemove() {
   const s = undoSnap;
   if (!s) return;
   hideUndo();
+  // 보유만 지운 것(관심종목 줄은 그대로, clearHolding) — 보유만 되살린다. 그 사이 다시 넣었으면 그대로 둔다
+  if (s.holdingOnly) {
+    if (!state.holdings[s.item.symbol]) setHolding(s.item.symbol, s.holding);
+    if (!alertsEl.hidden) renderAlerts();
+    return;
+  }
 
   // 원래 자리에 다시 끼워 넣는다 (그 사이 목록이 짧아졌으면 끝에). 6초 안에 검색으로 다시
   // 추가했으면 줄은 이미 있다 — 두 줄이 되면 보유 합계가 두 배, 목표가 알림도 두 번이다. 그때는

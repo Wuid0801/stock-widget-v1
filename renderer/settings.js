@@ -6,6 +6,7 @@
 function applyTheme(theme) {
   state.theme = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = state.theme;
+  DOWN = cssVar('--down'); // 하락 파랑은 테마마다 다르다 — 아래에서 다시 그리기 전에
   for (const b of document.querySelectorAll('#themeSeg button')) {
     b.classList.toggle('on', b.dataset.theme === state.theme);
   }
@@ -216,6 +217,14 @@ async function importBackup() {
   document.getElementById('backupMsg').textContent = r.canceled ? '' : `불러오지 못했습니다 (${r.error})`;
 }
 
+// 목표가 칸 글자 하나를 읽는다 — 0보다 큰 수는 그 값, 빈 칸은 지우기(value 없음), 잘못 넣으면 있던 값(old)을 두고 bad.
+// 쉼표를 받는다(보유 칸과 같은 parseAmount).
+function targetFrom(text, old) {
+  const v = parseAmount(text);
+  if (Number.isFinite(v) && v > 0) return { value: v };
+  return String(text ?? '').trim() ? { value: old, bad: true } : {};
+}
+
 function renderAlerts() {
   const on = state.alerts.enabled;
   document.getElementById('alertOn').checked = on;
@@ -247,22 +256,33 @@ function renderAlerts() {
     return row;
   };
 
+  // 목표가도 보유 칸처럼 글자 칸 — 숫자 칸일 때는 "1,250,000" 이 빈 값이 되어 그 목표가가 말없이 지워졌다(2026-11-11).
+  // 빈 칸은 그 목표가를 지우고, 잘못 넣은 칸은 지우지 않고 원래 값으로 되돌린 뒤 아래에 알린다.
+  const alertMsg = document.createElement('div');
+  alertMsg.className = 'ohint';
   for (const item of state.watchlist) {
     const t = state.alerts.targets[item.symbol] || {};
     alertBox.appendChild(buildRow(item, [
-      { cls: 'up', ph: '상한', value: t.up },
-      { cls: 'dn', ph: '하한', value: t.down },
+      { cls: 'up', ph: '상한', value: t.up != null ? amountText(t.up) : null, text: true },
+      { cls: 'dn', ph: '하한', value: t.down != null ? amountText(t.down) : null, text: true },
     ], (row) => () => {
-      const up = parseFloat(row.querySelector('.up').value);
-      const down = parseFloat(row.querySelector('.dn').value);
+      const old = state.alerts.targets[item.symbol] || {};
       const next = {};
-      if (Number.isFinite(up)) next.up = up;
-      if (Number.isFinite(down)) next.down = down;
+      let bad = false;
+      for (const [cls, key] of [['up', 'up'], ['dn', 'down']]) {
+        const el = row.querySelector(`.${cls}`);
+        const r = targetFrom(el.value, old[key]);
+        if (r.bad) bad = true;
+        if (r.value != null) next[key] = r.value;
+        el.value = r.value != null ? amountText(r.value) : '';
+      }
+      alertMsg.textContent = bad ? '목표가는 0보다 큰 숫자로 넣어 주세요' : '';
       if (Object.keys(next).length) state.alerts.targets[item.symbol] = next;
       else delete state.alerts.targets[item.symbol];
       save();
     }));
   }
+  alertBox.appendChild(alertMsg);
 
   // 보유는 들고 있는 종목만 고치고 지운다. 새로 넣는 것은 상세 화면의 "＋ 보유 입력" 이다 —
   // 관심종목 전부를 늘어놓으면 무엇을 들고 있는지 알 수 없었다.
@@ -294,7 +314,7 @@ function renderAlerts() {
     del.className = 'hdel';
     del.title = '보유 지우기';
     del.textContent = '✕';
-    del.onclick = () => { setHolding(item.symbol, null); renderAlerts(); };
+    del.onclick = () => { clearHolding(item.symbol); renderAlerts(); };
     row.appendChild(del);
     holdBox.appendChild(row);
   }
