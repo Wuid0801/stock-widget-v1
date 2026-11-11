@@ -33,6 +33,8 @@ function pickTimeframe(key) {
   setTimeframe(key);
   save();
   renderTabs();
+  metricsOn = false; // 지표 화면이 열려 있었으면 차트로 — 탭 강조만 바뀌고 차트는 덮인 채였다
+  renderMetrics();
   return loadChart();
 }
 

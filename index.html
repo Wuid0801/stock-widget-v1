@@ -380,8 +380,7 @@
   .hit:hover { background: var(--hit-hover); }
   .hit .hname { flex: 1 1 auto; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .hit .hmeta { font-size: 10px; color: var(--mute); flex: 0 0 auto; }
-  .hit.dup { cursor: default; opacity: .45; }
-  .hit.dup:hover { background: transparent; }
+  .hit.dup { opacity: .6; } /* 이미 있는 종목 — 누르면 그 종목으로 간다 */
   .qhint { padding: 8px 11px; font-size: 10px; color: var(--mute); }
 
   /* --- 시장 순위 --- */
@@ -533,6 +532,7 @@
     background: transparent; color: var(--faint); cursor: pointer; font-size: 10px;
   }
   .arow .hdel:hover { color: var(--text); background: var(--hover); }
+  #plainHint { color: #e8862a; } /* 차트만 보기 중 — 칩을 켜도 그리지 않는 이유 */
   #holdRows .ohint, #alertRows .ohint { color: #e8862a; } /* 보유 · 목표가를 잘못 넣었을 때 안내 — 상세의 .hmsg 와 같은 색 */
   .arow input.up:focus { border-color: #e24b4a; }
   .arow input.dn:focus { border-color: #185fa5; }
@@ -873,6 +873,7 @@
         </div>
         <div class="ohint">마우스를 올리면 항상 또렷해집니다. 위 값은 벗어났을 때의 진하기입니다.</div>
 
+        <div class="ohint" id="plainHint" hidden>차트만 보기가 켜져 있어 이동평균 · 지표를 그리지 않습니다. 차트 왼쪽 위 버튼(덧그림 다시 보기)을 누르면 다시 나옵니다.</div>
         <div class="sect">이동평균선 <span class="sechint">일봉 차트(1M · 3M · 1Y · 3Y)에만 표시</span></div>
         <div class="machips" id="maChips"></div>
         <div class="mastyles" id="maStyles"></div>
@@ -880,7 +881,7 @@
 
         <div class="sect">상단 지표 <span class="sechint">가격 차트 위에 겹쳐 그립니다</span></div>
         <div class="machips" id="indChips"></div>
-        <div class="ohint">볼린저 · 매물대는 1M · 3M · 1Y · 3Y, VWAP · 전일 고저는 1D, 지수 대비는 1M 이상의 기간 배지, 거래량 평균은 모든 기간에 나옵니다. 칩에 마우스를 올리면 설명이 보입니다.</div>
+        <div class="ohint">볼린저 · 매물대는 1M · 3M · 1Y · 3Y, VWAP · 전일 고저는 1D, 지수 대비는 1M 이상의 기간 배지, 거래량 평균은 모든 기간에 나옵니다. 흐린 칩은 지금 기간에는 그리지 않습니다. 칩에 마우스를 올리면 설명이 보입니다.</div>
         <div class="sect">하단 지표 <span class="sechint">차트 아래 칸에 하나만 — 칸 양옆 ‹ › 로 바꿉니다</span></div>
         <div class="machips" id="paneChips"></div>
         <div class="sect">

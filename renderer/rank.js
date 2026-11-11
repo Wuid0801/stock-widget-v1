@@ -449,7 +449,8 @@ function rankClick(target) {
 }
 
 // 누르면: 관심종목에 있으면 그 종목으로 가고, 없으면 넣고 연다(검색에서 고를 때와 같다 — addSymbol 이 넣으면서
-// 연다). 야후 시세에 없어 못 넣으면 패널을 두고 그렇다고 적는다.
+// 연다). 넣었으면 구경하려고 누른 것일 수 있어 잠깐 되돌릴 기회를 준다(showUndo — 되돌리면 빼고 보던 종목으로).
+// 못 넣으면 패널을 두고 그 이유를 적는다(addSymbol 이 돌려준다 — 시세 없음 · 연결 실패 …).
 async function pickRank(it) {
   const msg = document.getElementById('rankMsg');
   if (state.watchlist.some((w) => w.symbol === it.symbol)) {
@@ -461,12 +462,15 @@ async function pickRank(it) {
   if (adding.has(it.symbol)) return;
   msg.textContent = `${it.name} 추가하는 중…`;
   msg.hidden = false;
-  await addSymbol({ symbol: it.symbol, name: it.name });
-  if (state.watchlist.some((w) => w.symbol === it.symbol)) {
+  const prev = state.selected;
+  const err = await addSymbol({ symbol: it.symbol, name: it.name });
+  const added = state.watchlist.find((w) => w.symbol === it.symbol);
+  if (added) {
     msg.hidden = true;
     closeRank();
+    showUndo({ item: added, added: true, prev });
   } else {
-    msg.textContent = `${it.name}: 추가하지 못했습니다 (야후 시세에 없는 종목)`;
+    msg.textContent = `${it.name}: 추가하지 못했습니다 (${err || '조회 실패'})`;
     msg.hidden = false;
   }
 }

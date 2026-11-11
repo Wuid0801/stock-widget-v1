@@ -251,13 +251,18 @@ const hLinePlugin = {
     below.sort((a, b) => a.y - b.y);
     if (above.length) labels.push({ y: area.top + TEXT_H, text: edge(above, '▲'), color: above[0].color, edge: true });
     if (below.length) labels.push({ y: area.bottom - 1, text: edge(below, '▼'), color: below[0].color, edge: true });
+    // 왼쪽 위 버튼 줄(.chartctl — 캔버스와 같은 .chartbox 안, 캔버스는 그 왼쪽 위에 붙어 있다)과 높이가 겹치는 이름표는
+    // 버튼 줄 오른쪽에 적는다 — 선 높이는 그대로 두고 버튼 뒤에 가려지지만 않게(2026-11-11). 지표 화면이면 줄이 숨어 폭 0.
+    const ctl = document.querySelector('.chartctl');
+    const ctlBottom = ctl.offsetWidth ? ctl.offsetTop + ctl.offsetHeight : -Infinity;
+    const ctlRight = ctl.offsetLeft + ctl.offsetWidth + 3;
     ctx.setLineDash([]);
     ctx.font = '9px system-ui, sans-serif';
     ctx.textBaseline = 'bottom';
     for (const g of hLineGroups(labels)) {
       ctx.fillStyle = g.color;
       ctx.textAlign = 'left';
-      ctx.fillText(g.text, area.left + 2, g.y);
+      ctx.fillText(g.text, g.y - TEXT_H < ctlBottom ? Math.max(ctlRight, area.left + 2) : area.left + 2, g.y);
       if (!g.vals.length) continue;
       ctx.textAlign = 'right';
       ctx.fillText(g.vals.join(' · '), area.right - 2, g.y);

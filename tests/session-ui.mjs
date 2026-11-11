@@ -607,9 +607,12 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   const pane = () => paneKids.slice(-2);
   assert.deepEqual(shown().map((b) => b.textContent), ['볼린저', 'VWAP', '거래량 평균', '전일 고저', '매물대', '지수 대비', 'SAR'], '상단 지표');
   assert.deepEqual(pane().map((b) => b.textContent), ['RSI', '스토캐스틱'], '하단 지표(차트 아래 칸)는 따로');
-  assert.equal(shown()[0].className, 'on');
+  // 하네스는 1D — 볼린저는 일봉 기간에만 그려 켜져 있어도 흐리다(이동평균 칩처럼). 툴팁 끝에 이유
+  assert.equal(shown()[0].className, 'on off');
+  assert.match(shown()[0].title, /\n1D 에서는 그리지 않는다$/);
   assert.equal(shown()[0].style.color, '--bb-line', '켜진 칩은 그 선의 색');
-  assert.equal(shown()[1].className, undefined);
+  assert.equal(shown()[1].className, undefined, 'VWAP 는 1D 에 그려 흐리지 않다');
+  assert.equal(shown()[1].title, run('INDICATORS[1].title'), '그리는 기간이면 툴팁 그대로');
   shown()[1].onclick();
   assert.equal(run('state.indicators.vwap'), true);
   assert.equal(run('state.indicators.bb'), true, '다른 칩은 그대로');
@@ -623,6 +626,11 @@ await test('indicators: saved value is cleaned; chips toggle, save and redraw', 
   assert.equal(pane()[0].className, undefined);
   assert.equal(pane()[1].className, 'on');
   assert.ok(elements.get('indChips') && elements.get('paneChips'));
+  // 전체 — SAR · RSI · 스토캐스틱 · 볼린저 · 매물대 · 1D 지표는 그리지 않아 흐리고, 거래량 평균 · 지수 대비는 그린다
+  run("state.timeframe = '전체'; renderIndChips();");
+  assert.deepEqual([...shown(), ...pane()].map((b) => b.className || ''),
+    ['on off', 'on off', '', 'off', 'off', '', 'off', 'off', 'on off'], '켜진 칩 · 꺼진 칩 모두 그리는 기간이 아니면 흐리다');
+  assert.ok(run('INDICATORS.every((i) => !i.tfs || (i.tfs.length && i.tfs.every((t) => Object.hasOwn(TF, t))))'), 'tfs 는 있는 기간 이름만');
 });
 
 await test('indicators: loadChart passes only the enabled overlays — bands and volume average on daily, VWAP and previous high/low on 1D', async () => {
@@ -1948,22 +1956,28 @@ await test('rank groups: clicking a group opens its stocks under a back row, bac
   assert.equal(list(), 'kr/theme:groups');
 });
 
-await test('rank: clicking a stock already in the watchlist goes to it; a new one is added and opened; a failed add says so and keeps the panel', async () => {
+await test('rank: clicking a stock already in the watchlist goes to it; a new one is added and opened with an undo; a failed add says why and keeps the panel', async () => {
   const { c, run, elements } = harness(['pickRank']);
   run(source.match(/^const adding = .*$/m)[0]); // 넣는 중인 종목(addSymbol)
   const log = [];
   Object.assign(c, {
     select: async (s) => { log.push(`select ${s}`); },
     closeRank: () => { log.push('close'); },
-    addSymbol: async (it) => { log.push(`add ${it.symbol} ${it.name}`); if (it.symbol !== 'BAD') run(`state.watchlist.push({ symbol: '${it.symbol}', name: '${it.name}' });`); },
+    addSymbol: async (it) => {
+      log.push(`add ${it.symbol} ${it.name}`);
+      if (it.symbol === 'BAD') return 'No data found'; // addSymbol 은 못 넣은 이유를 돌려준다
+      run(`state.watchlist.push({ symbol: '${it.symbol}', name: '${it.name}' });`);
+    },
+    showUndo: (s) => { log.push(`undo ${s.item.symbol} added=${s.added} prev=${s.prev}`); },
   });
   await c.pickRank({ symbol: '005930.KS', name: '삼성전자' });
   assert.deepEqual(log.splice(0), ['close', 'select 005930.KS'], '이미 있으면 넣지 않고 그 종목으로');
   await c.pickRank({ symbol: 'NVDA', name: '엔비디아' });
-  assert.deepEqual(log.splice(0), ['add NVDA 엔비디아', 'close'], '없으면 넣고(넣으면서 연다) 패널을 닫는다');
+  assert.deepEqual(log.splice(0), ['add NVDA 엔비디아', 'close', 'undo NVDA added=true prev=005930.KS'],
+    '없으면 넣고(넣으면서 연다) 패널을 닫는다 — 구경하려던 것일 수 있어 되돌리기(빼고 보던 종목으로)');
   await c.pickRank({ symbol: 'BAD', name: '없는' });
   assert.deepEqual(log.splice(0), ['add BAD 없는'], '못 넣었으면 패널을 둔다');
-  assert.match(elements.get('rankMsg').textContent, /없는: 추가하지 못했습니다/);
+  assert.equal(elements.get('rankMsg').textContent, '없는: 추가하지 못했습니다 (No data found)', '실제 이유를 적는다');
   assert.equal(elements.get('rankMsg').hidden, false);
   // 같은 줄을 또 눌렀다 — 먼저 누른 것이 넣는 중이면(addSymbol 이 바로 돌아온다) 실패로 적지 않는다
   run("adding.add('AMD'); document.getElementById('rankMsg').textContent = 'AMD 추가하는 중…';");
@@ -1995,6 +2009,52 @@ await test('rank: the three panels (search, settings, rank) close each other, an
   assert.match(source, /if \(!rankEl\.hidden\) \{\s*if \(e\.key === 'Escape'\) closeRank\(\);\s*return;\s*\}/, 'Esc 로 닫는다');
   assert.match(realFunction('refreshAll'), /\n    renderRank\(\);/, '30초 갱신 때 열린 순위 패널도 고친다(1분 지난 탭을 다시 받는다)');
   assert.match(source, /if \(!searchEl\.hidden \|\| !alertsEl\.hidden \|\| !rankEl\.hidden\) \{\s*expandedForPanel = false;\s*closeSearch\(\);\s*closeAlerts\(\);\s*closeRank\(\);/, '접기를 누르면 모두 닫는다');
+});
+
+// 검색에서 이미 있는 종목은 눌러도 반응이 없었고, Enter 는 그것을 건너뛰어 다음 결과(삼성전자우)를 넣었다 — 그 종목으로 간다
+await test('search: a stock already in the watchlist goes to it on click or Enter instead of adding the next result', async () => {
+  const { c, run } = harness(['runSearch']);
+  run('let searchSeq = 0;');
+  const kids = [];
+  const log = [];
+  Object.assign(c, {
+    qEl: { value: '삼성전자' }, hint() {}, esc: (s) => s,
+    resultsEl: { innerHTML: '', appendChild: (el) => kids.push(el) },
+    closeSearch: () => log.push('close'), select: async (s) => { log.push(`select ${s}`); },
+    addSymbol: (it) => { log.push(`add ${it.symbol}`); },
+  });
+  c.api.search = async () => ({ ok: true, items: [{ symbol: '005930.KS', name: '삼성전자', market: 'KOSPI' },
+    { symbol: '005935.KS', name: '삼성전자우', market: 'KOSPI' }] });
+  c.document.createElement = () => ({});
+  await c.runSearch();
+  assert.deepEqual(kids.map((k) => k.className), ['hit dup', 'hit']);
+  kids[0].onclick();
+  kids[1].onclick();
+  assert.deepEqual(log, ['close', 'select 005930.KS', 'add 005935.KS'], '이미 있으면 닫고 그 종목으로, 없으면 넣는다');
+  assert.match(source, /const first = resultsEl\.querySelector\('\.hit'\);/, 'Enter 는 첫 결과 — 이미 있는 종목이어도 건너뛰지 않는다');
+});
+
+// 지표 화면을 연 채 기간을 바꾸면 탭 강조만 바뀌고 차트는 덮인 채였다 — 차트로 돌아간다
+await test('picking a timeframe closes the metrics view and goes back to the chart', () => {
+  const { c, run } = harness(['pickTimeframe', 'setTimeframe']);
+  const log = [];
+  Object.assign(c, { save() {}, renderTabs() {}, renderMetrics: () => log.push(`metrics ${run('metricsOn')}`),
+    loadChart: () => log.push('chart') });
+  run("metricsOn = true; pickTimeframe('3M');");
+  assert.deepEqual(log, ['metrics false', 'chart']);
+  assert.equal(run('state.timeframe'), '3M');
+});
+
+// 차트만 보기는 차트 위 버튼이라 설정에서는 보이지 않는다 — 켜 둔 채 칩을 켜면 아무것도 안 그려져 설정에 이유를 적는다
+await test('settings: a hint says plain chart is on; opening also redraws the indicator chips for the current timeframe', () => {
+  const { c, run, elements } = harness(['openAlerts']);
+  let chips = 0;
+  Object.assign(c, { alertsEl: {}, openPanel() {}, renderAlerts() {}, renderMaChips() {}, renderIndChips: () => { chips++; } });
+  run('state.plainChart = true; openAlerts();');
+  assert.equal(elements.get('plainHint').hidden, false);
+  assert.equal(chips, 1, '기간이 바뀌었을 수 있어 열 때마다 칩을 다시 그린다');
+  run('state.plainChart = false; openAlerts();');
+  assert.equal(elements.get('plainHint').hidden, true);
 });
 
 // 차트만 보기: 버튼 하나로 덧그림(이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지)을 다 끈다.
@@ -2765,6 +2825,9 @@ await test('horizontal lines: close labels merge instead of vanishing; out-of-ra
     moveTo(_x, y) { this.at = y; }, lineTo() { strokes.push({ y: this.at, color: this.strokeStyle }); },
     fillText(t, x, y) { texts.push({ t, x, y, color: this.fillStyle }); } };
   c.cssVar = (n) => n;
+  // 왼쪽 위 버튼 줄(.chartctl) — 처음에는 숨겨 둔다(폭 0, 지표 화면일 때처럼). 맨 아래에서 보이게 하고 본다
+  const ctl = { offsetLeft: 4, offsetTop: 4, offsetWidth: 0, offsetHeight: 18 };
+  c.document.querySelector = (sel) => (sel === '.chartctl' ? ctl : null);
   // 가격 v 는 y = 200 - v (값이 클수록 위). 차트 안은 y 0~100 → 가격 100~200.
   const chartStub = { ctx, chartArea: { left: 0, right: 300, top: 0, bottom: 100 },
     scales: { y: { top: 0, bottom: 100, getPixelForValue: (v) => 200 - v } } };
@@ -2836,6 +2899,20 @@ await test('horizontal lines: close labels merge instead of vanishing; out-of-ra
     { value: 150, label: '전일', varName: '--prev-line' }, { value: 70, label: '전저', varName: '--prevlo-line' }] });
   assert.deepEqual(strokes.map((s) => s.y), [50], 'RSI 칸(y 100~145)에는 선을 긋지 않는다');
   assert.equal(texts.find((t) => t.t === '▼ 전저 70').y, 99, '가격 칸 아래 가장자리에');
+
+  // 왼쪽 위 버튼 줄과 높이가 겹치는 이름표는 그 줄 오른쪽에 — 버튼 뒤에 가려 안 보였다(2026-11-11). 선 높이는 그대로
+  ctl.offsetWidth = 60; // 줄은 y 4~22, x 4~64
+  texts.length = 0;
+  plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [
+    { value: 185, label: '전일', varName: '--prev-line' }, // y 15 — 이름표 글자 5~14, 줄과 겹친다(위 가장자리 표시와 묶인다)
+    { value: 165, label: '평단', varName: '--avg-line' }, // y 35 — 이름표 글자 25~34, 줄 아래
+    { value: 230, label: '전고', varName: '--prevhi-line' }] }); // 범위 위 — 위 가장자리(y 9), 늘 줄 높이다
+  assert.deepEqual(texts.map((t) => `${t.t}@${t.x},${t.y}`).sort(), ['전일·▲ 전고 230@67,9', '평단@2,34'].sort(),
+    '겹치는 높이만 줄 오른쪽(4 + 60 + 3), 그 아래는 그대로 왼쪽');
+  ctl.offsetWidth = 0; // 줄이 숨으면(지표 화면) 그대로 왼쪽
+  texts.length = 0;
+  plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [{ value: 185, label: '전일', varName: '--prev-line' }] });
+  assert.deepEqual(texts.map((t) => t.x), [2]);
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른
@@ -4455,6 +4532,34 @@ await test('undo after deleting only a holding brings the holding back and leave
 
 // 선택 중이던 종목을 지웠다 되돌리면 select → loadChart 가 시세를 다시 받기 전에 돈다. 시세가 없으면
 // 이동평균 · 교차 배지 · 색(늘 빨강)이 빠진 채 그려지고 다음 갱신(장 마감 후 5분)까지 남았다.
+// 순위 패널에서 눌러 넣은 종목(pickRank)의 되돌리기 — 빼고, 그 종목을 보고 있으면 넣기 전에 보던 종목으로 돌아간다.
+// 빼는 것은 보통 삭제라 "삭제됨 · 되돌리기" 가 다시 뜬다
+await test('undo after adding from the rank panel removes the stock and goes back to what was shown', async () => {
+  const a = undoRun(['validSelection']);
+  a.run(`state.watchlist = ${JSON.stringify([SAM, HYNIX])}; state.selected = '000660.KS';`);
+  const NV = { symbol: 'NVDA', name: '엔비디아' };
+  await a.c.addSymbol(NV);
+  assert.equal(a.run('state.selected'), 'NVDA', '넣으면서 연다');
+  a.c.showUndo({ item: a.run("state.watchlist.find((i) => i.symbol === 'NVDA')"), added: true, prev: '000660.KS' });
+  assert.equal(a.elements.get('undoText').textContent, '엔비디아 추가됨');
+  await a.c.undoRemove();
+  assert.equal(a.run('state.watchlist.map((i) => i.symbol).join()'), '005930.KS,000660.KS', '뺀다');
+  assert.equal(a.run('state.selected'), '000660.KS', '넣기 전에 보던 종목으로');
+  assert.equal(a.elements.get('undoText').textContent, '엔비디아 삭제됨', '빼는 것도 되돌릴 수 있다');
+  await a.c.undoRemove();
+  assert.equal(a.run('state.watchlist.map((i) => i.symbol).join()'), '005930.KS,000660.KS,NVDA');
+
+  // 그 사이 다른 종목으로 옮겼으면 그 자리에 둔다
+  const b = undoRun(['validSelection']);
+  b.run(`state.watchlist = ${JSON.stringify([SAM, HYNIX])}; state.selected = '000660.KS';`);
+  await b.c.addSymbol(NV);
+  b.c.showUndo({ item: NV, added: true, prev: '000660.KS' });
+  await b.c.select('005930.KS');
+  await b.c.undoRemove();
+  assert.equal(b.run('state.selected'), '005930.KS');
+  assert.equal(b.run('state.watchlist.map((i) => i.symbol).join()'), '005930.KS,000660.KS');
+});
+
 await test('undoing a selected stock redraws its chart once its quote is back', async () => {
   const a = undoRun();
   a.run(`state.watchlist = ${JSON.stringify([SAM, HYNIX])}; state.selected = '005930.KS';`);
@@ -4525,6 +4630,16 @@ await test('Esc closes the settings panel only — it does not also fold the wid
   // 패널이 닫힌 뒤의 Esc 는 패널을 거치지 않고 문서로 간다 — 지금처럼 접기다
   docKey({ key: 'Escape', target: { tagName: 'BODY' }, preventDefault() {} });
   assert.deepEqual(folds, [true]);
+
+  // 초점이 패널 밖이면(⚙ 를 누른 뒤 · 누르면 다시 그려져 사라지는 칩) 패널이 Esc 를 못 받는다 — 문서가 닫는다(접지는 않는다)
+  c.alertsEl.hidden = false;
+  docKey({ key: 'Escape', target: { tagName: 'BODY' }, preventDefault() {} });
+  assert.equal(c.alertsEl.hidden, true, '설정이 닫힌다');
+  c.searchEl.hidden = false;
+  c.closeSearch = () => { c.searchEl.hidden = true; };
+  docKey({ key: 'Escape', target: { tagName: 'BODY' }, preventDefault() {} });
+  assert.equal(c.searchEl.hidden, true, '검색도 닫힌다');
+  assert.deepEqual(folds, [true], '패널을 닫을 때는 접지 않는다');
 });
 
 // 수렴 배지는 실데이터에서 아직 뜬 적이 없다 — 깨져도 "안 뜨는 게 정상" 처럼 보인다.

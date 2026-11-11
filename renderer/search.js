@@ -63,7 +63,8 @@ async function runSearch() {
     el.className = 'hit' + (dup ? ' dup' : '');
     el.innerHTML = `<span class="hname">${esc(it.name)}</span>`
       + `<span class="hmeta">${esc(it.symbol.split('.')[0])} · ${esc(it.market)}${dup ? ' · 추가됨' : ''}</span>`;
-    if (!dup) el.onclick = () => addSymbol(it);
+    // 이미 있는 종목은 그 종목으로 간다(순위 패널과 같다). 예전에는 눌러도 반응이 없고 Enter 는 다음 결과를 넣었다
+    el.onclick = dup ? () => { closeSearch(); select(it.symbol).catch(console.error); } : () => addSymbol(it);
     resultsEl.appendChild(el);
   }
 }

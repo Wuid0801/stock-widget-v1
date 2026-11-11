@@ -79,15 +79,18 @@ function renderIndChips() {
   bottom.innerHTML = '';
   for (const ind of INDICATORS) {
     const on = state.indicators[ind.key];
+    const fits = !ind.tfs || ind.tfs.includes(state.timeframe); // 이동평균 칩처럼 지금 기간에 안 그리면 흐리게
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = ind.label;
-    b.title = ind.title;
+    b.title = fits ? ind.title : `${ind.title}\n${state.timeframe} 에서는 그리지 않는다`;
     if (on) {
       const c = cssVar(ind.varName);
-      b.className = 'on';
+      b.className = fits ? 'on' : 'on off';
       b.style.color = c;
       b.style.borderColor = c;
+    } else if (!fits) {
+      b.className = 'off';
     }
     b.onclick = () => {
       state.indicators = withIndicator(ind.key, !on); // RSI · 스토캐스틱은 하나만
@@ -194,6 +197,9 @@ function openAlerts() {
   openPanel(alertsEl);
   renderAlerts();
   renderMaChips();
+  renderIndChips(); // 지금 기간에 맞춰 흐리게
+  // 차트만 보기는 차트 위 버튼이라 설정에서는 보이지 않는다 — 켜 놓고 칩을 켜면 아무것도 안 그려져 이유를 적는다
+  document.getElementById('plainHint').hidden = !state.plainChart;
 }
 
 const closeAlerts = () => closePanel(alertsEl);

@@ -58,7 +58,8 @@ function hideUndo() {
 
 function showUndo(snap) {
   undoSnap = snap;
-  document.getElementById('undoText').textContent = `${snap.item.name} ${snap.holdingOnly ? '보유 ' : ''}삭제됨`;
+  const what = snap.added ? '추가됨' : snap.holdingOnly ? '보유 삭제됨' : '삭제됨';
+  document.getElementById('undoText').textContent = `${snap.item.name} ${what}`;
   document.getElementById('undo').hidden = false;
   clearTimeout(undoTimer);
   undoTimer = setTimeout(hideUndo, UNDO_MS);
@@ -68,6 +69,13 @@ async function undoRemove() {
   const s = undoSnap;
   if (!s) return;
   hideUndo();
+  // 순위 패널에서 눌러 넣은 것(pickRank) — 다시 뺀다. 그 종목을 보고 있으면 넣기 전에 보던 것으로 먼저 돌아간다.
+  // 빼는 것은 보통 삭제라 "삭제됨 · 되돌리기" 가 다시 뜬다(그 사이 넣은 보유 · 목표가도 함께 돌아온다)
+  if (s.added) {
+    if (state.selected === s.item.symbol && s.prev && validSelection(s.prev, state.watchlist) === s.prev) await select(s.prev);
+    await removeSymbol(s.item.symbol);
+    return;
+  }
   // 보유만 지운 것(관심종목 줄은 그대로, clearHolding) — 보유만 되살린다. 그 사이 다시 넣었으면 그대로 둔다
   if (s.holdingOnly) {
     if (!state.holdings[s.item.symbol]) setHolding(s.item.symbol, s.holding);
@@ -145,10 +153,11 @@ async function addSymbol(item) {
     hint('추가하는 중…');
     const liveMap = await fetchLive([item.symbol]);
     await loadQuote(item, liveMap[item.symbol.split('.')[0]]);
-    if (quotes[item.symbol].error) {
-      hint(`${item.name}: Yahoo에서 조회되지 않습니다 (${quotes[item.symbol].error})`);
+    const err = quotes[item.symbol].error;
+    if (err) {
+      hint(`${item.name}: Yahoo에서 조회되지 않습니다 (${err})`);
       delete quotes[item.symbol];
-      return;
+      return err; // 순위 패널은 검색 안내가 보이지 않아 이 이유를 따로 적는다(pickRank)
     }
 
     // 조회를 기다리는 사이 되돌리기로 같은 종목이 이미 돌아왔으면 또 넣지 않는다
@@ -183,12 +192,16 @@ function moveSelection(step) {
 document.addEventListener('keydown', (e) => {
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  // 순위 패널에는 입력 칸이 없어 Esc 를 여기서 받는다(검색 · 설정은 패널이 받는다)
+  // 순위 패널에는 입력 칸이 없어 Esc 를 여기서 받는다
   if (!rankEl.hidden) {
     if (e.key === 'Escape') closeRank();
     return;
   }
-  if (!searchEl.hidden || !alertsEl.hidden) return;
+  // 검색 · 설정은 보통 패널이 Esc 를 받지만, 초점이 패널 밖이면(⚙ 를 누른 뒤 · 누르면 다시 그려져 사라지는 칩) 여기로 온다
+  if (!searchEl.hidden || !alertsEl.hidden) {
+    if (e.key === 'Escape') { if (!alertsEl.hidden) closeAlerts(); else closeSearch(); }
+    return;
+  }
 
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     if (!undoSnap) return;

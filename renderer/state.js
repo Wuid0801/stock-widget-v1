@@ -64,16 +64,17 @@ function cleanMaStyles(raw) {
 
 // 보조 지표(설정의 칩, state.indicators). 기본은 모두 꺼짐. varName 은 선 색이자 켜진 칩의 색이다.
 // pane 은 하단 지표(차트 아래 칸) — 설정에서 상단 지표(가격 차트 위)와 나눠 보인다(사용자 결정, 2026-11-09).
+// tfs 는 그리는 기간(없으면 모든 기간) — 다른 기간에서는 칩을 흐리게 한다(renderIndChips). renderer/data.js loadChart 의 조건과 같게.
 const INDICATORS = [
-  { key: 'bb', label: '볼린저', varName: '--bb-line', title: '볼린저 밴드 — 20일 평균 ± 2표준편차 (1M · 3M · 1Y · 3Y)' },
-  { key: 'vwap', label: 'VWAP', varName: '--vwap-line', title: '거래량 가중 평균가 — 그날 정규장 봉만 (1D)' },
+  { key: 'bb', label: '볼린저', varName: '--bb-line', tfs: ['1M', '3M', '1Y', '3Y'], title: '볼린저 밴드 — 20일 평균 ± 2표준편차 (1M · 3M · 1Y · 3Y)' },
+  { key: 'vwap', label: 'VWAP', varName: '--vwap-line', tfs: ['1D'], title: '거래량 가중 평균가 — 그날 정규장 봉만 (1D)' },
   { key: 'volAvg', label: '거래량 평균', varName: '--vol-avg', title: '거래량 평균선 — 20봉, 1D 는 6봉(30분) · 늘고 주는 모양만(막대 높이와 견주지 않음) · 평균의 2배 넘는 막대 강조 (모든 기간)' },
-  { key: 'prevHL', label: '전일 고저', varName: '--prev-line', title: '어제 고가 · 저가 점선 (1D)' },
-  { key: 'vp', label: '매물대', varName: '--vp-poc', title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
-  { key: 'rel', label: '지수 대비', varName: '--accent', title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%포인트)과, 첫 봉을 종목 가격에 맞춘 지수 점선 — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
-  { key: 'sar', label: 'SAR', varName: '--sar-up', title: '파라볼릭 SAR — 상승 추세면 봉 아래, 하락 추세면 봉 위에 점. 범례에 지금 방향과 전환 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
-  { key: 'rsi', label: 'RSI', varName: '--rsi-line', pane: true, title: 'RSI(14)와 시그널(RSI 9봉 평균) — 차트 아래 따로 둔 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점. 범례에 지금 방향과 교차 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
-  { key: 'stoch', label: '스토캐스틱', varName: '--stoch-line', pane: true, title: '스토캐스틱(14, 1, 3) — 차트 아래 칸에 K 실선 · D 점선, 80 · 20 기준선. RSI 칸과 같은 자리라 둘 중 하나만 켜진다 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
+  { key: 'prevHL', label: '전일 고저', varName: '--prev-line', tfs: ['1D'], title: '어제 고가 · 저가 점선 (1D)' },
+  { key: 'vp', label: '매물대', varName: '--vp-poc', tfs: ['1M', '3M', '1Y', '3Y'], title: '가격대별 거래량 — 차트 오른쪽 가로 막대, 가장 많이 거래된 가격대는 진하게 (1M · 3M · 1Y · 3Y)' },
+  { key: 'rel', label: '지수 대비', varName: '--accent', tfs: ['1M', '3M', '1Y', '3Y', '전체'], title: '기간 수익률에서 같은 기간 지수 수익률을 뺀 초과 수익(%포인트)과, 첫 봉을 종목 가격에 맞춘 지수 점선 — 코스피 · 코스닥 · S&P 500 (1M 이상)' },
+  { key: 'sar', label: 'SAR', varName: '--sar-up', tfs: ['1D', '1W', '1M', '3M', '1Y', '3Y'], title: '파라볼릭 SAR — 상승 추세면 봉 아래, 하락 추세면 봉 위에 점. 범례에 지금 방향과 전환 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
+  { key: 'rsi', label: 'RSI', varName: '--rsi-line', pane: true, tfs: ['1D', '1W', '1M', '3M', '1Y', '3Y'], title: 'RSI(14)와 시그널(RSI 9봉 평균) — 차트 아래 따로 둔 칸에 선, 시그널을 위로 뚫은 봉은 빨강 · 아래로 뚫은 봉은 파랑 점. 범례에 지금 방향과 교차 뒤 기간 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
+  { key: 'stoch', label: '스토캐스틱', varName: '--stoch-line', pane: true, tfs: ['1D', '1W', '1M', '3M', '1Y', '3Y'], title: '스토캐스틱(14, 1, 3) — 차트 아래 칸에 K 실선 · D 점선, 80 · 20 기준선. RSI 칸과 같은 자리라 둘 중 하나만 켜진다 (1D · 1W · 1M · 3M · 1Y · 3Y)' },
 ];
 const VP_BINS = 20;   // 매물대 가격 칸 수 — 150px 차트에서 한 칸 약 7px
 const BB_PERIOD = 20;

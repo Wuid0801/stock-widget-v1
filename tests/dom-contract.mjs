@@ -167,6 +167,10 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
     === +(/\.panenav button \{[^}]*?width: (\d+)px/.exec(html) || [])[1]);
   // 설정의 보조 지표는 상단 지표(가격 차트 위) · 하단 지표(차트 아래 칸)로 나눈다(사용자 결정, 2026-11-09)
   check('설정에 상단 지표 · 하단 지표 칩 자리가 차례로 있다', /상단 지표[\s\S]*?id="indChips"[\s\S]*?하단 지표[\s\S]*?id="paneChips"/.test(html));
+  // 차트만 보기 안내는 숨긴 채로 이동평균 · 지표 칩 위에(openAlerts 가 켠다)
+  check('설정 #plainHint 는 숨김으로 칩들 위에', /id="plainHint" hidden>[\s\S]*?id="maChips"[\s\S]*?id="indChips"/.test(html));
+  // 검색의 이미 있는 종목도 누를 수 있다(그 종목으로 간다) — 누를 수 없게 보이던 모양을 되살리지 않는다
+  check('.hit.dup 은 누를 수 있는 모양', !/\.hit\.dup \{[^}]*cursor: default/.test(html) && !/\.hit\.dup:hover/.test(html));
   // 하락 파랑은 다크만 밝게(사용자 결정 2026-11-11) — 라이트 값은 renderer/state.js DOWN 의 기본값과 같다
   check('--down 이 다크 #4d8fd6 · 라이트 #185fa5', /--down: #4d8fd6;/.test(html) && /--down: #185fa5;/.test(html)
     && /let DOWN = '#185fa5';/.test(rendererSource()));

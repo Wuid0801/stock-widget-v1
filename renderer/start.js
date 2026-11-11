@@ -147,7 +147,7 @@ async function refreshNow() {
     if (e.key === 'Escape') closeSearch();
     if (e.key === 'Enter') {
       clearTimeout(searchTimer);
-      const first = resultsEl.querySelector('.hit:not(.dup)');
+      const first = resultsEl.querySelector('.hit'); // 이미 있는 종목이면 그 종목으로(누를 때와 같다)
       if (first) first.click(); else runSearch();
     }
   };
