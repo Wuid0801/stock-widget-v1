@@ -171,6 +171,14 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('설정 #plainHint 는 숨김으로 칩들 위에', /id="plainHint" hidden>[\s\S]*?id="maChips"[\s\S]*?id="indChips"/.test(html));
   // 검색의 이미 있는 종목도 누를 수 있다(그 종목으로 간다) — 누를 수 없게 보이던 모양을 되살리지 않는다
   check('.hit.dup 은 누를 수 있는 모양', !/\.hit\.dup \{[^}]*cursor: default/.test(html) && !/\.hit\.dup:hover/.test(html));
+  // 맨 위 ✕ 는 앱 종료(창을 닫으면 앱이 끝난다) — 패널 ✕(닫기(Esc))와 툴팁이 같았다
+  check('맨 위 ✕ 툴팁은 종료', /<button id="close" title="종료">✕<\/button>/.test(html));
+  // 버튼은 글꼴을 물려받지 않는다 — 규칙마다 적다 빠뜨린 버튼(기간 탭 · 전체)이 브라우저 기본 글꼴이었다
+  check('모든 버튼이 앱 글꼴', /\n  button \{ font-family: inherit; \}/.test(html));
+  // 종목명 옆 지표 버튼 — 9px 에 --faint 라 잘 안 보였다
+  check('.mxbtn 글자는 --mute', /\.mxbtn \{[^}]*color: var\(--mute\)/.test(html));
+  // ‹ › 누르는 곳은 아래 칸 높이 전체(글자 · 폭은 그대로) — 11×18px 은 맞히기 어려웠다
+  check('.panenav button 높이는 칸 전체', /\.panenav button \{[^}]*height: 100%/.test(html));
   // 상승 빨강 · 하락 파랑은 두 테마 · 차트 · 목록 모두 같은 값(renderer/state.js UP · DOWN, CSS 교차 배지). 다크만 밝게 한 파랑 ·
   // 차트만 어둡게 한 빨강을 써 보고 처음 색이 낫다고 되돌렸다(2026-11-11 사용자 결정)
   const src = rendererSource();

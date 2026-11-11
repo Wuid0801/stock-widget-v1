@@ -246,6 +246,10 @@ await test('selected detail updates header, independent of aggregate; quote and 
   c.renderUpdated();
   assert.match(header.innerHTML, /확인중/);
   assert.doesNotMatch(header.title, /NXT|실시간|20분지연/);
+  // 시세를 아예 못 받았으면(오류) 받는 중(확인중)과 구분한다
+  run("state.selected = 'ERR.KS'; quotes['ERR.KS'] = { error: 'HTTP 429', fetchedAt: Date.now() };");
+  c.renderUpdated();
+  assert.match(header.innerHTML, /조회 실패/);
   // 접혀 있으면 갱신 때마다 손잡이 툴팁(세 줄 미리보기)도 새로 쓴다
   run("state.selected = '000660.KS'; state.infoOpen = false;");
   c.renderDetail();
@@ -3458,7 +3462,7 @@ await test('market panel: 지표 lists every index item in three groups and pick
   const h = marketHarness();
   h.run("quotes['^TNX'] = { daily: { times: [1, 2, 3, 4, 5, 6], closes: [4.85, 4.9, 4.92, 4.95, 4.96, 4.97] } };");
   h.c.setRankView('mk');
-  assert.match(h.elements.get('rankMarket').innerHTML, /<button data-market="kr">국내<\/button><button data-market="us">미국<\/button><button data-market="mk" class="on">지표<\/button>/);
+  assert.match(h.elements.get('rankMarket').innerHTML, /<button data-market="kr">국내<\/button><button data-market="us">미국<\/button><button data-market="mk" class="on">시장 지표<\/button>/);
   assert.equal(h.elements.get('rankTabs').hidden, true, '지표 화면은 탭 줄이 없다');
   const html = h.elements.get('rankList').innerHTML;
   assert.deepEqual([...html.matchAll(/class="qhint rnote mgroup">([^<]+)</g)].map((m) => m[1]),
@@ -4899,13 +4903,18 @@ await test('alerts: a target accepts commas, a blank clears it, a bad entry keep
   assert.deepEqual({ ...c.targetFrom('', 300000) }, {}, '빈 칸은 지우기');
   assert.deepEqual({ ...c.targetFrom('abc', 300000) }, { value: 300000, bad: true }, '잘못 넣으면 있던 값');
   assert.deepEqual({ ...c.targetFrom('-5', undefined) }, { value: undefined, bad: true }, '0 이하도 잘못');
-  assert.match(realFunction('renderAlerts'), /cls: 'up', ph: '상한', value: [^\n]*text: true/, '글자 칸(쉼표를 보인다)');
+  assert.match(realFunction('renderAlerts'), /cls: 'up', ph: '상한', title: '상한 — [^']+', value: [^\n]*text: true/, '글자 칸(쉼표를 보인다)');
+  // 값이 들어가면 칸 이름(placeholder)이 사라져 어느 칸이 상한인지 안 보였다 — 칸마다 툴팁, 보유 평단가는 통화도
+  assert.match(realFunction('renderAlerts'), /placeholder="\$\{f\.ph\}" title="\$\{f\.title \|\| f\.ph\}"/);
+  assert.match(realFunction('renderAlerts'), /cls: 'avg', ph: avgPh\(item\.symbol\)/);
+  // 보유 · 52주 · 추세 점검을 접어 두면 상세에 ＋ 보유 입력이 없다 — 안내가 펼치라고 한다
+  assert.match(realFunction('renderAlerts'), /state\.infoOpen \? '' : ' — 지금은 접혀 있어 ▸ 보유 · 52주 · 추세 점검을 먼저 펼치세요'/);
 });
 
 // 보유 — 어떤 종목을 들고 있는지 목록에서 보이고, 상세에서 바로 넣고 고치며, 합계 줄이 무엇의 합인지 말한다.
 // 이 하네스에는 진짜 DOM 이 없다. 그리는 글자와 상태만 보고, 버튼 · 키 연결은 tests/holdings.mjs(앱)가 본다.
 const HOLD_FNS = ['parseAmount', 'amountText', 'holdingFrom', 'holdingPl', 'plColor', 'holdSub', 'renderHolding',
-  'holdForm', 'startHoldEdit', 'saveHoldEdit', 'cancelHoldEdit', 'clearHolding', 'setHolding', 'redrawHolding', 'heldRows'];
+  'holdForm', 'startHoldEdit', 'saveHoldEdit', 'cancelHoldEdit', 'clearHolding', 'setHolding', 'redrawHolding', 'heldRows', 'avgPh'];
 const holdHarness = (extra = []) => {
   const h = harness([...HOLD_FNS, ...extra]);
   h.run(formatting);
@@ -5053,7 +5062,7 @@ await test('watchlist: rows are rebuilt only when the stocks or their order chan
   const picked = [];
   const removed = [];
   c.document.createElement = () => node();
-  Object.assign(c, { esc: String, cssVar: (n) => n, levelOf: (rsi) => ({ color: rsi == null ? '--dot-off' : '--dot' }),
+  Object.assign(c, { esc: String, cssVar: (n) => n, levelOf: (rsi) => ({ label: '보통', color: rsi == null ? '--dot-off' : '--dot' }),
     eventChip: () => '', holdSub: () => '', select: (s) => picked.push(s), removeSymbol: (s) => removed.push(s) });
   run(`for (const k of Object.keys(quotes)) delete quotes[k]; state.selected = '005930.KS';`);
 
@@ -5071,7 +5080,9 @@ await test('watchlist: rows are rebuilt only when the stocks or their order chan
     [['230,500', '-4.75%'], ['1,507,000', '+1.34%']]);
   assert.deepEqual(list.kids.map((r) => r.parts.px.style.color), [run('DOWN'), run('UP')]);
   assert.equal(list.kids[0].parts.dot.style.background, '--dot', '과열도 점');
+  assert.equal(list.kids[0].parts.dot.title, '보통 · RSI 51', '점에도 단계 · 값 — 색만으로는 과매도 파랑과 값 없음 회색이 비슷했다');
   run(`quotes['000660.KS'] = { error: 'HTTP 429' }; renderList();`);
+  assert.equal(list.kids[1].parts.dot.title, 'RSI —');
   assert.equal(list.kids[1].parts.chg.textContent, '오류');
   assert.equal(list.kids[1].parts.px.style.color, '--flat');
 
@@ -5151,9 +5162,11 @@ await test('holdings: detail adds, validates, edits, cancels and deletes; refres
   run(`state.selected = '005930.KS';`);
   c.startHoldEdit('005930.KS');
   assert.equal(el.hidden, false);
-  for (const s of ['class="hq"', 'placeholder="수량" value=""', 'class="ha"', 'placeholder="평단가" value=""',
+  for (const s of ['class="hq"', 'placeholder="수량" title="수량" value=""', 'class="ha"', 'placeholder="평단가" title="평단가" value=""',
     'data-act="save">저장', 'data-act="cancel">취소']) assert.ok(el.innerHTML.includes(s), s);
   assert.ok(!el.innerHTML.includes('삭제'), '새로 넣을 때는 지울 것이 없다');
+  assert.equal(c.avgPh('AAPL'), '평단가($)', '미국 종목 평단가는 달러로 넣는다 — 칸 이름에 적는다');
+  assert.equal(c.avgPh('005930.KS'), '평단가');
 
   // 30초 갱신이 칸을 다시 그리면 치던 값이 날아간다
   el.innerHTML = 'TYPED';
@@ -5164,7 +5177,7 @@ await test('holdings: detail adds, validates, edits, cancels and deletes; refres
   assert.equal(run(`state.holdings['005930.KS']`), undefined, '평단가가 없으면 저장하지 않는다');
   assert.equal(saved.length, 0);
   assert.ok(el.innerHTML.includes('<span class="hmsg">수량과 평단가를 모두 0보다 큰 숫자로 넣어 주세요</span>'));
-  assert.ok(el.innerHTML.includes('placeholder="수량" value="10"'), '친 값은 남긴다');
+  assert.ok(el.innerHTML.includes('placeholder="수량" title="수량" value="10"'), '친 값은 남긴다');
 
   c.saveHoldEdit('10', '200,000');
   assert.deepEqual({ ...run(`state.holdings['005930.KS']`) }, { qty: 10, avg: 200000 });
@@ -5174,7 +5187,7 @@ await test('holdings: detail adds, validates, edits, cancels and deletes; refres
     + '<button type="button" class="hedit" data-act="edit" title="보유 고치기">✎</button>');
 
   c.startHoldEdit('005930.KS');
-  assert.ok(el.innerHTML.includes('placeholder="수량" value="10"') && el.innerHTML.includes('placeholder="평단가" value="200,000"'));
+  assert.ok(el.innerHTML.includes('placeholder="수량" title="수량" value="10"') && el.innerHTML.includes('placeholder="평단가" title="평단가" value="200,000"'));
   assert.ok(el.innerHTML.includes('data-act="del">삭제'));
   c.saveHoldEdit('0', '200,000');
   assert.deepEqual({ ...run(`state.holdings['005930.KS']`) }, { qty: 10, avg: 200000 }, '잘못 넣어도 있던 보유는 지우지 않는다');

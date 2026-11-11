@@ -117,7 +117,9 @@ function renderList() {
     const color = plColor(q && q.change);
 
     row.classList.toggle('on', item.symbol === state.selected); // className 을 덮지 않는다 — 끌기 중 표시가 남게
-    row.querySelector('.dot').style.background = lv.color;
+    const dot = row.querySelector('.dot');
+    dot.style.background = lv.color;
+    dot.title = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
     // 이름 칸은 바뀔 때만 새로 넣는다 — 일정 칩에 마우스를 올려 둔 채 갱신되면 칩의 툴팁이 닫힌다
     const nm = `<span class="nrow"><span class="name">${esc(item.name)}</span>${eventChip(item.symbol)}</span>${holdSub(item.symbol)}`;
     if (row.nmHtml !== nm) { row.querySelector('.nm').innerHTML = nm; row.nmHtml = nm; }

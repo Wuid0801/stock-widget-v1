@@ -174,6 +174,7 @@
     font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
     color: var(--text); user-select: none; -webkit-font-smoothing: antialiased;
   }
+  button { font-family: inherit; } /* 버튼은 글꼴을 물려받지 않는다(브라우저 기본) — 빠뜨린 버튼(기간 탭 · 전체 …)이 다른 글꼴이었다 */
   /* 스크롤하는 곳은 모두 위젯 스크롤바(5px 얇은 막대, --scroll 색) — 전역 하나라 새 스크롤 영역도 따로 적지 않는다.
      곳마다 적던 때는 빠뜨리면 운영체제 기본 스크롤바(넓은 회색 막대 · 화살표)가 나왔다(지표 보기가 처음에 그랬다). */
   ::-webkit-scrollbar { width: 5px; }
@@ -583,7 +584,7 @@
   .dnamebar .dname { min-width: 0; }
   .mxbtn {
     flex: 0 0 auto; height: 14px; padding: 0 4px; border: 1px solid var(--field-border); border-radius: 3px;
-    background: transparent; color: var(--faint); font-size: 9px; line-height: 12px; cursor: pointer;
+    background: transparent; color: var(--mute); font-size: 9px; line-height: 12px; cursor: pointer;
   }
   .mxbtn:hover { color: var(--text-3); }
   .mxbtn.on { color: var(--text); border-color: var(--text-3); }
@@ -720,7 +721,7 @@
   .panenav[hidden], .metrics:not([hidden]) ~ .panenav { display: none; }
   /* 폭 11px 은 paneNavPlugin 의 PANE_NAV_W 와 같아야 한다 */
   .panenav button {
-    pointer-events: auto; width: 11px; height: 18px; padding: 0; border: 0; background: none;
+    pointer-events: auto; width: 11px; height: 100%; padding: 0; border: 0; background: none; /* 누르는 곳은 칸 높이 전체 */
     color: var(--dim); font-size: 13px; line-height: 1; font-family: inherit; cursor: pointer; opacity: .7;
   }
   .panenav button:hover { opacity: 1; color: var(--text); }
@@ -751,7 +752,7 @@
         <button id="bell" title="설정 (화면 · 알림 · 보유)">⚙</button>
         <button id="dock" title="우하단으로 접기">◲</button>
         <button id="min" title="최소화">─</button>
-        <button id="close" title="닫기">✕</button>
+        <button id="close" title="종료">✕</button>
       </span>
     </div>
 

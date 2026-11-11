@@ -12,6 +12,11 @@ function amountText(v) {
   return v.toLocaleString('en-US', { maximumFractionDigits: 4 });
 }
 
+// 평단가 칸 이름 — 미국 종목은 달러로 넣는다(원화로 넣으면 손익이 엉뚱하다). 시세 전에도 맞게 통화(curOf) 대신 종목 코드로
+function avgPh(symbol) {
+  return isUs(symbol) ? '평단가($)' : '평단가';
+}
+
 // 수량 · 평단가 글자로 저장할 보유를 만든다. 둘 다 0보다 큰 유한한 수여야 한다 — 아니면 null.
 function holdingFrom(qtyText, avgText) {
   const qty = parseAmount(qtyText);

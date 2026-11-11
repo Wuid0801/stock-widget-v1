@@ -27,8 +27,8 @@ function renderHolding(symbol, price) {
 // 입력 칸. 값은 holdEdit 의 글자 그대로 — 저장에 실패해 다시 그려도 친 값이 남는다.
 function holdForm() {
   const e = holdEdit;
-  const input = (cls, ph, v) => `<input class="${cls}" type="text" inputmode="decimal" placeholder="${ph}" value="${esc(v)}" />`;
-  return input('hq', '수량', e.qty) + input('ha', '평단가', e.avg)
+  const input = (cls, ph, v) => `<input class="${cls}" type="text" inputmode="decimal" placeholder="${ph}" title="${ph}" value="${esc(v)}" />`;
+  return input('hq', '수량', e.qty) + input('ha', avgPh(e.symbol), e.avg)
     + '<button type="button" data-act="save">저장</button><button type="button" data-act="cancel">취소</button>'
     + (state.holdings[e.symbol] ? '<button type="button" data-act="del">삭제</button>' : '')
     + (e.msg ? `<span class="hmsg">${e.msg}</span>` : '');

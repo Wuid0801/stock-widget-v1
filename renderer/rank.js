@@ -349,7 +349,7 @@ function renderRank() {
   if (document.getElementById('rank').hidden) return;
   const { market, kind, group } = rankView;
   const mk = market === 'mk';
-  document.getElementById('rankMarket').innerHTML = [['kr', '국내'], ['us', '미국'], ['mk', '지표']]
+  document.getElementById('rankMarket').innerHTML = [['kr', '국내'], ['us', '미국'], ['mk', '시장 지표']]
     .map(([m, label]) => `<button data-market="${m}"${m === market ? ' class="on"' : ''}>${label}</button>`).join('');
   const tabs = document.getElementById('rankTabs');
   tabs.hidden = mk;

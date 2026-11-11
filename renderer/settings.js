@@ -255,7 +255,7 @@ function renderAlerts() {
     row.className = 'arow';
     row.innerHTML = `<span class="aname">${esc(item.name)}</span>`
       + fields.map((f) => `<input class="${f.cls}" type="${f.text ? 'text' : 'number'}"`
-        + `${f.text ? ' inputmode="decimal"' : ''} placeholder="${f.ph}"`
+        + `${f.text ? ' inputmode="decimal"' : ''} placeholder="${f.ph}" title="${f.title || f.ph}"`
         + ` value="${f.value != null ? f.value : ''}" />`).join('');
     for (const f of fields) row.querySelector(`.${f.cls}`).onchange = onSave(row);
     return row;
@@ -268,8 +268,8 @@ function renderAlerts() {
   for (const item of state.watchlist) {
     const t = state.alerts.targets[item.symbol] || {};
     alertBox.appendChild(buildRow(item, [
-      { cls: 'up', ph: '상한', value: t.up != null ? amountText(t.up) : null, text: true },
-      { cls: 'dn', ph: '하한', value: t.down != null ? amountText(t.down) : null, text: true },
+      { cls: 'up', ph: '상한', title: '상한 — 이 가격을 위로 지나가면 알린다', value: t.up != null ? amountText(t.up) : null, text: true },
+      { cls: 'dn', ph: '하한', title: '하한 — 이 가격을 아래로 지나가면 알린다', value: t.down != null ? amountText(t.down) : null, text: true },
     ], (row) => () => {
       const old = state.alerts.targets[item.symbol] || {};
       const next = {};
@@ -293,7 +293,8 @@ function renderAlerts() {
   // 관심종목 전부를 늘어놓으면 무엇을 들고 있는지 알 수 없었다.
   const held = state.watchlist.filter((i) => state.holdings[i.symbol]);
   if (!held.length) {
-    holdBox.innerHTML = '<div class="empty">종목을 고른 뒤 상세 화면의 ＋ 보유 입력으로 넣으세요</div>';
+    holdBox.innerHTML = '<div class="empty">종목을 고른 뒤 상세 화면의 ＋ 보유 입력으로 넣으세요'
+      + (state.infoOpen ? '' : ' — 지금은 접혀 있어 ▸ 보유 · 52주 · 추세 점검을 먼저 펼치세요') + '</div>';
     return;
   }
   const msg = document.createElement('div');
@@ -302,7 +303,7 @@ function renderAlerts() {
     const h = state.holdings[item.symbol];
     const row = buildRow(item, [
       { cls: 'qty', ph: '수량', value: amountText(h.qty), text: true },
-      { cls: 'avg', ph: '평단가', value: amountText(h.avg), text: true },
+      { cls: 'avg', ph: avgPh(item.symbol), value: amountText(h.avg), text: true },
     ], (r) => () => {
       const qEl = r.querySelector('.qty');
       const aEl = r.querySelector('.avg');

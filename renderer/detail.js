@@ -88,7 +88,7 @@ function renderUpdated() {
   // 선물 · 유가(지수 줄)는 거래소가 늦게 준다(INDICES 의 delayMin) — 거래 중에 정규장 · 실시간으로 보이지 않게
   const lag = q && q.live && session === 'regular' ? INDICES.find((i) => i.symbol === state.selected)?.delayMin : null;
   el.innerHTML = `<span class="${q && q.live && !lag ? SESSION_CLASS[session] : 'delay'}">`
-    + `${stale ? '갱신 실패' : lag ? `${lag}분지연` : delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
+    + `${stale ? '갱신 실패' : q && q.error ? '조회 실패' : lag ? `${lag}분지연` : delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
   const source = q && !q.error && q.price != null
     ? `${q.live ? (lag ? `${lag}분 지연` : '실시간') : stale ? '마지막으로 받은 값' : delayed ? '20분지연' : '정규장 가격'}`
       + ` · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
