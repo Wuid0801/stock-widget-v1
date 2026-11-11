@@ -171,12 +171,11 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('설정 #plainHint 는 숨김으로 칩들 위에', /id="plainHint" hidden>[\s\S]*?id="maChips"[\s\S]*?id="indChips"/.test(html));
   // 검색의 이미 있는 종목도 누를 수 있다(그 종목으로 간다) — 누를 수 없게 보이던 모양을 되살리지 않는다
   check('.hit.dup 은 누를 수 있는 모양', !/\.hit\.dup \{[^}]*cursor: default/.test(html) && !/\.hit\.dup:hover/.test(html));
-  // 상승 빨강 · 하락 파랑은 두 테마 같은 값. 빨강은 차트만 어둡게(CHART_UP — 다크에서 눈이 부셨다), 목록 · 배지 글자는 UP 그대로.
-  // 다크만 밝게 했던 파랑(--down #4d8fd6)은 되돌렸다(2026-11-11 사용자 결정)
+  // 상승 빨강 · 하락 파랑은 두 테마 · 차트 · 목록 모두 같은 값(renderer/state.js UP · DOWN, CSS 교차 배지). 다크만 밝게 한 파랑 ·
+  // 차트만 어둡게 한 빨강을 써 보고 처음 색이 낫다고 되돌렸다(2026-11-11 사용자 결정)
   const src = rendererSource();
-  check('상승 빨강: 목록 · CSS #e24b4a, 차트 CHART_UP #c43d3c', /const UP = '#e24b4a';/.test(src) && /const CHART_UP = '#c43d3c';/.test(src)
-    && html.includes('.badge.cross.up { background: rgba(226, 75, 74, .16); color: #e24b4a; }') && !/#c43d3c/i.test(html));
-  check('차트는 UP 대신 CHART_UP', !/\bUP\b/.test(src.slice(src.indexOf('// renderer/chart.js'), src.indexOf('// renderer/', src.indexOf('// renderer/chart.js') + 1)).replace(/CHART_UP/g, '')));
+  check('상승 빨강 #e24b4a 하나(차트 전용 빨강 없음)', /const UP = '#e24b4a';/.test(src) && !/CHART_UP/.test(src)
+    && html.includes('.badge.cross.up { background: rgba(226, 75, 74, .16); color: #e24b4a; }'));
   check('하락 파랑은 두 테마 같은 #185fa5(--down 없음)', !/--down:/.test(html) && /const DOWN = '#185fa5';/.test(src));
   check('보유 삭제는 취소에서 떨어진 오른쪽 끝 · 지우는 색', /\.hold button\[data-act="del"\] \{ margin-left: auto; color: var\(--del-fg\); \}/.test(html));
   check('스토캐스틱 선 색이 두 테마에 있다', (html.match(/--stoch-line: #[0-9a-f]{6};/g) || []).length === 2);

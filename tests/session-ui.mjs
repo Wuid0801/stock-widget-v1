@@ -1248,7 +1248,7 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   assert.ok(!on.some((d) => d.data.every((v) => v === 30 || v === 70)), '범위(38~62) 밖 기준선은 그리지 않는다 — 그리면 가격 칸에 그어진다');
   const dots = on.find((d) => d.showLine === false);
   assert.equal(JSON.stringify(dots.data), '[null,null,55,null]', '확정된 교차 봉에만 점');
-  assert.equal(dots.pointBackgroundColor[2], run('CHART_UP'), '위로 뚫으면 빨강(차트 빨강)');
+  assert.equal(dots.pointBackgroundColor[2], run('UP'), '위로 뚫으면 빨강');
   assert.equal(dots.pointBorderWidth[2], 0, '확정된 교차는 속이 찬 점');
   // 1D 진행 중인 마지막 봉의 교차(pending)는 테두리만 — 봉이 끝나 확정되면 속이 찬 점이 된다
   run('arg_.rsi = { ...arg_.rsi, pending: { i: 3, golden: false } }; drawChart(arg_);');
@@ -1257,7 +1257,7 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   assert.equal(open.pointBackgroundColor[3], 'transparent', '속은 비우고');
   assert.equal(open.pointBorderColor[3], run('DOWN'), '테두리는 방향 색');
   assert.ok(open.pointBorderWidth[3] > 0);
-  assert.equal(open.pointBackgroundColor[2], run('CHART_UP'), '확정된 점은 그대로');
+  assert.equal(open.pointBackgroundColor[2], run('UP'), '확정된 점은 그대로');
   run('arg_.rsi = { ...arg_.rsi, pending: null };');
   const footer = cfg.options.plugins.tooltip.callbacks.footer([{ datasetIndex: 0, dataIndex: 2, dataset: {} }]);
   assert.ok(footer.includes('RSI 55.0 · 시그널 50.0'), '툴팁에 그 봉의 RSI · 시그널');
