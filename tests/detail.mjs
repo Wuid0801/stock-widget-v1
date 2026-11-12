@@ -113,7 +113,7 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
     same(d.quarters.rows.map((r) => r.title), ['매출액', '영업이익', '당기순이익'])
       && same(d.quarters.rows[0].values, [745663, 860617, 938374, 1338734, 1714995, 2007657])
       && same(d.quarters.rows[2].values, [51164, 122257, 196417, 472253, 716245, 883532]), JSON.stringify(d.quarters.rows));
-  check('동종 업종 — 이름과 등락률', same(d.peers.slice(0, 2), [{ name: 'SK하이닉스', pct: 3.25 }, { name: 'SK스퀘어', pct: 3.92 }])
+  check('동종 업종 — 이름과 등락률', same(d.peers.slice(0, 2), [{ name: 'SK하이닉스', pct: 3.25, code: '000660' }, { name: 'SK스퀘어', pct: 3.92, code: '402340' }])
     && d.peers.length === 6, JSON.stringify(d.peers));
   check('ETF 칸은 없다', d.etf === null);
   // 주요주주는 페이지 순서 그대로(최대주주등 → 5% 이상 → 자사주). 외국인은 지분율(소진율 아님) · 유동비율 · 기준일은 같은 페이지
@@ -161,7 +161,7 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
       && same(d.quarters.cols.map((c) => c.title), ['25.06', '25.09', '25.12', '26.03', '26.06'])
       && same(d.quarters.rows[0].values, [94036, 102466, 143756, 111184, 109417])
       && d.quarters.rows[1].values[4] === 35695, JSON.stringify(d.quarters));
-  check('동종 업종 — 해외 목록', d.peers.length === 6 && same(d.peers[0], { name: '델테크놀로지', pct: -6.8 }), JSON.stringify(d.peers[0]));
+  check('동종 업종 — 해외 목록', d.peers.length === 6 && same(d.peers[0], { name: '델테크놀로지', pct: -6.8, code: 'DELL' }), JSON.stringify(d.peers[0]));
 }
 
 // --- 4. 미국 ETF(SOXL) ----------------------------------------------------------------

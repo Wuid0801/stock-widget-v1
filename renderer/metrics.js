@@ -244,7 +244,11 @@ function metricsHtml(item, d, q) {
   }
 
   if (d.peers && d.peers.length) {
-    parts.push(sec('동종 업종', `<p>${list(d.peers.map((p) => `${esc(p.name)} ${colored(fmtPct(p.pct), p.pct)}`))}</p>`));
+    // 이름을 누르면 그 종목으로(pickPeer). 코드가 없는 응답(기억해 둔 예전 것)은 글자만
+    const peer = (p) => (p.code ? `<span class="mxpeer" data-peer="${esc(p.code)}" data-name="${esc(p.name)}"`
+      + ` title="누르면 이 종목으로 — 관심종목에 없으면 넣는다">${esc(p.name)}</span>` : esc(p.name));
+    parts.push(sec('동종 업종', `<p>${list(d.peers.map((p) => `${peer(p)} ${colored(fmtPct(p.pct), p.pct)}`))}</p>`
+      + '<p class="mxmute" id="peerMsg"></p>'));
   }
   parts.push('<p class="mxmute mxsrc">자료: 네이버 증권 · 거래량 배수와 기간 수익률은 일봉으로 계산</p>');
   return parts.join('');
@@ -268,6 +272,23 @@ function renderMetrics() {
   const html = metricsHtml(item, hit && hit.d, quotes[item.symbol]);
   metricsShown = writeIfChanged(panel, metricsShown, item.symbol, html);
   if (!hit || Date.now() - hit.at >= METRICS_TTL) loadMetrics(item.symbol);
+}
+
+// 동종 업종 종목을 누르면 순위 패널처럼(pickRank): 관심종목에 있으면 그 종목으로, 없으면 넣고 연다 — 구경하려던 것일 수 있어
+// 되돌리기 줄을 띄운다. 응답에는 네이버 코드만 있어(코스피 · 코스닥 구분이 없다) 넣을 때는 검색으로 야후 기호를 찾는다 —
+// 검색이 국내 · 미국만 주므로 그 밖(도쿄 상장 등)은 못 넣고 그렇다고 적는다. 지표 화면은 열린 채라 그 종목의 지표가 보인다.
+async function pickPeer(code, name) {
+  const say = (text) => { const el = document.getElementById('peerMsg'); if (el) el.textContent = text; };
+  const have = state.watchlist.find((w) => w.symbol.split('.')[0] === code);
+  if (have) { await select(have.symbol); return; }
+  say(`${name} 추가하는 중…`);
+  const prev = state.selected;
+  const r = await api.search(code);
+  const hit = r.ok && r.items.find((i) => i.symbol.split('.')[0] === code);
+  const err = hit ? await addSymbol({ symbol: hit.symbol, name }) : r.ok ? '국내 · 미국 종목만 넣을 수 있습니다' : r.error;
+  const added = hit && state.watchlist.find((w) => w.symbol === hit.symbol);
+  if (added) showUndo({ item: added, added: true, prev });
+  else say(`${name}: 추가하지 못했습니다 (${err || '조회 실패'})`);
 }
 
 // 종목 지표를 받아 기억하고 다시 그린다(loadInto) — renderMetrics 는 늘 고른 종목을 그린다.

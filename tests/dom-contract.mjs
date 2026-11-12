@@ -172,6 +172,7 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   // 검색의 이미 있는 종목도 누를 수 있다(그 종목으로 간다) — 누를 수 없게 보이던 모양을 되살리지 않는다
   check('.hit.dup 은 누를 수 있는 모양', !/\.hit\.dup \{[^}]*cursor: default/.test(html) && !/\.hit\.dup:hover/.test(html));
   // 맨 위 ✕ 는 앱 종료(창을 닫으면 앱이 끝난다) — 패널 ✕(닫기(Esc))와 툴팁이 같았다
+  check('동종 업종 종목은 누를 수 있는 모양', /\.mxpeer \{ cursor: pointer; \}/.test(html));
   check('맨 위 ✕ 툴팁은 종료', /<button id="close" title="종료">✕<\/button>/.test(html));
   // 버튼은 글꼴을 물려받지 않는다 — 규칙마다 적다 빠뜨린 버튼(기간 탭 · 전체)이 브라우저 기본 글꼴이었다
   check('모든 버튼이 앱 글꼴', /\n  button \{ font-family: inherit; \}/.test(html));

@@ -226,5 +226,22 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   check('받기에 실패하면 ok: false — 렌더러가 KRX 캔들로 그린다', fail.ok === false && /HTTP 500/.test(fail.error), JSON.stringify(fail));
 }
 
+// --- 원/엔은 100엔당 원 — 야후 JPYKRW=X(1엔당)에 100 을 곱한다(YF_SCALE, 2026-11-12). 다른 기호는 그대로 ---------------
+{
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  yahooBody = yahoo([['2026-10-12', 8.5], ['2026-10-13', 8.3]]);
+  yahooBody.chart.result[0].meta = { regularMarketPrice: 8.298, currency: 'KRW', fiftyTwoWeekHigh: 9.7726, fiftyTwoWeekLow: 8.292 };
+  const jpy = await chart('JPYKRW=X');
+  check('원/엔: 값 · 봉 · 52주 고저에 100 을 곱한다', jpy.ok && near(jpy.price, 829.8) && near(jpy.closes[0], 850) && near(jpy.closes[1], 830)
+    && near(jpy.opens[0], 5850) && near(jpy.highs[0], 10850) && near(jpy.lows[0], -9150)
+    && near(jpy.week52High, 977.26) && near(jpy.week52Low, 829.2), JSON.stringify(jpy));
+  const usd = await chart('KRW=X');
+  check('다른 기호는 그대로', usd.ok && usd.price === 8.298 && usd.closes[1] === 8.3 && usd.week52High === 9.7726, JSON.stringify(usd));
+  delete yahooBody.chart.result[0].meta.fiftyTwoWeekHigh;
+  delete yahooBody.chart.result[0].meta.regularMarketPrice;
+  const bare = await chart('JPYKRW=X');
+  check('원/엔: 값이 비면 마지막 봉, 52주가 비면 null(0 이 아니다)', bare.ok && near(bare.price, 830) && bare.week52High === null, JSON.stringify(bare));
+}
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

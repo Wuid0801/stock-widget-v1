@@ -920,7 +920,7 @@ const detailConsensus = (c, currency) => (c && detailNum(c.priceTargetMean) != n
   opinion: detailNum(c.recommMean), date: c.createDate || null, currency: c.currencyType?.code || currency,
 } : null);
 const detailPeers = (list) => (Array.isArray(list) ? list : []).slice(0, 6)
-  .map((p) => ({ name: String(p.stockName ?? ''), pct: detailNum(p.fluctuationsRatio) }))
+  .map((p) => ({ name: String(p.stockName ?? ''), pct: detailNum(p.fluctuationsRatio), code: String(p.itemCode ?? p.symbolCode ?? '') }))
   .filter((p) => p.name && p.pct != null);
 // 요청들을 따로 받아 실패는 null 로. 전부 실패하면 첫 오류를 던진다.
 async function settleAll(urls) {
@@ -1319,6 +1319,8 @@ const INTERVALS = new Set(['5m', '30m', '1d', '1mo']);
 // 환율은 끝에 =X, 선물은 =F 가 붙는다(KRW=X 원/달러 · NQ=F 나스닥 100 선물 · CL=F WTI — 지수 줄에서 누르면 차트).
 // = 는 그 자리 한 번만.
 const SYMBOL_RE = /^\^?[A-Za-z0-9][A-Za-z0-9.\-]{0,19}(?:=[XF])?$/;
+// 야후 값에 곱해 보이는 기호 — 원/엔은 한국 관례대로 100엔당 원(야후 JPYKRW=X 는 1엔당 8.298, 2026-11-12 확인)
+const YF_SCALE = { 'JPYKRW=X': 100 };
 
 // 야후는 국내 종목 일봉을 가끔 하루 통째로 비워 준다(종가 · 거래량 null). 2025-09-19 · 2026-10-12 는
 // 모든 국내 종목이 비었고 1년이 지나도 채워지지 않았다(2026-10-13 확인). 비운 채 두면 차트에서 그날이
@@ -1823,10 +1825,12 @@ ipcMain.handle('yf:chart', async (_e, req) => {
     // 나온다 → 그 봉은 뺀다. 시가 · 고가 · 저가가 비면 종가로(밴드 폭 0), 거래량이 비면 0. 열은 다른 경로처럼 toSeries 로.
     const q0 = result.indicators?.quote?.[0] || {};
     const stamps = result.timestamp || [];
+    const k = YF_SCALE[symbol] || 1;
+    const mul = (v) => (v == null ? null : v * k);
     const bars = [];
     (q0.close || []).forEach((c, i) => {
-      if (c != null) bars.push({ time: stamps[i] * 1000, open: q0.open?.[i] ?? c, high: q0.high?.[i] ?? c, low: q0.low?.[i] ?? c,
-        close: c, volume: q0.volume?.[i] ?? 0 });
+      if (c != null) bars.push({ time: stamps[i] * 1000, open: mul(q0.open?.[i] ?? c), high: mul(q0.high?.[i] ?? c), low: mul(q0.low?.[i] ?? c),
+        close: mul(c), volume: q0.volume?.[i] ?? 0 });
     });
 
     let series = toSeries(bars);
@@ -1850,11 +1854,11 @@ ipcMain.handle('yf:chart', async (_e, req) => {
     return {
       ok: true,
       symbol,
-      price: result.meta?.regularMarketPrice ?? bars.at(-1)?.close,
+      price: mul(result.meta?.regularMarketPrice) ?? bars.at(-1)?.close,
       // 52주 고저는 meta에 이미 들어있어 추가 요청이 필요 없다
       currency: result.meta?.currency ?? 'KRW',
-      week52High: result.meta?.fiftyTwoWeekHigh ?? null,
-      week52Low: result.meta?.fiftyTwoWeekLow ?? null,
+      week52High: mul(result.meta?.fiftyTwoWeekHigh),
+      week52Low: mul(result.meta?.fiftyTwoWeekLow),
       ...series,
     };
   } catch (err) {

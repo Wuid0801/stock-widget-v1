@@ -188,6 +188,11 @@ async function refreshNow() {
     metricsOn = !metricsOn;
     renderMetrics();
   };
+  // 지표 화면의 동종 업종 종목
+  document.getElementById('metricsView').onclick = (e) => {
+    const p = e.target.closest('[data-peer]');
+    if (p) pickPeer(p.dataset.peer, p.dataset.name).catch(console.error);
+  };
   document.getElementById('plainChart').onclick = async () => {
     state.plainChart = !state.plainChart;
     save();

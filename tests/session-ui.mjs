@@ -1534,7 +1534,7 @@ const KR_DETAIL = {
   ir: { title: '2026년 3분기 경영실적 발표', date: '2026-10-29', dday: 13 },
   quarters: { unit: '억원', cols: [{ title: '25.12', estimate: false }, { title: '26.03', estimate: false }, { title: '26.06', estimate: false }, { title: '26.09', estimate: true }, { title: '26.12', estimate: true }],
     rows: [{ title: '매출액', values: [938374, 1338734, 1714995, 2007657, null] }, { title: '영업이익', values: [-5000, 572328, 894924, 1069435, null] }] },
-  peers: [{ name: 'SK하이닉스', pct: 3.25 }, { name: '<b>가짜</b>', pct: -1.5 }],
+  peers: [{ name: 'SK하이닉스', pct: 3.25, code: '000660' }, { name: '<b>가짜</b>', pct: -1.5 }],
   etf: null,
 };
 
@@ -1565,8 +1565,52 @@ await test('metrics: panel for a Korean stock — volume multiple, returns, inve
   assert.match(text(html), /PER 9\.82배 · PBR 2\.54배/);
   assert.match(html, /목표가 평균 <b>495,227원<\/b> \(현재가 대비 \+126\.13%\) · 의견 4\.00 \/ 5/, '컨센서스와 현재가 대비');
   assert.match(html, /10\/15 기준 · 증권사 추정치, 참고용/);
-  assert.match(html, /SK하이닉스 <b style="color:#e24b4a">\+3\.25%<\/b>/, '동종 업종');
+  assert.match(html, /<span class="mxpeer" data-peer="000660" data-name="SK하이닉스" title="[^"]+">SK하이닉스<\/span> <b style="color:#e24b4a">\+3\.25%<\/b>/,
+    '동종 업종 — 코드가 있으면 누를 수 있다(pickPeer)');
   assert.ok(html.includes('&lt;b&gt;가짜&lt;/b&gt;') && !html.includes('<b>가짜</b>'), '이름은 이스케이프한다');
+  assert.ok(html.includes('<span class="mxi">&lt;b&gt;가짜&lt;/b&gt; <b'), '코드가 없으면 글자만');
+  assert.ok(html.includes('<p class="mxmute" id="peerMsg"></p>'), '넣는 중 · 못 넣은 이유를 적을 자리');
+});
+
+// 동종 업종 종목을 누르면 순위 패널처럼 — 관심종목에 있으면 그 종목으로, 없으면 넣고 연다(되돌리기 줄). 응답에는 네이버 코드만 있어
+// (코스피 · 코스닥 구분 없음) 넣을 때는 검색으로 야후 기호를 찾는다(2026-11-12 사용자 요청)
+await test('metrics: clicking a peer goes to it if it is in the watchlist, otherwise looks it up, adds it with an undo, or says why not', async () => {
+  const { c, run, elements } = harness(['pickPeer']);
+  const log = [];
+  let found = [{ symbol: '0369300.KQ', name: '다른 종목' }, { symbol: '036930.KQ', name: '주성엔지니어링(검색 이름)' }];
+  let addErr;
+  Object.assign(c, {
+    select: async (s) => { log.push(`select ${s}`); },
+    addSymbol: async (it) => {
+      log.push(`add ${it.symbol} ${it.name}`);
+      if (addErr) return addErr;
+      run(`state.watchlist.push({ symbol: '${it.symbol}', name: '${it.name}' });`);
+    },
+    showUndo: (s) => { log.push(`undo ${s.item.symbol} added=${s.added} prev=${s.prev}`); },
+  });
+  c.api.search = async (q) => { log.push(`search ${q}`); return found ? { ok: true, items: found } : { ok: false, error: 'HTTP 500' }; };
+  const msg = () => elements.get('peerMsg').textContent;
+  c.document.getElementById('peerMsg');
+
+  await c.pickPeer('000660', 'SK하이닉스');
+  assert.deepEqual(log.splice(0), ['select 000660.KS'], '이미 있으면 찾지도 넣지도 않고 그 종목으로');
+  await c.pickPeer('036930', '주성엔지니어링');
+  assert.deepEqual(log.splice(0), ['search 036930', 'add 036930.KQ 주성엔지니어링', 'undo 036930.KQ added=true prev=005930.KS'],
+    '없으면 코드로 찾아(코스닥 .KQ) 넣고 되돌리기 — 코드가 정확히 같은 결과만');
+  // 검색은 국내 · 미국만 준다 — 도쿄 상장(소니 그룹 6758)은 못 넣는다
+  found = [];
+  await c.pickPeer('6758', '소니 그룹');
+  assert.deepEqual(log.splice(0), ['search 6758']);
+  assert.equal(msg(), '소니 그룹: 추가하지 못했습니다 (국내 · 미국 종목만 넣을 수 있습니다)');
+  found = [{ symbol: 'DELL', name: '델테크놀로지' }];
+  addErr = 'No data found';
+  await c.pickPeer('DELL', '델테크놀로지');
+  assert.deepEqual(log.splice(0), ['search DELL', 'add DELL 델테크놀로지'], '미국 종목은 티커 그대로');
+  assert.equal(msg(), '델테크놀로지: 추가하지 못했습니다 (No data found)', '시세를 못 받은 이유');
+  found = null;
+  await c.pickPeer('STX', '씨게이트');
+  assert.equal(msg(), '씨게이트: 추가하지 못했습니다 (HTTP 500)', '검색 실패');
+  assert.match(source, /getElementById\('metricsView'\)\.onclick = \(e\) => \{\s*const p = e\.target\.closest\('\[data-peer\]'\);\s*if \(p\) pickPeer\(p\.dataset\.peer, p\.dataset\.name\)/);
 });
 
 await test('metrics: US stock shows no investor table, consensus range in dollars; ETF shows NAV instead of valuation; loading and failure states', () => {
@@ -3670,7 +3714,11 @@ await test('market panel: the 10y-2y spread, the dollar index and a commodities 
   h.run("quotes['DX-Y.NYB'] = { price: 99.5, change: 0.3, pct: 0.3, daily: { times: [1, 2, 3, 4, 5, 6], closes: [98, 98.5, 99, 99.2, 99.2, 99.5] } };");
   const html = h.c.marketHtml();
   const keys = [...html.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(keys.slice(keys.indexOf('VIX')), ['VIX', 'FEARGREED', 'US10Y', 'CURVE', 'HYOAS', 'USDKRW', 'DXY', 'WTI', 'BRENT', 'GOLD', 'COPPER']);
+  assert.deepEqual(keys.slice(keys.indexOf('VIX')), ['VIX', 'FEARGREED', 'US10Y', 'CURVE', 'HYOAS', 'USDKRW', 'JPYKRW', 'DXY', 'WTI', 'BRENT', 'GOLD', 'COPPER']);
+  // 원/엔(2026-11-12 사용자 요청) — 달러 인덱스처럼 야후 값 · 차트만, 100엔당 원(main 이 곱해 준다 — tests/chart-fill.mjs)
+  assert.ok(h.run("INDICES.some((i) => i.symbol === 'JPYKRW=X' && i.code === 'JPYKRW' && i.name === '원/엔(100엔)' && i.overseas && i.page === undefined)"),
+    '지수 줄(page)에는 없다 — 시장 지표 화면에만');
+  assert.match(h.run('MARKET_DESC.JPYKRW'), /^원\/엔 — 100엔에 원화 몇 원\n/);
   assert.match(html, /class="qhint rnote mgroup">원자재</);
   assert.match(html, /data-sym="\^T10Y2Y" data-key="CURVE"/, '누르면 차트');
   const curve = keyRow(html, 'CURVE');
