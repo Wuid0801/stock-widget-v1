@@ -307,7 +307,7 @@ function marketHtml() {
       if (row) return row;
       const err = marketExtraError(key);
       const at = err ? new Date(marketExtras.at + 9 * 3600000).toISOString().slice(11, 16) : '';
-      return { key, symbol: null, valueText: '—', dayText: '—', d5Text: '—', note: err ? `실패 · ${err}` : '',
+      return { key, symbol: null, empty: true, valueText: '—', dayText: '—', d5Text: '—', note: err ? `실패 · ${err}` : '',
         noteTitle: err ? `${at} 에 받지 못했다: ${err}\n지표 화면이 열려 있으면 1분마다 다시 묻는다` : '',
         name: (INDICES.find((i) => i.code === key) || {}).name || MARKET_EXTRA_NAMES[key] };
     });
@@ -319,7 +319,10 @@ function marketHtml() {
       // 위험 · 자금 줄은 툴팁에 그 지표의 뜻(MARKET_DESC) — 누를 수 있으면 그 아래에 '차트 보기', 값이 없어도 설명은 둔다
       const desc = MARKET_DESC[r.key];
       const tip = r.title || desc;
+      // 수급 줄은 누르면 확대 차트(openFlow) — 값이 없는 줄(—)은 다른 지표 줄처럼 누를 수 없다
+      const flowKind = r.empty ? null : ['SPOT', 'FUTFLOW'].includes(r.key) ? 'daily' : INTRADAY_FIELD[r.key] ? 'intraday' : null;
       const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(`${tip ? `${tip}\n\n` : ''}${r.name} 차트 보기`)}">`
+        : flowKind ? `<div class="hit rrow mrow" role="button" tabindex="0" data-flow-key="${r.key}" data-flow-kind="${flowKind}" data-key="${r.key}" title="${esc(`${tip ? `${tip}\n\n` : ''}수급 차트 보기`)}">`
         : `<div class="rrow mrow mfix" data-key="${r.key}"${tip ? ` title="${esc(tip)}"` : ''}>`;
       const chk = checkOf.get(r.key);
       if (chk) names.set(chk.key, r.name);
@@ -385,15 +388,16 @@ async function loadMarket() {
   if (d && d.ok && prev) {
     for (const k of ['spotFlows', 'futFlows', 'kospiDays', 'futDays', 'hyOas', 'k200Days', 'k200Min', 'intraday', 'fearGreed', 'curve']) if (next[k] == null && prev[k] != null) next[k] = prev[k];
   }
-  marketExtras = { at: Date.now(), d: next };
+  marketExtras = { at: Date.now(), d: next, error: d && d.ok ? null : d && d.error || '응답 없음' };
   renderRank();
+  renderFlow();
 }
 
 // 순위 하나를 받아 기억하고 다시 그린다(loadInto). no 는 업종 · 테마 안의 묶음 번호.
 function loadRank(market, kind, no) {
   const key = rankKey({ market, kind, group: no === undefined ? null : { no } });
   return loadInto(rankCache, rankLoading, key, () => api.rank(no === undefined ? { market, kind } : { market, kind, no }),
-    () => renderRank());
+    () => { renderRank(); if (key === 'kr|search') renderSearchPopular(); });
 }
 
 // 시장을 바꿔도 지금 탭이 그 시장에도 있으면 그대로(급등 → 급등), 없으면(국내 인기 검색 · 미국 시총 상위) 첫 탭.
@@ -423,6 +427,11 @@ const closeRank = () => closePanel(rankEl);
 // 순위 목록을 누름(목록은 다시 그려지므로 상자에 한 번 붙인다) — ← 는 묶음 목록으로, 업종 · 테마 줄은 그 안으로,
 // 종목 줄은 관심종목에 넣거나 그 종목으로(pickRank).
 function rankClick(target) {
+  const flow = target.closest('[data-flow-key]');
+  if (flow) {
+    openFlow({ kind: flow.dataset.flowKind, key: flow.dataset.flowKey });
+    return;
+  }
   const pick = target.closest('[data-sym]'); // 지표 화면의 시장 항목 — 지수 줄을 누를 때처럼 고른다
   if (pick) {
     closeRank();

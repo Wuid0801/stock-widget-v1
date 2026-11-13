@@ -97,6 +97,8 @@ const storeOptions = {
     extHours: true, // 1D · 1W 를 장전 · 장후까지(전체) 볼지, 정규장만 볼지
     candleVenue: 'integrated', // 국내 일봉 캔들 기준 'integrated'(KRX + NXT, 증권사 앱의 통합) | 'krx'
     infoOpen: true, // 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지
+    alwaysOnTop: true, // 항상 다른 창 위에 둘지(설정의 고정 / 안 고정)
+    listGroup: 'none', // 관심종목 묶어 보기 'none' | 'kr'(국내 먼저) | 'us'(미국 먼저)
     // 보조 지표(설정의 칩). 기본은 모두 꺼짐 — 이동평균 · 추세선과 겹치면 작은 차트가 빽빽해진다.
     indicators: { bb: false, vwap: false, volAvg: false, prevHL: false, vp: false, rel: false, sar: false },
   },
@@ -163,7 +165,7 @@ function createWindow() {
     frame: false,
     transparent: true,
     resizable: true,
-    alwaysOnTop: true,
+    alwaysOnTop: store.get('alwaysOnTop') !== false,
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
@@ -183,8 +185,7 @@ function createWindow() {
     win.setBounds({ x: b.x, y: b.y, width, height });
   }
 
-  // 전체화면 앱 위에서도 유지되도록 screen-saver 레벨
-  win.setAlwaysOnTop(true, 'screen-saver');
+  applyOnTop();
 
   // 이 앱은 로컬 페이지 하나만 띄운다. 어떤 경로로든 외부 페이지로 이동하거나
   // 새 창이 열리는 일이 없도록 막는다.
@@ -222,13 +223,20 @@ function createWindow() {
   win.on('closed', () => { win = null; });
 }
 
+// 항상 위(설정의 고정 / 안 고정 — 저장 키 alwaysOnTop, 끄기로 저장된 때만 끈다). 고정이면 전체화면 앱 위에서도 유지되도록
+// screen-saver 레벨. 안 고정이면 다른 창에 가려질 수 있다 — 작업표시줄 버튼이 없어, 가려지면 전역 단축키를 두 번(숨김 → 보임)
+// 눌러 앞으로 꺼낸다(2026-11-13 사용자 요청).
+function applyOnTop() {
+  if (win) win.setAlwaysOnTop(store.get('alwaysOnTop') !== false, 'screen-saver');
+}
+
 // ---- IPC: 창/상태 ----------------------------------------------------------
 
 // 렌더러가 저장하는 설정(save() 가 보내는 키, 창 위치는 뺀다). 읽기(state:get) · 쓰기(state:set) · 백업이 모두 이 목록을
 // 쓴다 — 셋이 따로 적혀 있을 때는 새 설정을 한 곳에 빠뜨리면 조용히 저장 · 복원되지 않았다. save() 와 같은지는
 // tests/state-contract.mjs 가 본다.
 const STATE_KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme', 'opacity', 'maPeriods', 'maStyles',
-  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours', 'candleVenue'];
+  'chartMode', 'plainChart', 'infoOpen', 'indicators', 'extHours', 'candleVenue', 'alwaysOnTop', 'listGroup'];
 const storedState = () => Object.fromEntries(STATE_KEYS.map((k) => [k, store.get(k)]));
 
 ipcMain.handle('state:get', () => storedState());
@@ -244,6 +252,7 @@ ipcMain.handle('state:set', (_e, patch) => {
     if (STATE_KEYS.includes(k)) next[k] = v;
   }
   if (Object.keys(next).length) store.set(next);
+  if ('alwaysOnTop' in next) applyOnTop();
 });
 
 // ---- 설정 백업 · 복원 -----------------------------------------------------------
@@ -298,7 +307,8 @@ function cleanBackup(raw) {
   if (isPlain(s.maStyles)) out.maStyles = JSON.parse(JSON.stringify(s.maStyles)); // 렌더러가 시작할 때 다시 거른다(cleanMaStyles)
   if (s.chartMode === 'candle' || s.chartMode === 'line') out.chartMode = s.chartMode;
   if (s.candleVenue === 'integrated' || s.candleVenue === 'krx') out.candleVenue = s.candleVenue;
-  for (const k of ['plainChart', 'infoOpen', 'extHours']) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['plainChart', 'infoOpen', 'extHours', 'alwaysOnTop']) if (typeof s[k] === 'boolean') out[k] = s[k];
+  if (['none', 'kr', 'us'].includes(s.listGroup)) out.listGroup = s.listGroup;
   if (isPlain(s.indicators)) out.indicators = Object.fromEntries(Object.entries(s.indicators).filter(([, v]) => typeof v === 'boolean'));
   return Object.keys(out).length ? out : null;
 }
@@ -339,6 +349,7 @@ ipcMain.handle('backup:import', async () => {
     if (ans.response !== 0) return { ok: false, canceled: true };
     fs.writeFileSync(before, backupJson());
     store.set(next); // 한 번에 쓴다(state:set 과 같은 이유)
+    applyOnTop();
     return { ok: true, counts, before };
   } catch (err) {
     return { ok: false, error: err.message || '불러오기 실패' };
@@ -1877,7 +1888,7 @@ function registerToggle() {
       win.hide();
     } else {
       win.show();
-      win.setAlwaysOnTop(true, 'screen-saver'); // 숨겼다 켜면 최상단 레벨이 풀리는 경우가 있다
+      applyOnTop(); // 숨겼다 켜면 최상단 레벨이 풀리는 경우가 있다
     }
   });
   // 다른 프로그램이 이미 쓰는 조합이면 등록에 실패한다. 그때는 위젯이 숨겨질 일도 없으니 그대로 둔다.
@@ -1896,7 +1907,7 @@ if (!app.requestSingleInstanceLock()) {
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
-    win.setAlwaysOnTop(true, 'screen-saver'); // 숨겼다 켜면 최상단 레벨이 풀리는 경우가 있다
+    applyOnTop(); // 숨겼다 켜면 최상단 레벨이 풀리는 경우가 있다
   });
 
   app.whenReady().then(() => {

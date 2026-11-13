@@ -55,5 +55,13 @@ check('preload 가 내보내는 함수는 renderer 가 모두 쓴다', !unusedFn
 const orphan = [...handled].filter((ch) => ![...exposed.values()].includes(ch));
 check('main 이 받는 채널은 preload 가 모두 내보낸다', !orphan.length, orphan.join(' '));
 
+// 항상 위(설정의 고정 / 안 고정, 2026-11-13) — 창을 만들 때 · 저장을 받을 때 · 백업을 불러올 때 · 다시 보일 때 저장값을 따른다.
+// 한 곳이라도 true 로 못 박혀 있으면 안 고정으로 둔 창이 숨겼다 켤 때 다시 고정된다.
+check('항상 위는 저장값을 따른다(못 박은 true 없음)', !/setAlwaysOnTop\(true/.test(main) && !/alwaysOnTop: true,\s*skipTaskbar/.test(main)
+  && /alwaysOnTop: store\.get\('alwaysOnTop'\) !== false,/.test(main)
+  && /function applyOnTop\(\) \{\s*if \(win\) win\.setAlwaysOnTop\(store\.get\('alwaysOnTop'\) !== false, 'screen-saver'\);/.test(main));
+check('저장 · 백업 불러오기 · 다시 보이기가 항상 위를 다시 적용한다', /if \('alwaysOnTop' in next\) applyOnTop\(\);/.test(main)
+  && (main.match(/applyOnTop\(\);/g) || []).length >= 5, String((main.match(/applyOnTop\(\);/g) || []).length));
+
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

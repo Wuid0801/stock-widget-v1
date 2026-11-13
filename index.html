@@ -296,6 +296,10 @@
     display: flex; align-items: center; gap: 8px;
     padding: 7px 11px; cursor: pointer; border-left: 2px solid transparent;
   }
+  /* 묶어 보기의 구분선(국내 · 미국, renderList) — 접힌 상태는 세 줄 높이라 숨긴다 */
+  .lgroup { padding: 4px 11px 1px; font-size: 9px; font-weight: 700; color: var(--mute); border-top: 1px solid var(--line-2); }
+  .lgroup:first-child { border-top: 0; }
+  .widget.compact .lgroup { display: none; }
   .row:hover { background: var(--hover); }
   .row.on { background: var(--sel); border-left-color: var(--accent); }
   .row .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--dot-off); }
@@ -373,12 +377,28 @@
   .qbar > button:hover { background: var(--field-border); color: var(--btn-fg-hover); }
 
   #results { flex: 1 1 auto; overflow-y: auto; }
+  #results .rk { flex: 0 0 16px; text-align: right; font-size: 10px; color: var(--mute); }
+  .hit:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
   .hit { display: flex; align-items: center; gap: 8px; padding: 7px 11px; cursor: pointer; }
   .hit:hover { background: var(--hit-hover); }
   .hit .hname { flex: 1 1 auto; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .hit .hmeta { font-size: 10px; color: var(--mute); flex: 0 0 auto; }
   .hit.dup { opacity: .6; } /* 이미 있는 종목 — 누르면 그 종목으로 간다 */
   .qhint { padding: 8px 11px; font-size: 10px; color: var(--mute); }
+
+  .flow { width: calc(100% - 20px); height: calc(100% - 24px); max-width: none; max-height: none;
+    box-sizing: border-box; padding: 0; border: 1px solid var(--field-border); border-radius: 10px;
+    background: var(--panel); color: var(--text); font-family: inherit; -webkit-app-region: no-drag; }
+  .flow[open] { display: flex; flex-direction: column; }
+  .flow::backdrop { background: rgba(0, 0, 0, .4); }
+  .flow h2 { flex: 1; min-width: 0; margin: 0; font-size: 12px; align-self: center; }
+  .flowcontrols { display: flex; gap: 6px; padding: 6px 10px; }
+  .flowcontrols button, .flowcontrols select { background: var(--tf-on-bg); color: var(--text);
+    border: 1px solid var(--field-border); border-radius: 5px; padding: 4px 6px; font: inherit; font-size: 11px; }
+  .flowcontrols button { cursor: pointer; }
+  .flowcontrols button:disabled { opacity: .5; cursor: default; }
+  .flowplot { position: relative; flex: 1 1 auto; min-height: 0; margin: 4px 10px 10px; }
+  .flow .qhint { margin: 0; padding-top: 4px; padding-bottom: 4px; line-height: 1.5; }
 
   /* --- 시장 순위 --- */
   .rtabs { display: flex; gap: 3px; padding: 6px 10px; border-bottom: 1px solid var(--line-2); }
@@ -454,6 +474,9 @@
   .brow button:hover { color: var(--text-3); }
   .brow .bmsg { flex: 1 1 100%; font-size: 9.5px; color: var(--mute); line-height: 1.4; overflow-wrap: anywhere; }
   .brow .bmsg:not(:empty) { margin-top: 4px; }
+  #sortBtns { row-gap: 4px; }
+  #sortUndo { background: none; border: 0; padding: 0 0 0 4px; color: var(--accent); font-size: 9px; cursor: pointer; }
+  #sortUndo[hidden] { display: none; }
 
   /* 투명도 슬라이더 */
   .orow { display: flex; align-items: center; gap: 8px; padding: 2px 11px 0; }
@@ -871,6 +894,32 @@
           <span class="oval" id="opacityVal">74%</span>
         </div>
         <div class="ohint">마우스를 올리면 항상 또렷해집니다. 위 값은 벗어났을 때의 진하기입니다.</div>
+        <div class="orow">
+          <span class="olabel">항상 위</span>
+          <span class="seg" id="pinSeg">
+            <button type="button" data-v="true">고정</button>
+            <button type="button" data-v="false">안 고정</button>
+          </span>
+        </div>
+        <div class="ohint">안 고정이면 다른 창에 가려질 수 있습니다. 작업표시줄에 버튼이 없으니, 가려지면 Ctrl+Alt+S 를 두 번 눌러 앞으로 꺼내세요.</div>
+
+        <div class="sect">
+          관심종목
+          <span class="seg" id="groupSeg">
+            <button type="button" data-v="none">안 묶음</button>
+            <button type="button" data-v="kr">국내 먼저</button>
+            <button type="button" data-v="us">미국 먼저</button>
+          </span>
+        </div>
+        <div class="brow" id="sortBtns">
+          <button type="button" data-sort="pctDesc">등락률 높은 순</button>
+          <button type="button" data-sort="pctAsc">등락률 낮은 순</button>
+          <button type="button" data-sort="rsiAsc">RSI 낮은 순</button>
+          <button type="button" data-sort="held">보유 먼저</button>
+          <button type="button" data-sort="name">이름순</button>
+        </div>
+        <div class="ohint"><span id="sortMsg"></span><button type="button" id="sortUndo" hidden>되돌리기</button></div>
+        <div class="ohint">국내 먼저 · 미국 먼저는 목록을 국내 · 미국으로 묶어 구분선과 함께 보입니다. 정렬 버튼은 누른 때의 값으로 한 번 줄을 세웁니다(묶어 두면 묶음 안에서). 그 뒤에는 목록에서 끌어서 바꿀 수 있습니다.</div>
 
         <div class="ohint" id="plainHint" hidden>차트만 보기가 켜져 있어 이동평균 · 지표를 그리지 않습니다. 차트 왼쪽 위 버튼(덧그림 다시 보기)을 누르면 다시 나옵니다.</div>
         <div class="sect">이동평균선 <span class="sechint">일봉 차트(1M · 3M · 1Y · 3Y)에만 표시</span></div>
@@ -910,6 +959,14 @@
     </div>
   </div>
 
+  <dialog class="flow" id="flowDialog" aria-labelledby="flowTitle" aria-describedby="flowNote">
+    <div class="qbar"><h2 id="flowTitle">수급 차트</h2><button id="flowClose" type="button" aria-label="수급 차트 닫기" autofocus>✕</button></div>
+    <div class="flowcontrols"><select id="flowVenue" aria-label="수급 시장" hidden><option value="spot">코스피 현물</option><option value="fut">코스피200 선물</option></select><button id="flowRetry" type="button">새로고침</button></div>
+    <p class="qhint" id="flowNote"></p>
+    <p class="qhint" id="flowStatus" role="status" aria-live="polite" hidden></p>
+    <div class="flowplot" id="flowPlot" hidden><canvas id="flowCanvas" role="img" aria-label="수급 차트"></canvas></div>
+  </dialog>
+
   <script src="./node_modules/chart.js/dist/chart.umd.js"></script>
   <!-- 순수 계산. 렌더러(renderer/)가 전역으로 쓰므로 반드시 먼저 싣는다 -->
   <script src="./indicators.js"></script>
@@ -927,6 +984,7 @@
   <script src="./renderer/detail.js"></script>
   <script src="./renderer/metrics.js"></script>
   <script src="./renderer/rank.js"></script>
+  <script src="./renderer/flow.js"></script>
   <script src="./renderer/info.js"></script>
   <script src="./renderer/chart.js"></script>
   <script src="./renderer/data.js"></script>

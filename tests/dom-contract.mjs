@@ -172,6 +172,15 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   // 검색의 이미 있는 종목도 누를 수 있다(그 종목으로 간다) — 누를 수 없게 보이던 모양을 되살리지 않는다
   check('.hit.dup 은 누를 수 있는 모양', !/\.hit\.dup \{[^}]*cursor: default/.test(html) && !/\.hit\.dup:hover/.test(html));
   // 맨 위 ✕ 는 앱 종료(창을 닫으면 앱이 끝난다) — 패널 ✕(닫기(Esc))와 툴팁이 같았다
+  // 설정의 항상 위(고정 / 안 고정) · 관심종목 묶기 · 한 번 정렬 버튼(2026-11-13 사용자 요청)
+  check('설정에 항상 위 고정 / 안 고정', /id="pinSeg">\s*<button type="button" data-v="true">고정<\/button>\s*<button type="button" data-v="false">안 고정<\/button>/.test(html));
+  check('설정에 관심종목 묶기 셋', /id="groupSeg">\s*<button type="button" data-v="none">안 묶음<\/button>\s*<button type="button" data-v="kr">국내 먼저<\/button>\s*<button type="button" data-v="us">미국 먼저<\/button>/.test(html));
+  const sortKeys = [.../const LIST_SORTS = \{([\s\S]*?)\n\};/.exec(rendererSource())[1].matchAll(/^\s+(\w+): \[/gm)].map((m) => m[1]);
+  const sortBtns = [.../id="sortBtns">([\s\S]*?)<\/div>/.exec(html)[1].matchAll(/data-sort="(\w+)"/g)].map((m) => m[1]);
+  check('정렬 버튼과 LIST_SORTS 의 키가 같다', sortKeys.length === 5 && sortKeys.join() === sortBtns.join(), `${sortKeys.join()} / ${sortBtns.join()}`);
+  check('정렬 되돌리기는 숨김으로 시작', /<span id="sortMsg"><\/span><button type="button" id="sortUndo" hidden>되돌리기<\/button>/.test(html));
+  // 묶음 구분선은 접힌 상태(세 줄 높이)에서 숨긴다 — 구분선이 줄 자리를 차지한다
+  check('.lgroup 은 접힌 상태에서 숨는다', /\.widget\.compact \.lgroup \{ display: none; \}/.test(html));
   check('동종 업종 종목은 누를 수 있는 모양', /\.mxpeer \{ cursor: pointer; \}/.test(html));
   check('맨 위 ✕ 툴팁은 종료', /<button id="close" title="종료">✕<\/button>/.test(html));
   // 버튼은 글꼴을 물려받지 않는다 — 규칙마다 적다 빠뜨린 버튼(기간 탭 · 전체)이 브라우저 기본 글꼴이었다

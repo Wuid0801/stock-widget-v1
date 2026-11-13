@@ -243,6 +243,15 @@ function indexLive(n) {
 let state = { watchlist: [], selected: null, timeframe: '1D' };
 const quotes = {}; // symbol -> { price, prevClose, rsi } | { error }
 let dragFrom = null; // 순서 변경 드래그 중인 행 인덱스
+let listGroupShown = null; // 목록을 마지막으로 새로 만들 때의 묶기(state.listGroup) — 바뀌면 구분선 때문에 줄을 다시 만든다(renderList)
+// 관심종목 한 번 정렬(설정의 정렬 버튼, sortWatchlist) — 키 → [줄에서 값을 꺼내는 함수, 방향(1 작은 것부터 · -1 큰 것부터)]
+const LIST_SORTS = {
+  pctDesc: [(i) => quotes[i.symbol] && quotes[i.symbol].pct, -1],
+  pctAsc: [(i) => quotes[i.symbol] && quotes[i.symbol].pct, 1],
+  rsiAsc: [(i) => quotes[i.symbol] && quotes[i.symbol].rsi, 1],
+  held: [(i) => (state.holdings[i.symbol] ? 0 : 1), 1],
+  name: [(i) => i.name, 1],
+};
 let chart = null;
 let busy = false;
 let lastRefreshAt = 0; // 마지막 갱신이 끝난 시각 — ↻ 연타 제한에 쓴다
@@ -454,7 +463,8 @@ async function loadInto(cache, loading, key, call, render) {
   }
   const prev = cache.get(key);
   const keep = prev && prev.d && prev.d.ok && !(d && d.ok);
-  cache.set(key, { at: Date.now(), d: keep ? prev.d : d || { ok: false, error: '응답 없음' } });
+  cache.set(key, { at: Date.now(), d: keep ? prev.d : d || { ok: false, error: '응답 없음' },
+    error: keep ? d && d.error || '응답 없음' : null });
   render();
 }
 

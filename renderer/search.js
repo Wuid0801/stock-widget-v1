@@ -31,41 +31,71 @@ function closePanel(el) {
 const hint = (msg) => { hintEl.textContent = msg || ''; hintEl.hidden = !msg; };
 
 function openSearch() {
+  clearTimeout(searchTimer);
+  searchSeq++;
   openPanel(searchEl);
   qEl.value = '';
   resultsEl.innerHTML = '';
-  hint('종목명 또는 코드를 입력하세요');
+  renderSearchPopular();
   qEl.focus();
 }
 
 function closeSearch() {
   clearTimeout(searchTimer);
+  searchSeq++;
   closePanel(searchEl);
+}
+
+function renderSearchPopular() {
+  if (searchEl.hidden || qEl.value.trim()) return;
+  const cached = rankCache.get('kr|search');
+  const data = cached && cached.d;
+  resultsEl.innerHTML = '';
+  if (!data) hint('인기 검색을 불러오는 중… · 종목명 또는 코드를 입력하세요');
+  else if (!data.ok) hint(`인기 검색 조회 실패: ${data.error || '알 수 없는 오류'} · 직접 검색할 수 있습니다`);
+  else if (!data.items.length) hint('인기 검색 목록이 없습니다 · 종목명 또는 코드를 입력하세요');
+  else {
+    hint('인기 검색 · 네이버');
+    renderSearchItems(data.items, true);
+  }
+  if (!cached || Date.now() - cached.at >= RANK_TTL) loadRank('kr', 'search');
+}
+
+function renderSearchItems(items, popular = false) {
+  for (const [index, it] of items.entries()) {
+    const dup = state.watchlist.some((w) => w.symbol === it.symbol);
+    const el = document.createElement('div');
+    const market = it.market || (it.symbol.endsWith('.KQ') ? '코스닥' : '코스피');
+    el.className = 'hit' + (dup ? ' dup' : '');
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.innerHTML = `${popular ? `<span class="rk">${index + 1}</span>` : ''}<span class="hname">${esc(it.name)}</span>`
+      + `<span class="hmeta">${esc(it.symbol.split('.')[0])} · ${esc(market)}${dup ? ' · 추가됨' : ''}</span>`;
+    el.onclick = dup ? () => { closeSearch(); return select(it.symbol).catch(console.error); } : () => addSymbol(it);
+    el.onkeydown = (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); el.click(); }
+    };
+    resultsEl.appendChild(el);
+  }
 }
 
 async function runSearch() {
   const query = qEl.value.trim();
-  if (!query) { resultsEl.innerHTML = ''; hint('종목명 또는 코드를 입력하세요'); return; }
-
   const seq = ++searchSeq;
+  if (!query) { renderSearchPopular(); return; }
+
+  resultsEl.innerHTML = '';
   hint('검색 중…');
-  const r = await api.search(query);
-  if (seq !== searchSeq) return; // 늦게 도착한 이전 검색 결과는 버린다
+  let r;
+  try { r = await api.search(query); }
+  catch (error) { r = { ok: false, error: error.message }; }
+  if (seq !== searchSeq || searchEl.hidden || qEl.value.trim() !== query) return;
 
   resultsEl.innerHTML = '';
   if (!r.ok) { hint(`검색 실패: ${r.error}`); return; }
   if (!r.items.length) { hint('결과가 없습니다'); return; }
 
   hint('');
-  for (const it of r.items) {
-    const dup = state.watchlist.some((w) => w.symbol === it.symbol);
-    const el = document.createElement('div');
-    el.className = 'hit' + (dup ? ' dup' : '');
-    el.innerHTML = `<span class="hname">${esc(it.name)}</span>`
-      + `<span class="hmeta">${esc(it.symbol.split('.')[0])} · ${esc(it.market)}${dup ? ' · 추가됨' : ''}</span>`;
-    // 이미 있는 종목은 그 종목으로 간다(순위 패널과 같다). 예전에는 눌러도 반응이 없고 Enter 는 다음 결과를 넣었다
-    el.onclick = dup ? () => { closeSearch(); select(it.symbol).catch(console.error); } : () => addSymbol(it);
-    resultsEl.appendChild(el);
-  }
+  renderSearchItems(r.items);
 }
 

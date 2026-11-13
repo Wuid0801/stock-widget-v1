@@ -50,6 +50,7 @@ async function refreshNow() {
 
 // --- 시작 -----------------------------------------------------------------------
 (async function init() {
+  bindFlow();
   document.getElementById('dock').onclick = () => {
     // 패널이 열린 채로 직접 접기를 누르면 패널만 닫고, 복귀 예약은 취소한다
     if (!searchEl.hidden || !alertsEl.hidden || !rankEl.hidden) {
@@ -93,6 +94,12 @@ async function refreshNow() {
     if (b) setRankView(rankView.market, b.dataset.kind);
   };
   document.getElementById('rankList').onclick = (e) => rankClick(e.target);
+  document.getElementById('rankList').onkeydown = (event) => {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('[data-flow-key]')) {
+      event.preventDefault();
+      rankClick(event.target);
+    }
+  };
   document.getElementById('alertClose').onclick = closeAlerts;
 
   // 상세의 보유 자리 — 칸과 버튼은 renderHolding 이 그리고, 누름 · 키는 여기서 한 번만 받는다.
@@ -129,6 +136,19 @@ async function refreshNow() {
   for (const b of document.querySelectorAll('#themeSeg button')) {
     b.onclick = () => { applyTheme(b.dataset.theme); save(); };
   }
+  // 항상 위 — 고정 / 안 고정. 저장하면 main 이 창에 적용한다(state:set)
+  for (const b of document.querySelectorAll('#pinSeg button')) {
+    b.onclick = () => { state.alwaysOnTop = b.dataset.v === 'true'; save(); markSeg('pinSeg', state.alwaysOnTop); };
+  }
+  // 관심종목 묶기 — 묶음 순서로 다시 모아 그린 뒤(renderList) 그 순서를 저장한다
+  for (const b of document.querySelectorAll('#groupSeg button')) {
+    b.onclick = () => { state.listGroup = b.dataset.v; renderList(); save(); markSeg('groupSeg', state.listGroup); };
+  }
+  document.getElementById('sortBtns').onclick = (e) => {
+    const b = e.target.closest('button');
+    if (b) pickSort(b.dataset.sort, b.textContent);
+  };
+  document.getElementById('sortUndo').onclick = undoSort;
   const opEl = document.getElementById('opacity');
   opEl.oninput = () => applyOpacity(opEl.value, true); // 끄는 동안 미리보기
   opEl.onchange = () => save();                       // 손을 뗄 때만 저장
@@ -142,12 +162,21 @@ async function refreshNow() {
   // 문서의 Esc(위젯 접기)로 번지지 않게 멈춘다 — 이 처리로 패널이 먼저 닫히므로 문서 쪽의
   // "패널이 열려 있으면 무시" 검사를 지나 버린다(다크 · 라이트 버튼에 포커스가 있을 때).
   alertsEl.onkeydown = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeAlerts(); } };
-  qEl.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 300); };
+  qEl.oninput = () => {
+    clearTimeout(searchTimer);
+    searchSeq++;
+    resultsEl.innerHTML = '';
+    if (!qEl.value.trim()) { runSearch(); return; }
+    hint('검색 중…');
+    searchTimer = setTimeout(runSearch, 300);
+  };
   qEl.onkeydown = (e) => {
     if (e.key === 'Escape') closeSearch();
     if (e.key === 'Enter') {
       clearTimeout(searchTimer);
-      const first = resultsEl.querySelector('.hit'); // 이미 있는 종목이면 그 종목으로(누를 때와 같다)
+      // 첫 결과를 누른다(이미 있는 종목이면 그 종목으로). 빈 검색창의 인기 목록은 Enter 로 고르지 않는다 — ＋ 를 누르고
+      // 실수로 Enter 를 치면 인기 1위가 관심종목에 들어갔다
+      const first = qEl.value.trim() ? resultsEl.querySelector('.hit') : null;
       if (first) first.click(); else runSearch();
     }
   };
@@ -163,6 +192,11 @@ async function refreshNow() {
   // 저장값에 없거나 모르는 값이면 캔들로 시작한다
   state.chartMode = state.chartMode === 'line' ? 'line' : 'candle';
   state.plainChart = state.plainChart === true;
+  // 항상 위는 끄기로 저장된 때만 끈다. 관심종목 묶기는 아는 값만(그 밖은 묶지 않음)
+  state.alwaysOnTop = state.alwaysOnTop !== false;
+  state.listGroup = state.listGroup === 'kr' || state.listGroup === 'us' ? state.listGroup : 'none';
+  markSeg('pinSeg', state.alwaysOnTop);
+  markSeg('groupSeg', state.listGroup);
   // 정규장 / 전체 — 정규장만 보기로 저장된 때만 정규장
   state.extHours = state.extHours !== false;
   // 국내 일봉 캔들 기준 — KRX 로 저장된 때만 KRX, 그 밖은 통합(증권사 앱의 통합 캔들)
@@ -190,6 +224,11 @@ async function refreshNow() {
   };
   // 지표 화면의 동종 업종 종목
   document.getElementById('metricsView').onclick = (e) => {
+    if (e.target.closest('[data-stock-flow]')) {
+      const item = selectedItem();
+      if (item) openFlow({ kind: 'stock', symbol: item.symbol, name: item.name });
+      return;
+    }
     const p = e.target.closest('[data-peer]');
     if (p) pickPeer(p.dataset.peer, p.dataset.name).catch(console.error);
   };

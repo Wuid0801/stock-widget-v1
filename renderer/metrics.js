@@ -160,7 +160,8 @@ function metricsHtml(item, d, q) {
       .map((n) => `<tr class="sum"><td>${n}일</td>${keys.map((k) => cell(sum(n, k))).join('')}</tr>`).join('');
     const rows = d.trend.slice(0, 10).map((r) => `<tr class="day"><td>${mmdd(r.date)}</td>${keys.map((k) => cell(r[k])).join('')}</tr>`).join('');
     parts.push(sec('투자자별 순매수 <span>(주, KRX)</span>',
-      `<table class="mxt"><tr><th></th><th>외국인</th><th>기관</th><th>개인</th></tr>${sums}${rows}</table>`));
+      `<button type="button" class="mxbtn" data-stock-flow aria-label="${esc(item.name)} 투자자별 수급 차트 보기">수급 차트 보기</button>`
+      + `<table class="mxt"><tr><th></th><th>외국인</th><th>기관</th><th>개인</th></tr>${sums}${rows}</table>`));
   } else if (!kr) {
     parts.push(sec('투자자별 순매수', '<p class="mxmute">투자자별 매매동향은 국내 종목만 있습니다</p>'));
   }
@@ -293,6 +294,6 @@ async function pickPeer(code, name) {
 
 // 종목 지표를 받아 기억하고 다시 그린다(loadInto) — renderMetrics 는 늘 고른 종목을 그린다.
 function loadMetrics(symbol) {
-  return loadInto(metricsCache, metricsLoading, symbol, () => api.detail(symbol), () => renderMetrics());
+  return loadInto(metricsCache, metricsLoading, symbol, () => api.detail(symbol), () => { renderMetrics(); renderFlow(); });
 }
 

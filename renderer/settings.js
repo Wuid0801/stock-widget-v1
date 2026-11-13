@@ -192,8 +192,36 @@ function renderMaStyleRows() {
 
 // --- 목표가 알림 -------------------------------------------------------------------
 // 알림은 기본 꺼짐. 사용자가 "알림 사용"을 켜야만 실제로 알린다.
+// 설정의 묶음 버튼(.seg, 값은 data-v) — 지금 값의 버튼만 강조한다(항상 위 · 관심종목 묶기)
+function markSeg(id, value) {
+  for (const b of document.querySelectorAll(`#${id} button`)) b.classList.toggle('on', b.dataset.v === String(value));
+}
+
+// 관심종목 정렬 버튼 — 한 번 줄을 세우고(sortWatchlist) 무엇으로 세웠는지 적는다. 손으로 맞춘 순서가 사라지므로 바로 되돌릴 수
+// 있게 앞 순서를 들고 있는다 — 설정을 다시 열면 버린다(그 사이 종목이 늘거나 줄 수 있다).
+let sortBefore = null;
+function sortNote(text) {
+  document.getElementById('sortMsg').textContent = text;
+  document.getElementById('sortUndo').hidden = !sortBefore;
+}
+function pickSort(key, label) {
+  if (!Object.hasOwn(LIST_SORTS, key)) return;
+  sortBefore = sortWatchlist(key);
+  sortNote(`정렬했습니다 — ${label}`);
+}
+function undoSort() {
+  if (!sortBefore) return;
+  state.watchlist = sortBefore;
+  sortBefore = null;
+  renderList();
+  save();
+  sortNote('정렬 전 순서로 되돌렸습니다');
+}
+
 function openAlerts() {
   openPanel(alertsEl);
+  sortBefore = null;
+  sortNote('');
   renderAlerts();
   renderMaChips();
   renderIndChips(); // 지금 기간에 맞춰 흐리게

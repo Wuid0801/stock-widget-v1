@@ -17,6 +17,8 @@ const save = () => api.setState({
   indicators: state.indicators,
   extHours: state.extHours,
   candleVenue: state.candleVenue,
+  alwaysOnTop: state.alwaysOnTop,
+  listGroup: state.listGroup,
 });
 
 // 저장된 선택이 관심종목도 지수도 아니면 첫 관심종목. 관심종목이 비어 있으면 null —
@@ -190,6 +192,7 @@ function moveSelection(step) {
 }
 
 document.addEventListener('keydown', (e) => {
+  if (document.getElementById('flowDialog').open) return;
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
   // 순위 패널에는 입력 칸이 없어 Esc 를 여기서 받는다

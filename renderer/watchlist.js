@@ -98,6 +98,7 @@ async function loadEvents() {
 // 그려 몇 초 동안 여러 번, 그 뒤로도 30초 갱신마다 한 번(2026-10-29).
 function renderList() {
   const list = document.getElementById('list');
+  const grouped = groupWatchlist();
 
   if (!state.watchlist.length) {
     list.innerHTML = '<div class="empty">관심종목이 없습니다.<br>상단 ＋ 로 종목을 추가하세요.</div>';
@@ -105,9 +106,23 @@ function renderList() {
   }
 
   let rows = [...list.querySelectorAll('.row')];
-  if (rows.length !== state.watchlist.length || rows.some((r, i) => r.dataset.symbol !== state.watchlist[i].symbol)) {
+  if (rows.length !== state.watchlist.length || rows.some((r, i) => r.dataset.symbol !== state.watchlist[i].symbol)
+    || listGroupShown !== state.listGroup) {
     list.innerHTML = '';
-    rows = state.watchlist.map((item, idx) => list.appendChild(listRow(item, idx)));
+    listGroupShown = state.listGroup;
+    let market = null;
+    rows = state.watchlist.map((item, idx) => {
+      // 묶어 보기면 묶음이 바뀌는 줄 앞에 구분선(국내 · 미국)
+      const m = isDomestic(item.symbol) ? '국내' : '미국';
+      if (grouped && m !== market) {
+        market = m;
+        const head = document.createElement('div');
+        head.className = 'lgroup';
+        head.textContent = m;
+        list.appendChild(head);
+      }
+      return list.appendChild(listRow(item, idx));
+    });
   }
 
   state.watchlist.forEach((item, i) => {
@@ -130,6 +145,33 @@ function renderList() {
     chg.textContent = q && q.pct != null ? fmtPct(q.pct) : (q && q.error ? '오류' : '');
     chg.style.color = color;
   });
+}
+
+// 묶어 보기(설정 — state.listGroup 'kr' 국내 먼저 · 'us' 미국 먼저, 그 밖은 묶지 않음): 국내 · 미국 종목을 따로 모은다. 묶음 안의
+// 순서는 그대로다. 보이는 순서만이 아니라 state.watchlist 자체를 그렇게 둔다 — ↑↓ · 끌기 · 되돌리기 자리가 모두 이 순서를 쓴다.
+// renderList 가 그릴 때마다 맞추므로 새로 넣은 종목은 제 묶음 끝에 붙고, 다른 묶음으로 끌어 놓은 줄은 제 묶음으로 돌아간다.
+// 묶었는지를 돌려준다(2026-11-13 사용자 요청: 탭으로 나누지 말고 한 목록에서 국장 · 미장을 몰아 보게).
+function groupWatchlist() {
+  if (state.listGroup !== 'kr' && state.listGroup !== 'us') return false;
+  const kr = state.watchlist.filter((i) => isDomestic(i.symbol));
+  const us = state.watchlist.filter((i) => !isDomestic(i.symbol));
+  state.watchlist = state.listGroup === 'kr' ? [...kr, ...us] : [...us, ...kr];
+  return true;
+}
+
+// 한 번 정렬(설정의 정렬 버튼, LIST_SORTS) — 누른 때의 값으로 줄을 세워 그 순서를 저장한다. 그 뒤로는 값이 바뀌어도 줄이 저절로
+// 움직이지 않고(누르려던 줄이 마우스 밑에서 빠지지 않게) 끌어서 고칠 수 있다. 값이 없는 종목은 뒤로, 같은 값은 있던 순서대로
+// (sort 는 안정 정렬). 묶어 보기면 renderList 가 국내 · 미국으로 다시 모아 묶음 안에서 정렬된 꼴이 된다.
+// 정렬 전 순서를 돌려준다 — 손으로 맞춘 순서가 사라지므로 설정에서 바로 되돌릴 수 있게(undoSort).
+function sortWatchlist(key) {
+  const [value, dir] = LIST_SORTS[key];
+  const before = state.watchlist;
+  const cmp = (a, b) => (a == null || b == null ? (a == null) - (b == null)
+    : (typeof a === 'string' ? a.localeCompare(b, 'ko') : a - b) * dir);
+  state.watchlist = [...before].sort((x, y) => cmp(value(x), value(y)));
+  renderList();
+  save();
+  return before;
 }
 
 // 목록 한 줄의 틀과 동작(누르기 · 지우기 · 끌어서 순서 바꾸기). 내용은 renderList 가 채운다.
