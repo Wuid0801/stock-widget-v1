@@ -251,6 +251,7 @@ const LIST_SORTS = {
   rsiAsc: [(i) => quotes[i.symbol] && quotes[i.symbol].rsi, 1],
   held: [(i) => (state.holdings[i.symbol] ? 0 : 1), 1],
   name: [(i) => i.name, 1],
+  added: [(i) => i.addedAt, -1], // 최근 추가순 — 넣은 때(addSymbol)가 없는 예전 종목은 뒤로
 };
 let chart = null;
 let busy = false;

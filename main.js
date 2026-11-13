@@ -98,7 +98,7 @@ const storeOptions = {
     candleVenue: 'integrated', // 국내 일봉 캔들 기준 'integrated'(KRX + NXT, 증권사 앱의 통합) | 'krx'
     infoOpen: true, // 상세의 보유 · 52주 · 추세 점검 세 줄을 펴 둘지
     alwaysOnTop: true, // 항상 다른 창 위에 둘지(설정의 고정 / 안 고정)
-    listGroup: 'none', // 관심종목 묶어 보기 'none' | 'kr'(국내 먼저) | 'us'(미국 먼저)
+    listGroup: 'none', // 관심종목 묶어 보기 'none' | 'kr'(국내 먼저) | 'us'(미국 먼저) | 'sector'(업종별)
     // 보조 지표(설정의 칩). 기본은 모두 꺼짐 — 이동평균 · 추세선과 겹치면 작은 차트가 빽빽해진다.
     indicators: { bb: false, vwap: false, volAvg: false, prevHL: false, vp: false, rel: false, sar: false },
   },
@@ -280,7 +280,8 @@ function cleanBackup(raw) {
   if (Array.isArray(s.watchlist)) {
     const seen = new Set();
     out.watchlist = s.watchlist.filter((i) => isPlain(i) && SYMBOL_RE.test(String(i.symbol ?? '')) && typeof i.name === 'string'
-      && !seen.has(i.symbol) && seen.add(i.symbol)).slice(0, 200).map((i) => ({ symbol: i.symbol, name: i.name.slice(0, 100) }));
+      && !seen.has(i.symbol) && seen.add(i.symbol)).slice(0, 200).map((i) => ({ symbol: i.symbol, name: i.name.slice(0, 100),
+        ...(Number.isFinite(i.addedAt) && i.addedAt > 0 ? { addedAt: i.addedAt } : {}) })); // addedAt — 넣은 때(정렬 '최근 추가순')
   }
   if (s.selected === null || (typeof s.selected === 'string' && SYMBOL_RE.test(s.selected))) out.selected = s.selected;
   if (typeof s.timeframe === 'string' && s.timeframe.length <= 10) out.timeframe = s.timeframe;
@@ -308,7 +309,7 @@ function cleanBackup(raw) {
   if (s.chartMode === 'candle' || s.chartMode === 'line') out.chartMode = s.chartMode;
   if (s.candleVenue === 'integrated' || s.candleVenue === 'krx') out.candleVenue = s.candleVenue;
   for (const k of ['plainChart', 'infoOpen', 'extHours', 'alwaysOnTop']) if (typeof s[k] === 'boolean') out[k] = s[k];
-  if (['none', 'kr', 'us'].includes(s.listGroup)) out.listGroup = s.listGroup;
+  if (['none', 'kr', 'us', 'sector'].includes(s.listGroup)) out.listGroup = s.listGroup;
   if (isPlain(s.indicators)) out.indicators = Object.fromEntries(Object.entries(s.indicators).filter(([, v]) => typeof v === 'boolean'));
   return Object.keys(out).length ? out : null;
 }

@@ -98,7 +98,10 @@ async function loadEvents() {
 // 그려 몇 초 동안 여러 번, 그 뒤로도 30초 갱신마다 한 번(2026-10-29).
 function renderList() {
   const list = document.getElementById('list');
-  const grouped = groupWatchlist();
+  const shown = shownList(); // 보이는 순서 — 묶어 보기면 묶음(국내 · 미국 또는 업종)끼리 모은 것
+  const grouped = shown !== state.watchlist;
+  // 묶기와 줄마다의 묶음 이름 — 업종은 늦게 받아 순서가 같아도 이름이 바뀔 수 있다(그때도 구분선을 다시 만든다)
+  const groupSig = `${state.listGroup}:${grouped ? shown.map(listGroupOf).join('|') : ''}`;
 
   if (!state.watchlist.length) {
     list.innerHTML = '<div class="empty">관심종목이 없습니다.<br>상단 ＋ 로 종목을 추가하세요.</div>';
@@ -106,14 +109,14 @@ function renderList() {
   }
 
   let rows = [...list.querySelectorAll('.row')];
-  if (rows.length !== state.watchlist.length || rows.some((r, i) => r.dataset.symbol !== state.watchlist[i].symbol)
-    || listGroupShown !== state.listGroup) {
+  if (rows.length !== shown.length || rows.some((r, i) => r.dataset.symbol !== shown[i].symbol)
+    || listGroupShown !== groupSig) {
     list.innerHTML = '';
-    listGroupShown = state.listGroup;
+    listGroupShown = groupSig;
     let market = null;
-    rows = state.watchlist.map((item, idx) => {
-      // 묶어 보기면 묶음이 바뀌는 줄 앞에 구분선(국내 · 미국)
-      const m = isDomestic(item.symbol) ? '국내' : '미국';
+    rows = shown.map((item, idx) => {
+      // 묶어 보기면 묶음이 바뀌는 줄 앞에 구분선(국내 · 미국 또는 업종 이름)
+      const m = listGroupOf(item);
       if (grouped && m !== market) {
         market = m;
         const head = document.createElement('div');
@@ -125,7 +128,7 @@ function renderList() {
     });
   }
 
-  state.watchlist.forEach((item, i) => {
+  shown.forEach((item, i) => {
     const row = rows[i];
     const q = quotes[item.symbol];
     const lv = levelOf(q && q.rsi);
@@ -147,21 +150,30 @@ function renderList() {
   });
 }
 
-// 묶어 보기(설정 — state.listGroup 'kr' 국내 먼저 · 'us' 미국 먼저, 그 밖은 묶지 않음): 국내 · 미국 종목을 따로 모은다. 묶음 안의
-// 순서는 그대로다. 보이는 순서만이 아니라 state.watchlist 자체를 그렇게 둔다 — ↑↓ · 끌기 · 되돌리기 자리가 모두 이 순서를 쓴다.
-// renderList 가 그릴 때마다 맞추므로 새로 넣은 종목은 제 묶음 끝에 붙고, 다른 묶음으로 끌어 놓은 줄은 제 묶음으로 돌아간다.
-// 묶었는지를 돌려준다(2026-11-13 사용자 요청: 탭으로 나누지 말고 한 목록에서 국장 · 미장을 몰아 보게).
-function groupWatchlist() {
-  if (state.listGroup !== 'kr' && state.listGroup !== 'us') return false;
-  const kr = state.watchlist.filter((i) => isDomestic(i.symbol));
-  const us = state.watchlist.filter((i) => !isDomestic(i.symbol));
-  state.watchlist = state.listGroup === 'kr' ? [...kr, ...us] : [...us, ...kr];
-  return true;
+// 줄이 드는 묶음의 이름(구분선 글자) — 묶어 보기(state.listGroup)가 'kr' · 'us' 면 국내 / 미국, 'sector' 면 업종(sectors — 아직
+// 못 받았거나 업종이 없는 ETF 는 '기타').
+function listGroupOf(item) {
+  if (state.listGroup === 'sector') return sectors.get(item.symbol) || '기타';
+  return isDomestic(item.symbol) ? '국내' : '미국';
+}
+
+// 목록에 보이는 순서. 묶어 보기(설정 — state.listGroup 'kr' 국내 먼저 · 'us' 미국 먼저 · 'sector' 업종별, 그 밖은 묶지 않음)면
+// 같은 묶음끼리 모은다 — 묶음 안의 순서는 그대로다(2026-11-13 사용자 요청: 탭으로 나누지 말고 한 목록에서 국장 · 미장을 몰아 보게).
+// 업종별은 묶음을 목록에 처음 나온 순서로 놓고 '기타' 를 맨 뒤에 둔다.
+// **보이는 순서만 바꾼다** — 사용자가 맞춘 순서(state.watchlist, 저장되는 것)는 그대로라 안 묶음으로 돌리면 원래대로 돌아간다.
+// 처음에는 state.watchlist 자체를 묶은 순서로 바꿔 두었는데, 묶기를 풀어도 섞여 있던 원래 순서가 돌아오지 않았다(사용자 지적).
+// 묶지 않으면 state.watchlist 를 그대로 돌려준다(같은 배열 — renderList 가 그것으로 묶었는지를 안다).
+function shownList() {
+  const list = state.watchlist;
+  if (!['kr', 'us', 'sector'].includes(state.listGroup)) return list;
+  const order = state.listGroup === 'kr' ? ['국내', '미국'] : state.listGroup === 'us' ? ['미국', '국내']
+    : [...new Set(list.map(listGroupOf).filter((n) => n !== '기타')), '기타'];
+  return order.flatMap((name) => list.filter((i) => listGroupOf(i) === name));
 }
 
 // 한 번 정렬(설정의 정렬 버튼, LIST_SORTS) — 누른 때의 값으로 줄을 세워 그 순서를 저장한다. 그 뒤로는 값이 바뀌어도 줄이 저절로
 // 움직이지 않고(누르려던 줄이 마우스 밑에서 빠지지 않게) 끌어서 고칠 수 있다. 값이 없는 종목은 뒤로, 같은 값은 있던 순서대로
-// (sort 는 안정 정렬). 묶어 보기면 renderList 가 국내 · 미국으로 다시 모아 묶음 안에서 정렬된 꼴이 된다.
+// (sort 는 안정 정렬). 묶어 보기면 보이는 순서(shownList)가 국내 · 미국으로 모아 묶음 안에서 정렬된 꼴이 된다.
 // 정렬 전 순서를 돌려준다 — 손으로 맞춘 순서가 사라지므로 설정에서 바로 되돌릴 수 있게(undoSort).
 function sortWatchlist(key) {
   const [value, dir] = LIST_SORTS[key];
@@ -215,11 +227,17 @@ function listRow(item, idx) {
   return row;
 }
 
-// 드래그로 관심종목 순서 변경
+// 드래그로 관심종목 순서 변경. from · to 는 보이는 순서(shownList)의 자리다 — 묶어 보기면 저장된 순서(state.watchlist)와 다르다.
+// 옮긴 줄을 놓은 줄의 뒤(아래로 끌 때) · 앞(위로 끌 때)에 둔다 — 묶지 않았을 때는 예전처럼 그 자리에 끼우는 것과 같다.
 function moveSymbol(from, to) {
   if (from === null || to === null || from === to) return;
-  const [moved] = state.watchlist.splice(from, 1);
-  state.watchlist.splice(to, 0, moved);
+  const shown = shownList();
+  const moved = shown[from];
+  const target = shown[to];
+  if (!moved || !target) return;
+  const list = state.watchlist.filter((i) => i !== moved);
+  list.splice(list.indexOf(target) + (from < to ? 1 : 0), 0, moved);
+  state.watchlist = list;
   save();
   renderList();
 }

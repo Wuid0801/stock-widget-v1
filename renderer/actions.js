@@ -164,7 +164,8 @@ async function addSymbol(item) {
 
     // 조회를 기다리는 사이 되돌리기로 같은 종목이 이미 돌아왔으면 또 넣지 않는다
     if (!state.watchlist.some((i) => i.symbol === item.symbol)) {
-      state.watchlist.push({ symbol: item.symbol, name: item.name });
+      // addedAt — 넣은 때. 설정의 정렬 '최근 추가순'(LIST_SORTS)이 쓴다. 이 값이 없는 예전 종목은 그 정렬에서 뒤로 간다
+      state.watchlist.push({ symbol: item.symbol, name: item.name, addedAt: Date.now() });
     }
     save();
     closeSearch();
@@ -179,7 +180,7 @@ async function addSymbol(item) {
 // 항상 떠 있는 작은 창이라 매번 행을 마우스로 조준하는 게 번거롭다.
 // 입력 중이거나 패널(검색·설정)이 열려 있으면 그쪽이 우선이라 아무것도 하지 않는다.
 function moveSelection(step) {
-  const list = state.watchlist;
+  const list = shownList(); // 보이는 순서 — 묶어 보기면 저장된 순서와 다르다
   if (!list.length) return;
 
   const cur = list.findIndex((i) => i.symbol === state.selected);

@@ -142,7 +142,13 @@ async function refreshNow() {
   }
   // 관심종목 묶기 — 묶음 순서로 다시 모아 그린 뒤(renderList) 그 순서를 저장한다
   for (const b of document.querySelectorAll('#groupSeg button')) {
-    b.onclick = () => { state.listGroup = b.dataset.v; renderList(); save(); markSeg('groupSeg', state.listGroup); };
+    b.onclick = () => {
+      state.listGroup = b.dataset.v;
+      renderList();
+      save();
+      markSeg('groupSeg', state.listGroup);
+      if (state.listGroup === 'sector') loadSectors().catch(console.error); // 아직 없는 업종을 받아 다시 묶는다
+    };
   }
   document.getElementById('sortBtns').onclick = (e) => {
     const b = e.target.closest('button');
@@ -194,7 +200,7 @@ async function refreshNow() {
   state.plainChart = state.plainChart === true;
   // 항상 위는 끄기로 저장된 때만 끈다. 관심종목 묶기는 아는 값만(그 밖은 묶지 않음)
   state.alwaysOnTop = state.alwaysOnTop !== false;
-  state.listGroup = state.listGroup === 'kr' || state.listGroup === 'us' ? state.listGroup : 'none';
+  state.listGroup = ['kr', 'us', 'sector'].includes(state.listGroup) ? state.listGroup : 'none';
   markSeg('pinSeg', state.alwaysOnTop);
   markSeg('groupSeg', state.listGroup);
   // 정규장 / 전체 — 정규장만 보기로 저장된 때만 정규장
@@ -252,6 +258,7 @@ async function refreshNow() {
   // 실행(캐시가 빈) 때는 차트 자리가 한참 비어 있었다 — 불러오는 중도 그때서야 떴다(2026-11-03). 현재가가 아직 없으면
   // 그 없이 그리고, 갱신 끝의 loadChart 가 현재가 · 전일 기준선을 넣어 다시 그린다(서명이 달라진다).
   loadChart().catch(console.error);
+  if (state.listGroup === 'sector') loadSectors().catch(console.error); // 업종별로 묶어 보기 — 관심종목의 업종을 받아 묶는다
 
   // 장 마감 후에는 값이 바뀌지 않으므로 폴링 간격을 늘린다 (밤새 켜둬도 요청이 거의 없음).
   // 완전히 멈추면 개장을 감지하지 못하므로 5분마다 한 번은 확인한다.

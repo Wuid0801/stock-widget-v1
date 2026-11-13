@@ -18,10 +18,26 @@ async function sectorFor(symbol) {
   return name;
 }
 
+// 업종별로 묶어 보려면(설정의 묶기 '업종별', shownList) 관심종목 모두의 업종이 있어야 한다 — 평소에는 고른 종목 것만 받는다.
+// 아직 없는 것만 차례로 받고(한꺼번에 몰아 묻지 않게) 다 받으면 목록을 다시 그린다. 그동안은 '기타' 묶음에 있다.
+// 실패는 기억하지 않아(sectorFor) 다음에 업종별을 누르거나 앱을 켤 때 다시 묻는다.
+let sectorsLoading = false;
+async function loadSectors() {
+  if (sectorsLoading) return;
+  sectorsLoading = true;
+  try {
+    for (const i of state.watchlist.filter((x) => !sectors.has(x.symbol))) await sectorFor(i.symbol).catch(() => null);
+  } finally {
+    sectorsLoading = false;
+  }
+  renderList();
+}
+
 // 종목명 옆 회색 업종. 조회가 늦게 와도 그 사이 다른 종목을 고르면 버린다.
 async function loadSector(item) {
   const el = document.getElementById('dsector');
   const name = await sectorFor(item.symbol);
+  if (state.listGroup === 'sector') renderList(); // 업종별로 묶어 보는 중이면 새로 안 업종의 묶음으로(새로 넣은 종목)
   if (state.selected !== item.symbol) return;
   el.textContent = name || '';
 }

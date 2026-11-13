@@ -73,8 +73,8 @@ const KEYS = ['watchlist', 'selected', 'timeframe', 'alerts', 'holdings', 'theme
 const file = (name, body) => { const f = path.join(dir, name); fs.writeFileSync(f, typeof body === 'string' ? body : JSON.stringify(body)); return f; };
 {
   const incoming = { app: 'stock-widget', version: 1, state: {
-    watchlist: [{ symbol: '000660.KS', name: 'SK하이닉스' }, { symbol: '../bad', name: 'x' }, { symbol: 'NVDA', name: '엔비디아' },
-      { symbol: 'NVDA', name: '두 번' }, { name: '기호 없음' }, { symbol: 'TSLA', name: '테슬라' }],
+    watchlist: [{ symbol: '000660.KS', name: 'SK하이닉스' }, { symbol: '../bad', name: 'x' }, { symbol: 'NVDA', name: '엔비디아', addedAt: 1760000000000, extra: 1 },
+      { symbol: 'NVDA', name: '두 번' }, { name: '기호 없음' }, { symbol: 'TSLA', name: '테슬라', addedAt: '어제' }],
     holdings: { '000660.KS': { qty: 2, avg: 1600000 }, NVDA: { qty: 0, avg: 100 }, AAPL: { qty: '5', avg: 1 } },
     alerts: { enabled: 'yes', targets: { '000660.KS': { up: 1800000, down: -5 }, BAD$: { up: 1 } } },
     theme: 'purple', opacity: 74, chartMode: 'line', plainChart: true, indicators: { bb: true, vp: 'no' }, extHours: false, candleVenue: 'krx',
@@ -95,7 +95,8 @@ const file = (name, body) => { const f = path.join(dir, name); fs.writeFileSync(
   check('직전 설정은 같은 폴더에 따로 저장', path.dirname(r.before) === dir && /stock-widget-before-import-\d{4}-\d{2}-\d{2}-\d{6}\.json$/.test(r.before)
     && same(JSON.parse(fs.readFileSync(r.before, 'utf8')).state.holdings, before.holdings), r.before);
   check('모양이 틀린 줄은 버린다(잘못된 기호 · 겹친 기호 · 기호 없음)',
-    same(data.watchlist, [{ symbol: '000660.KS', name: 'SK하이닉스' }, { symbol: 'NVDA', name: '엔비디아' }, { symbol: 'TSLA', name: '테슬라' }]),
+    same(data.watchlist, [{ symbol: '000660.KS', name: 'SK하이닉스' }, { symbol: 'NVDA', name: '엔비디아', addedAt: 1760000000000 },
+      { symbol: 'TSLA', name: '테슬라' }]), // 넣은 때(addedAt, 정렬 '최근 추가순')는 숫자일 때만 살리고 모르는 칸은 버린다
     JSON.stringify(data.watchlist));
   check('보유 — 수량 · 평단가가 0보다 큰 수만', same(data.holdings, { '000660.KS': { qty: 2, avg: 1600000 } }), JSON.stringify(data.holdings));
   check('목표가 — 0보다 큰 값 · 맞는 기호만, 켬은 true 일 때만', same(data.alerts, { enabled: false, targets: { '000660.KS': { up: 1800000 } } }),
@@ -111,6 +112,7 @@ const file = (name, body) => { const f = path.join(dir, name); fs.writeFileSync(
   nextOpen = { canceled: false, filePaths: [file('odd.json', { state: { opacity: 5, selected: '../x', timeframe: { a: 1 },
     maPeriods: [5, -1, 2.5, 'x', 1001, 20], infoOpen: 'yes', plainChart: 1, extHours: 'no', candleVenue: 'nxt',
     alwaysOnTop: 'no', listGroup: 'jp' } })] };
+  // (listGroup 은 none · kr · us · sector 만 — 위 'us' 는 받고 'jp' 는 버린다)
   nextAnswer = 0;
   sets.length = 0;
   const r = await handlers['backup:import']({});

@@ -4210,7 +4210,7 @@ await test('loadChart draws the selected index from its Yahoo symbol in points',
 });
 
 await test('arrow keys from an index go to the first (↓) or last (↑) watchlist row', () => {
-  const { c, run } = harness(['moveSelection']);
+  const { c, run } = harness(['moveSelection', 'shownList', 'listGroupOf']);
   const picked = [];
   c.select = (s) => { picked.push(s); return Promise.resolve(); };
   run('document.querySelector = () => null;');
@@ -5093,8 +5093,9 @@ await test('events: list chip counts days by the Korean date, shows the nearest 
 // 관심종목 목록: 줄은 종목 · 순서가 바뀔 때만 새로 만들고, 시세 · 일정 · 선택이 바뀌면 있는 줄의 내용만 고친다. 줄을 통째로
 // 새로 만들면 마우스를 올려 둔 줄의 hover(배경 · ✕)가 꺼졌다 켜지며 깜빡였다 — 시작할 때 종목 수만큼, 그 뒤로도 30초마다.
 await test('watchlist: rows are rebuilt only when the stocks or their order change; quotes update the rows in place', () => {
-  const { c, run, elements } = harness(['renderList', 'listRow', 'groupWatchlist']);
+  const { c, run, elements } = harness(['renderList', 'listRow', 'shownList', 'listGroupOf']);
   run(formatting);
+  run('var sectors = new Map();'); // 업종(renderer/detail.js) — 업종별로 묶을 때 읽는다
   const node = () => {
     const parts = {};
     const cls = new Set();
@@ -5167,47 +5168,114 @@ await test('watchlist: rows are rebuilt only when the stocks or their order chan
   run(`state.watchlist = [{ symbol: '005930.KS', name: '삼성전자' }]; renderList();`);
   assert.deepEqual(list.kids.map((r) => r.dataset.symbol), ['005930.KS'], '빈 안내 뒤에도 줄을 만든다');
 
-  // 묶어 보기(설정 — 탭 없이 한 목록에서 국장 · 미장을 몰아 본다, 2026-11-13 사용자 요청): 국내 · 미국으로 모으고 묶음마다 구분선.
-  // 줄 순서(state.watchlist)도 그렇게 바뀐다 — ↑↓ · 끌기 · 되돌리기 자리가 그 순서를 쓴다. 묶음 안의 순서는 그대로
+  // 묶어 보기(설정 — 탭 없이 한 목록에서 국장 · 미장을 몰아 본다, 2026-11-13 사용자 요청): 같은 묶음끼리 모으고 묶음마다 구분선.
+  // **보이는 순서만** 바꾼다 — 저장되는 순서(state.watchlist)는 그대로라 안 묶음으로 돌리면 원래대로 돌아간다. 처음에는 저장되는
+  // 순서까지 바꿔, 묶기를 풀어도 섞여 있던 순서가 돌아오지 않았다(사용자 지적). 묶음 안의 순서는 그대로
   const shape = () => list.kids.map((k) => (k.classList.contains('row') ? k.dataset.symbol : `[${k.textContent}]`));
   const order = () => run("state.watchlist.map((i) => i.symbol).join()");
   run(`state.watchlist = [{ symbol: 'AAPL', name: '애플' }, { symbol: '005930.KS', name: '삼성전자' }, { symbol: 'NVDA', name: '엔비디아' },
     { symbol: '035720.KQ', name: '카카오' }]; state.listGroup = 'kr'; renderList();`);
   assert.deepEqual(shape(), ['[국내]', '005930.KS', '035720.KQ', '[미국]', 'AAPL', 'NVDA']);
-  assert.equal(order(), '005930.KS,035720.KQ,AAPL,NVDA', '저장되는 순서도 묶인 순서');
+  assert.equal(order(), 'AAPL,005930.KS,NVDA,035720.KQ', '저장되는 순서는 그대로');
   assert.ok(list.kids[0].classList.contains('lgroup'));
   const kept = [...list.kids];
   run('renderList();');
   assert.ok(list.kids.every((k, i) => k === kept[i]), '그대로면 다시 만들지 않는다');
-  // 새로 넣은 종목은 제 묶음 끝에, 다른 묶음으로 끌어 놓은 줄은 제 묶음으로 돌아간다
-  run(`state.watchlist.push({ symbol: '000660.KS', name: 'SK하이닉스' }); state.watchlist.unshift(state.watchlist.pop()); renderList();`);
-  assert.equal(order(), '000660.KS,005930.KS,035720.KQ,AAPL,NVDA');
-  run("state.watchlist.splice(4, 0, state.watchlist.shift()); renderList();"); // 국내 줄을 미국 줄 사이로
-  assert.equal(order(), '005930.KS,035720.KQ,000660.KS,AAPL,NVDA', '제 묶음 끝으로');
+  // 새로 넣은 종목은 제 묶음 끝에 보인다
+  run(`state.watchlist.push({ symbol: '000660.KS', name: 'SK하이닉스' }); renderList();`);
+  assert.deepEqual(shape(), ['[국내]', '005930.KS', '035720.KQ', '000660.KS', '[미국]', 'AAPL', 'NVDA']);
   run("state.listGroup = 'us'; renderList();");
   assert.deepEqual(shape(), ['[미국]', 'AAPL', 'NVDA', '[국내]', '005930.KS', '035720.KQ', '000660.KS']);
   run("state.listGroup = 'none'; renderList();");
-  assert.deepEqual(shape(), ['AAPL', 'NVDA', '005930.KS', '035720.KQ', '000660.KS'], '묶기를 풀면 구분선만 빠진다(순서는 그대로)');
+  assert.deepEqual(shape(), ['AAPL', '005930.KS', 'NVDA', '035720.KQ', '000660.KS'], '묶기를 풀면 원래 순서로 돌아간다');
   run("state.listGroup = 'kr'; state.watchlist = [{ symbol: 'AAPL', name: '애플' }]; renderList();");
   assert.deepEqual(shape(), ['[미국]', 'AAPL'], '한쪽만 있으면 그 구분선만');
+
+  // 업종별 — 같은 업종끼리. 묶음은 목록에 처음 나온 순서, 업종이 없으면(ETF · 아직 못 받음) 기타로 맨 뒤
+  run(`sectors.set('005930.KS', '반도체'); sectors.set('000660.KS', '반도체'); sectors.set('005380.KS', '자동차'); sectors.set('069500.KS', null);
+    state.watchlist = [{ symbol: '069500.KS', name: 'KODEX 200' }, { symbol: '005380.KS', name: '현대차' }, { symbol: '005930.KS', name: '삼성전자' },
+      { symbol: 'NVDA', name: '엔비디아' }, { symbol: '000660.KS', name: 'SK하이닉스' }];
+    state.listGroup = 'sector'; renderList();`);
+  assert.deepEqual(shape(), ['[자동차]', '005380.KS', '[반도체]', '005930.KS', '000660.KS', '[기타]', '069500.KS', 'NVDA']);
+  assert.equal(order(), '069500.KS,005380.KS,005930.KS,NVDA,000660.KS', '저장되는 순서는 그대로');
+  // 업종을 늦게 받으면 줄 순서가 같아도 구분선을 다시 만든다
+  run("state.watchlist = [{ symbol: 'NVDA', name: '엔비디아' }]; renderList();");
+  assert.deepEqual(shape(), ['[기타]', 'NVDA']);
+  run("sectors.set('NVDA', '반도체 및 반도체 장비'); renderList();");
+  assert.deepEqual(shape(), ['[반도체 및 반도체 장비]', 'NVDA']);
+});
+
+// 끌어서 옮기기 — 자리는 보이는 순서(shownList)의 것이다. 묶어 보기면 저장된 순서와 달라, 옮긴 줄을 놓은 줄의 앞 · 뒤에 둔다
+await test('watchlist: dragging puts the row next to the row it was dropped on, in the grouped view too; arrow keys follow the shown order', () => {
+  const { c, run } = harness(['moveSymbol', 'moveSelection', 'shownList', 'listGroupOf']);
+  const log = [];
+  Object.assign(c, { save: () => log.push('save'), renderList: () => log.push('list') });
+  const order = () => run("state.watchlist.map((i) => i.symbol).join(' ')");
+  const shown = () => run("shownList().map((i) => i.symbol).join(' ')");
+  run("state.listGroup = 'none'; state.watchlist = ['A', 'B', 'C', 'D'].map((s) => ({ symbol: s, name: s }));");
+  c.moveSymbol(0, 2);
+  assert.equal(order(), 'B C A D', '아래로 끌면 놓은 줄 뒤');
+  c.moveSymbol(3, 1);
+  assert.equal(order(), 'B D C A', '위로 끌면 놓은 줄 앞');
+  assert.deepEqual(log, ['save', 'list', 'save', 'list']);
+  c.moveSymbol(1, 1);
+  c.moveSymbol(null, 2);
+  c.moveSymbol(0, 9);
+  assert.equal(order(), 'B D C A', '같은 자리 · 없는 자리면 그대로');
+  // 묶어 보기: 저장된 순서 [애플 삼성전자 엔비디아 SK하이닉스], 보이는 순서 [삼성전자 SK하이닉스 | 애플 엔비디아]
+  run(`state.listGroup = 'kr'; state.watchlist = [{ symbol: 'AAPL', name: 'a' }, { symbol: '005930.KS', name: 'b' }, { symbol: 'NVDA', name: 'c' },
+    { symbol: '000660.KS', name: 'd' }];`);
+  assert.equal(shown(), '005930.KS 000660.KS AAPL NVDA');
+  c.moveSymbol(1, 0); // SK하이닉스를 삼성전자 위로
+  assert.equal(shown(), '000660.KS 005930.KS AAPL NVDA');
+  assert.equal(order(), 'AAPL 000660.KS 005930.KS NVDA', '저장된 순서에서도 그 줄 앞으로');
+  c.moveSymbol(2, 3); // 애플을 엔비디아 아래로
+  assert.equal(shown(), '000660.KS 005930.KS NVDA AAPL');
+  // ↑↓ 도 보이는 순서로 — 국내 마지막 줄에서 ↓ 는 미국 첫 줄
+  const picked = [];
+  c.select = (s) => { picked.push(s); return Promise.resolve(); };
+  run("document.querySelector = () => null; state.selected = '005930.KS';");
+  c.moveSelection(1);
+  c.moveSelection(-1);
+  assert.deepEqual(picked, ['NVDA', '000660.KS']);
+  run("state.listGroup = 'none';");
+  assert.equal(shown(), order(), '안 묶음이면 저장된 순서 그대로');
+});
+
+// 업종별로 묶으려면 관심종목 모두의 업종이 있어야 한다 — 평소에는 고른 종목 것만 받는다. 없는 것만 차례로 받고 다 받으면 다시 그린다
+await test('sector grouping: missing sectors are fetched one at a time and the list is redrawn once; a failed one does not stop the rest', async () => {
+  const { c, run } = harness(['loadSectors']);
+  run('var sectors = new Map(); var sectorsLoading = false;');
+  const asked = [];
+  let draws = 0;
+  Object.assign(c, { renderList: () => { draws++; },
+    sectorFor: async (s) => { asked.push(s); if (s === '000660.KS') throw new Error('HTTP 500'); run(`sectors.set('${s}', '업종')`); } });
+  run("sectors.set('005930.KS', '반도체'); state.watchlist.push({ symbol: 'AAPL', name: '애플' });"); // 하네스 목록: 삼성전자 · SK하이닉스
+  await Promise.all([c.loadSectors(), c.loadSectors()]);
+  assert.deepEqual(asked, ['000660.KS', 'AAPL'], '없는 것만 — 겹쳐 불러도 한 번씩');
+  assert.equal(draws, 1, '다 받은 뒤 한 번 다시 그린다');
+  assert.equal(run('sectorsLoading'), false);
+  // 새로 넣은 종목은 고르는 순간 업종을 받는다(loadSector) — 업종별로 보는 중이면 그 묶음으로 다시 그린다
+  assert.match(realFunction('loadSector'), /const name = await sectorFor\(item\.symbol\);\s*if \(state\.listGroup === 'sector'\) renderList\(\);/);
+  assert.match(source, /if \(state\.listGroup === 'sector'\) loadSectors\(\)\.catch\(console\.error\); \/\/ 업종별로 묶어 보기/, '시작할 때도');
 });
 
 // 한 번 정렬(설정의 정렬 버튼) — 누른 때의 값으로 줄을 세워 저장한다. 그 뒤로는 값이 바뀌어도 저절로 움직이지 않는다(누르려던
 // 줄이 마우스 밑에서 빠지지 않게). 손으로 맞춘 순서가 사라지므로 설정에서 바로 되돌릴 수 있다(2026-11-13 사용자 요청)
 await test('watchlist: one-shot sort orders the rows once — missing values last, ties keep their order, groups stay together; it can be undone', () => {
-  const { c, run, elements } = harness(['sortWatchlist', 'groupWatchlist', 'pickSort', 'undoSort', 'sortNote', 'markSeg']);
+  const { c, run, elements } = harness(['sortWatchlist', 'shownList', 'listGroupOf', 'pickSort', 'undoSort', 'sortNote', 'markSeg']);
   run('var sortBefore = null;');
   const log = [];
-  Object.assign(c, { save: () => log.push('save'), renderList: () => { run('groupWatchlist()'); log.push('list'); } });
+  Object.assign(c, { save: () => log.push('save'), renderList: () => { log.push('list'); } });
   const order = () => run("state.watchlist.map((i) => i.symbol).join(' ')");
   run(`state.listGroup = 'none';
-    state.watchlist = [{ symbol: 'A', name: '다' }, { symbol: 'B', name: '가' }, { symbol: 'C', name: '나' }, { symbol: 'D', name: '라' }];
+    state.watchlist = [{ symbol: 'A', name: '다' }, { symbol: 'B', name: '가', addedAt: 2 }, { symbol: 'C', name: '나' }, { symbol: 'D', name: '라', addedAt: 5 }];
     state.holdings = { C: { qty: 1, avg: 1 } };
     for (const k of Object.keys(quotes)) delete quotes[k];
     quotes.A = { pct: 1.5, rsi: 60 }; quotes.B = { pct: -2, rsi: 30 }; quotes.C = { pct: 1.5, rsi: 45 }; quotes.D = { error: 'HTTP 429' };`);
   const before = c.sortWatchlist('pctDesc');
   assert.equal(order(), 'A C B D', '높은 순 — 같은 값(A · C)은 있던 순서, 값이 없는 D 는 뒤');
-  assert.deepEqual(log.splice(0), ['list', 'save'], '다시 그리고(묶기 반영) 저장');
+  assert.deepEqual(log.splice(0), ['list', 'save'], '다시 그리고 저장');
   assert.equal(before.map((i) => i.symbol).join(' '), 'A B C D', '정렬 전 순서를 돌려준다');
   c.sortWatchlist('pctAsc');
   assert.equal(order(), 'B A C D', '낮은 순에서도 값이 없는 종목은 뒤');
@@ -5217,14 +5285,18 @@ await test('watchlist: one-shot sort orders the rows once — missing values las
   assert.equal(order(), 'C B A D', '보유 먼저 — 나머지는 있던 순서');
   c.sortWatchlist('name');
   assert.equal(order(), 'B C A D', '이름순(가 · 나 · 다 · 라)');
+  c.sortWatchlist('added');
+  assert.equal(order(), 'D B C A', '최근 추가순 — 넣은 때(addedAt)가 늦은 것부터, 그 값이 없는 예전 종목은 뒤(있던 순서)');
+  assert.match(source, /state\.watchlist\.push\(\{ symbol: item\.symbol, name: item\.name, addedAt: Date\.now\(\) \}\);/, '넣을 때 그때를 적는다(addSymbol)');
 
-  // 묶어 보기면 국내 · 미국 묶음 안에서 정렬된 꼴이 된다
+  // 묶어 보기면 보이는 순서가 국내 · 미국 묶음 안에서 정렬된 꼴이 된다 — 저장되는 순서는 정렬한 그대로
   run(`state.listGroup = 'kr';
     state.watchlist = [{ symbol: 'AAPL', name: '애플' }, { symbol: '005930.KS', name: '삼성전자' }, { symbol: 'NVDA', name: '엔비디아' },
       { symbol: '000660.KS', name: 'SK하이닉스' }];
     quotes.AAPL = { pct: 1 }; quotes['005930.KS'] = { pct: -1 }; quotes.NVDA = { pct: 5 }; quotes['000660.KS'] = { pct: 3 };`);
   c.sortWatchlist('pctDesc');
-  assert.equal(order(), '000660.KS 005930.KS NVDA AAPL');
+  assert.equal(order(), 'NVDA 000660.KS AAPL 005930.KS');
+  assert.equal(run("shownList().map((i) => i.symbol).join(' ')"), '000660.KS 005930.KS NVDA AAPL');
 
   // 설정의 버튼 — 무엇으로 세웠는지 적고 되돌리기를 보인다
   run("state.listGroup = 'none';");
@@ -5235,14 +5307,14 @@ await test('watchlist: one-shot sort orders the rows once — missing values las
   assert.equal(elements.get('sortUndo').hidden, false);
   const sorted = order();
   c.undoSort();
-  assert.equal(order(), '000660.KS 005930.KS NVDA AAPL', '정렬 전 순서로');
+  assert.equal(order(), 'NVDA 000660.KS AAPL 005930.KS', '정렬 전 순서로');
   assert.notEqual(order(), sorted);
   assert.equal(elements.get('sortMsg').textContent, '정렬 전 순서로 되돌렸습니다');
   assert.equal(elements.get('sortUndo').hidden, true, '한 번만 되돌린다');
   assert.deepEqual(log, ['list', 'save', 'list', 'save']);
   c.undoSort();
   c.pickSort('bogus', '모르는 정렬');
-  assert.equal(order(), '000660.KS 005930.KS NVDA AAPL', '되돌릴 것이 없거나 모르는 정렬이면 그대로');
+  assert.equal(order(), 'NVDA 000660.KS AAPL 005930.KS', '되돌릴 것이 없거나 모르는 정렬이면 그대로');
 
   // 설정의 묶음 버튼(항상 위 · 관심종목 묶기) — 지금 값의 버튼만 강조
   const btn = (v) => { const b = { dataset: { v }, on: false }; b.classList = { toggle: (_k, on) => { b.on = on; } }; return b; };
@@ -5254,8 +5326,9 @@ await test('watchlist: one-shot sort orders the rows once — missing values las
   assert.deepEqual(btns['#pinSeg button'].map((b) => b.on), [false, true], '참 · 거짓 값도 글자로 견준다');
   // 누르면 값을 바꿔 저장한다 — 항상 위는 main 이 저장을 받으며 창에 적용한다(state:set → applyOnTop)
   assert.match(source, /state\.alwaysOnTop = b\.dataset\.v === 'true'; save\(\); markSeg\('pinSeg', state\.alwaysOnTop\);/);
-  assert.match(source, /state\.listGroup = b\.dataset\.v; renderList\(\); save\(\); markSeg\('groupSeg', state\.listGroup\);/, '묶은 순서로 그린 뒤 그 순서를 저장');
-  assert.match(source, /state\.alwaysOnTop = state\.alwaysOnTop !== false;\s*state\.listGroup = state\.listGroup === 'kr' \|\| state\.listGroup === 'us' \? state\.listGroup : 'none';/,
+  assert.match(source, /state\.listGroup = b\.dataset\.v;\s*renderList\(\);\s*save\(\);\s*markSeg\('groupSeg', state\.listGroup\);\s*if \(state\.listGroup === 'sector'\) loadSectors\(\)/,
+    '묶기를 바꾸면 다시 그리고 저장 — 업종별이면 아직 없는 업종을 받는다');
+  assert.match(source, /state\.alwaysOnTop = state\.alwaysOnTop !== false;\s*state\.listGroup = \['kr', 'us', 'sector'\]\.includes\(state\.listGroup\) \? state\.listGroup : 'none';/,
     '시작할 때 — 항상 위는 끄기로 저장된 때만 끄고, 묶기는 아는 값만');
 });
 

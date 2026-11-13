@@ -174,10 +174,12 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   // 맨 위 ✕ 는 앱 종료(창을 닫으면 앱이 끝난다) — 패널 ✕(닫기(Esc))와 툴팁이 같았다
   // 설정의 항상 위(고정 / 안 고정) · 관심종목 묶기 · 한 번 정렬 버튼(2026-11-13 사용자 요청)
   check('설정에 항상 위 고정 / 안 고정', /id="pinSeg">\s*<button type="button" data-v="true">고정<\/button>\s*<button type="button" data-v="false">안 고정<\/button>/.test(html));
-  check('설정에 관심종목 묶기 셋', /id="groupSeg">\s*<button type="button" data-v="none">안 묶음<\/button>\s*<button type="button" data-v="kr">국내 먼저<\/button>\s*<button type="button" data-v="us">미국 먼저<\/button>/.test(html));
+  // 관심목록 정렬 — 제목 아래에 묶기 버튼 줄, 그 아래 정렬 버튼(사용자가 정한 배치, 2026-11-13). 묶기는 넷(업종별 포함)
+  check('설정의 관심목록 정렬 — 제목 아래 묶기 넷', /<div class="sect">관심목록 정렬<\/div>\s*<div class="orow">\s*<span class="seg" id="groupSeg">\s*<button type="button" data-v="none">안 묶음<\/button>\s*<button type="button" data-v="kr">국내 먼저<\/button>\s*<button type="button" data-v="us">미국 먼저<\/button>\s*<button type="button" data-v="sector">업종별<\/button>\s*<\/span>\s*<\/div>\s*<div class="brow" id="sortBtns">/.test(html));
+  check('묶기 버튼은 왼쪽부터', /#groupSeg \{ margin-left: 0; \}/.test(html));
   const sortKeys = [.../const LIST_SORTS = \{([\s\S]*?)\n\};/.exec(rendererSource())[1].matchAll(/^\s+(\w+): \[/gm)].map((m) => m[1]);
   const sortBtns = [.../id="sortBtns">([\s\S]*?)<\/div>/.exec(html)[1].matchAll(/data-sort="(\w+)"/g)].map((m) => m[1]);
-  check('정렬 버튼과 LIST_SORTS 의 키가 같다', sortKeys.length === 5 && sortKeys.join() === sortBtns.join(), `${sortKeys.join()} / ${sortBtns.join()}`);
+  check('정렬 버튼과 LIST_SORTS 의 키가 같다', sortKeys.length === 6 && sortKeys.join() === sortBtns.join(), `${sortKeys.join()} / ${sortBtns.join()}`);
   check('정렬 되돌리기는 숨김으로 시작', /<span id="sortMsg"><\/span><button type="button" id="sortUndo" hidden>되돌리기<\/button>/.test(html));
   // 묶음 구분선은 접힌 상태(세 줄 높이)에서 숨긴다 — 구분선이 줄 자리를 차지한다
   check('.lgroup 은 접힌 상태에서 숨는다', /\.widget\.compact \.lgroup \{ display: none; \}/.test(html));
