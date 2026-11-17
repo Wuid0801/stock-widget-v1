@@ -67,7 +67,7 @@ function harness(extra = []) {
     cssVar: (n) => n, // 0 · 값 없음의 색(plColor) — 화면이 없는 하네스에서는 변수 이름 그대로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'plColor', 'rankCount', 'rankKey', 'rankBackHtml', 'venueCandles', 'venueDaysFor', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'catchUpDaily', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'plColor', 'rankCount', 'rankKey', 'rankBackHtml', 'venueCandles', 'venueDaysFor', ...extra];
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -2968,6 +2968,34 @@ await test('horizontal lines: close labels merge instead of vanishing; out-of-ra
   texts.length = 0;
   plugin.afterDatasetsDraw(chartStub, {}, { cur: 'KRW', lines: [{ value: 185, label: '전일', varName: '--prev-line' }] });
   assert.deepEqual(texts.map((t) => t.x), [2]);
+});
+
+// 일봉 기억(5년치 — 실시간이 있으면 30분 기억)이 일봉 차트(5분 기억)보다 늦으면 차트의 새 봉을 잇는다. 야후는 선물의 새 날 봉을
+// 한국 14:00(여름 13:00)에 열어, 그 뒤 최대 30분 이동평균 · 볼린저 · RSI 가 마지막 봉 하나 앞에서 끊겼다(2026-11-17 나스닥 선물 1M)
+await test('daily cache behind the chart: the chart\'s newer bars are appended so overlays reach the last bar; the cache arrays are untouched', () => {
+  const { c, run } = harness(['catchUpDaily', 'maFor']);
+  run('var sma = (v, p) => v.map((_, i) => (i + 1 < p ? null : v.slice(i + 1 - p, i + 1).reduce((a, b) => a + b, 0) / p));');
+  const day = (d) => Date.parse(`${d}T05:00:00Z`); // 야후 선물 일봉 시각(00:00 EST)
+  const days = ['2026-11-11', '2026-11-12', '2026-11-13', '2026-11-16'];
+  const cached = { times: days.map(day), closes: [28473, 28384, 28034, 27284] };
+  c.q = { daily: cached, dailyHL: { times: cached.times, highs: [1, 2, 3, 4], lows: [0, 1, 2, 3] },
+    dailyVolume: { times: cached.times, volumes: [] } }; // 거래량이 빈 기억 — 열 길이가 맞지 않으면 건드리지 않는다
+  c.bars = { times: [...days, '2026-11-17'].map(day), closes: [28473, 28384, 28034, 27284, 27321],
+    highs: [5, 5, 5, 5, 6], lows: [0, 0, 0, 0, 1], volumes: [1, 1, 1, 1, 7] };
+  run("quotes['NQ=F'] = q;");
+  assert.equal(run("maFor('NQ=F', bars.times, 2)")[4], null, '고치기 전 — 마지막 봉의 이동평균이 비었다');
+  run('catchUpDaily(q, bars);');
+  assert.deepEqual([...run("maFor('NQ=F', bars.times, 2)")], [null, 28428.5, 28209, 27659, 27302.5], '마지막 봉까지 닿는다');
+  assert.deepEqual([...run('q.dailyHL.highs')], [1, 2, 3, 4, 6], 'SAR · 스토캐스틱의 고 · 저도');
+  assert.equal(run('q.dailyVolume.volumes.length'), 0, '열 길이가 맞지 않는 기억은 그대로');
+  assert.ok(cached.times.length === 4 && cached.closes.length === 4, '기억해 둔 배열(dailyCache)은 건드리지 않는다');
+  run('catchUpDaily(q, bars);');
+  assert.equal(run('q.daily.closes.length'), 5, '두 번 불러도 한 번만 잇는다');
+  // 국내 — 일봉 기억에 오늘 봉(실시간, 00:00 UTC)이 이미 있고 야후 차트에 아직 없으면 그대로
+  run(`var kr = { daily: { times: [Date.parse('2026-11-16T00:00:00Z'), Date.parse('2026-11-17T00:00:00Z')], closes: [1, 2] } };
+    catchUpDaily(kr, { times: [Date.parse('2026-11-16T00:00:00Z')], closes: [1] }); catchUpDaily(undefined, bars);`);
+  assert.equal(run('kr.daily.closes.length'), 2);
+  assert.match(realFunction('loadChart'), /const q = quotes\[item\.symbol\];\s*if \(tf\.interval === '1d'\) catchUpDaily\(q, r\);/, '일봉 기간을 그리기 전에');
 });
 
 // 야후 국내 시세는 20분 지연이라 일봉 타임프레임의 마지막 봉이 화면의 다른

@@ -149,6 +149,32 @@ function alignByDay(srcTimes, values, times) {
   return out.some((v) => v != null) ? out : null;
 }
 
+// 일봉 기억(q.daily · dailyHL · dailyVolume — 5년치, dailyFor 가 실시간이 있는 종목 · 지수는 30분 기억한다)이 일봉 차트(5분
+// 기억)보다 늦으면 차트의 새 봉을 이어 붙인다. 야후는 선물의 새 날 봉을 미국 동부 자정(한국 14:00, 여름 13:00)에, 미국 지수는
+// 미국 개장 때 연다 — 그 뒤 일봉 기억이 끝날 때까지(최대 30분) 이동평균 · 볼린저 · RSI · 거래량 평균이 마지막 봉 하나 앞에서
+// 끊겼다(2026-11-17 나스닥 선물 1M, 14:42 — 야후 일봉 11/17 05:00 UTC 봉이 차트에만 있었다). 차트도 같은 야후 일봉이라
+// UTC 날짜(alignByDay 와 같은 짝짓기)로 차트에만 있는 뒤쪽 날을 고른다. 열 길이가 맞지 않는 기억은 건드리지 않는다.
+// 기억해 둔 배열(dailyCache)은 그대로 두고 새 배열로 바꾼다 — 다음 loadQuote 가 받은 일봉으로 다시 만든다.
+function catchUpDaily(q, r) {
+  if (!q || !r || !Array.isArray(r.times) || !r.times.length) return;
+  const dayOf = (t) => Math.floor(t / 86400000);
+  // key 기억의 열(times 와 같은 길이)마다 차트의 같은 열을 잇는다 — cols: [기억의 열 이름, 차트의 열 이름]
+  const extend = (key, cols) => {
+    const s = q[key];
+    if (!s || !Array.isArray(s.times) || !s.times.length) return;
+    if (cols.some(([name, from]) => !Array.isArray(s[name]) || s[name].length !== s.times.length || !Array.isArray(r[from]))) return;
+    const last = dayOf(s.times[s.times.length - 1]);
+    const idx = r.times.map((t, i) => (dayOf(t) > last ? i : -1)).filter((i) => i >= 0);
+    if (!idx.length) return;
+    const next = { times: [...s.times, ...idx.map((i) => r.times[i])] };
+    for (const [name, from] of cols) next[name] = [...s[name], ...idx.map((i) => r[from][i])];
+    q[key] = next;
+  };
+  extend('daily', [['closes', 'closes']]);
+  extend('dailyHL', [['highs', 'highs'], ['lows', 'lows']]);
+  extend('dailyVolume', [['volumes', 'volumes']]);
+}
+
 // 볼린저 밴드 — 이동평균처럼 5년치 일봉 종가(오늘 봉은 현재가)로 계산해 차트에 맞춘다.
 function bandFor(symbol, times) {
   const d = quotes[symbol] && quotes[symbol].daily;
@@ -544,6 +570,7 @@ async function loadChart() {
 
   err(quoteErrText());
   const q = quotes[item.symbol];
+  if (tf.interval === '1d') catchUpDaily(q, r); // 일봉 기억이 차트보다 늦으면 차트의 새 봉을 잇는다(끝 봉까지 선이 닿게)
   const closes = r.closes.slice();
   const times = r.times.slice();
   // 1D · 1W 시간외 봉(main.js): 봉마다 'pre' · 'after', 정규장은 null. 그 구간의 배경을 옅게 칠한다.
