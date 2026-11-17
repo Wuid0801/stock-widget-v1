@@ -10,7 +10,8 @@ const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : '
 // --- 1. 네트워크를 쓰는 IPC 처리기는 모두 점검한다 — 처리기를 새로 만들고 점검을 빠뜨리면 여기서 걸린다 ---------------------
 {
   const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
-  const local = new Set(['state:get', 'state:set', 'backup:export', 'backup:import']); // 설정 파일만 읽고 쓴다
+  // 설정 파일만 읽고 쓴다 · 공시 원문은 기본 브라우저에 맡긴다(dart:open — 요청을 보내지 않는다)
+  const local = new Set(['state:get', 'state:set', 'backup:export', 'backup:import', 'dart:open']);
   const names = [...main.matchAll(/ipcMain\.handle\('([^']+)'/g)].map((m) => m[1]).filter((n) => !local.has(n));
   const called = CHECKS.map((c) => c.call.toString()).join('\n');
   const missing = names.filter((n) => !called.includes(`h['${n}']`));

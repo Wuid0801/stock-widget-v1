@@ -721,6 +721,10 @@ async function loadChart() {
   // 일봉 차트에서는 마지막에서 두 번째 점일 뿐이라 기준선이 될 이유가 없다.
   const hLines = [];
   if (!plain && held && held.avg > 0) hLines.push({ value: held.avg, label: '평단', varName: '--avg-line' });
+  // 목표가 알림의 상한 · 하한 — 얼마나 남았는지 보이게(알림을 꺼 둬도 넣어 둔 값이면). 차트 범위 밖이면 가장자리에 ▲ · ▼ 와 값
+  const goal = state.alerts.targets[item.symbol];
+  if (!plain && goal && goal.up != null) hLines.push({ value: goal.up, label: '목표↑', varName: '--target-line' });
+  if (!plain && goal && goal.down != null) hLines.push({ value: goal.down, label: '목표↓', varName: '--target-line' });
   if (!plain && state.timeframe === '1D' && q) {
     if (q.prevClose != null) {
       hLines.push({ value: q.prevClose, label: '전일', varName: '--prev-line' });

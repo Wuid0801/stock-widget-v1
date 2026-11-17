@@ -228,13 +228,15 @@ async function refreshNow() {
     metricsOn = !metricsOn;
     renderMetrics();
   };
-  // 지표 화면의 동종 업종 종목
+  // 지표 화면의 수급 차트 버튼 · 최근 공시 · 동종 업종 종목
   document.getElementById('metricsView').onclick = (e) => {
     if (e.target.closest('[data-stock-flow]')) {
       const item = selectedItem();
       if (item) openFlow({ kind: 'stock', symbol: item.symbol, name: item.name });
       return;
     }
+    const f = e.target.closest('[data-dart]');
+    if (f) { api.openDart(f.dataset.dart); return; }
     const p = e.target.closest('[data-peer]');
     if (p) pickPeer(p.dataset.peer, p.dataset.name).catch(console.error);
   };

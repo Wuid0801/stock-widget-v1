@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   search: (query) => ipcRenderer.invoke('yf:search', query),
   sector: (symbol) => ipcRenderer.invoke('yf:sector', symbol),
   detail: (symbol) => ipcRenderer.invoke('naver:detail', symbol),
+  openDart: (no) => ipcRenderer.invoke('dart:open', no),
   rank: (req) => ipcRenderer.invoke('naver:rank', req),
   marketExtras: () => ipcRenderer.invoke('market:extras'),
   flowHistory: () => ipcRenderer.invoke('market:flowHistory'),

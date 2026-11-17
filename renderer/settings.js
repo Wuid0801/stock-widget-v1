@@ -313,6 +313,7 @@ function renderAlerts() {
       if (Object.keys(next).length) state.alerts.targets[item.symbol] = next;
       else delete state.alerts.targets[item.symbol];
       save();
+      if (item.symbol === state.selected) loadChart().catch(console.error); // 차트의 목표가 선
     }));
   }
   alertBox.appendChild(alertMsg);

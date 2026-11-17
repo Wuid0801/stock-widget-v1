@@ -54,6 +54,7 @@
     /* 차트 */
     --grid: rgba(255, 255, 255, 0.06);
     --avg-line: #9aa4b2; /* 보유 평단가 점선 */
+    --target-line: #d77fd9; /* 목표가 알림 상한 · 하한 점선 — 평단 회색 · 등락 색 · 전고/전저와 다른 자주 */
     --prev-line: #7a8494; /* 전일 종가 점선 (1D 차트) */
     --prevhi-line: #c98585; /* 전고(어제 고가) 점선 — 주가선 빨강보다 옅게 */
     --prevlo-line: #7f9fd0; /* 전저(어제 저가) 점선 — 주가선 파랑보다 옅게 */
@@ -135,6 +136,7 @@
 
     --grid: rgba(0, 0, 0, 0.08);
     --avg-line: #6b7480; /* 보유 평단가 점선 */
+    --target-line: #a03ca6; /* 목표가 알림 상한 · 하한 점선 */
     --prev-line: #8b93a0; /* 전일 종가 점선 (1D 차트) */
     --prevhi-line: #b85c5c; /* 전고(어제 고가) 점선 */
     --prevlo-line: #4f74ad; /* 전저(어제 저가) 점선 */
@@ -725,6 +727,10 @@
   .mxi { white-space: nowrap; }
   .mxpeer { cursor: pointer; } /* 동종 업종 종목 — 누르면 그 종목으로 */
   .mxpeer:hover { text-decoration: underline; }
+  /* 최근 공시 — 한 줄씩, 긴 제목은 … (전체는 툴팁). 누르면 DART 원문 */
+  .mxfil { margin: 0; padding: 0; list-style: none; }
+  .mxfil li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.45; cursor: pointer; }
+  .mxfil li:hover { text-decoration: underline; }
   .mxsrc { margin-top: 4px; font-size: 9px; }
   .mxt { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
   .mxt th, .mxt td { padding: 1px 3px; text-align: right; font-weight: 400; white-space: nowrap; }

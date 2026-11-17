@@ -222,6 +222,13 @@ function metricsHtml(item, d, q) {
   }
   if (earn.length) parts.push(sec('실적', earn.join('')));
 
+  // 최근 공시(국내) — 다음 금융의 DART 목록에서 최근 10건. 누르면 DART 원문을 기본 브라우저로(dart:open)
+  if (d.filings && d.filings.length) {
+    const rows = d.filings.map((f) => `<li data-dart="${esc(f.no)}" title="${esc(f.name)} — 누르면 DART 원문 (브라우저)">`
+      + `<span class="mxmute">${mmdd(f.day)}</span> ${esc(f.name)}</li>`).join('');
+    parts.push(sec('최근 공시 <span>(DART · 다음 금융)</span>', `<ul class="mxfil">${rows}</ul>`));
+  }
+
   // 가치 지표 · 컨센서스 — 컨센서스는 증권사 추정치라 기준일과 함께 참고용으로 적는다
   const val = [];
   if (d.valuation && d.valuation.length) val.push(`<p>${list(d.valuation.map((v) => `${esc(v.label)} ${esc(v.value)}`))}</p>`);

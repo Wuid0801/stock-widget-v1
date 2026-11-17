@@ -2,7 +2,7 @@
 // 역할: 프레임리스/반투명/항상위 위젯 창 생성, 창 상태 저장·복원,
 //       Yahoo Finance chart API 프록시(렌더러는 CORS 때문에 직접 호출 불가).
 
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu, dialog, session, net } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Notification, Menu, dialog, session, net, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
@@ -1041,6 +1041,7 @@ async function krDetail(code) {
   // 주주 구성 · 거래원은 따로 받는다 — 이것만으로는 지표 화면이 되지 않아 '전부 실패' 판정(settleAll)에 넣지 않는다
   const holders = krHolders(code);
   const traders = krTraders(code);
+  const filings = daumFilings(code); // 최근 공시 — 실패하면 null(그 단락만 빠진다)
   const [I, trend, quarter, rt] = await settleAll([
     `https://m.stock.naver.com/api/stock/${code}/integration`,
     `https://m.stock.naver.com/api/stock/${code}/trend?pageSize=20`,
@@ -1083,6 +1084,7 @@ async function krDetail(code) {
     } : null,
     holders: await holders,
     traders: await traders,
+    filings: recentFilings(await filings),
   };
 }
 
@@ -1111,6 +1113,13 @@ async function usDetail(code) {
     etf: null,
   };
 }
+
+// 공시 원문 — 기본 브라우저로 DART 를 연다. 접수번호만 받아 주소는 여기서 만든다(렌더러가 아무 주소나 열 수 없게).
+ipcMain.handle('dart:open', (_e, no) => {
+  const s = String(no ?? '');
+  if (!/^\d{14}$/.test(s)) return false;
+  return shell.openExternal(`https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${s}`).then(() => true, () => false);
+});
 
 ipcMain.handle('naver:detail', async (_e, symbol) => {
   const s = String(symbol ?? '');
@@ -1156,6 +1165,14 @@ async function daumFilings(code) {
   } catch {
     return null;
   }
+}
+
+// 지표 화면의 최근 공시. 응답은 최근 날부터 온다(2026-11-17 삼성전자 561건, 같은 날 안은 접수 순이 아님). 접수번호(14자리 —
+// 거래소 공시 '…80…' 도 DART 에서 열린다)와 날짜가 맞는 것만 10건. 렌더러는 그 번호로 원문을 연다(dart:open).
+function recentFilings(rows) {
+  if (!rows) return null;
+  return rows.filter((r) => /^\d{14}$/.test(String(r?.no ?? '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(r?.day ?? '')))
+    .slice(0, 10).map((r) => ({ no: String(r.no), day: String(r.day), name: String(r.name ?? '') }));
 }
 
 // 잠정실적 공시로 본 일정(2026-10-30 사용자 제보 — 효성중공업은 실적 발표 일정을 미리 알리지 않고 잠정실적 · IR 안내를 같은 날

@@ -710,6 +710,20 @@ await test('indicators: loadChart passes only the enabled overlays — bands and
   assert.equal(d.vwapLine, null);
   assert.equal(d.hLines.some((l) => l.label === '전고'), false);
 
+  // 목표가 알림의 상한 · 하한도 점선(2026-11-17 사용자 요청) — 알림을 꺼 둬도 넣어 둔 값이면, 일봉 기간에도. 차트만 보기면 빠진다
+  run("state.alerts = { enabled: false, targets: { '005930.KS': { up: 130, down: 80 } } };");
+  const goals = (x) => JSON.stringify(x.hLines.filter((l) => l.varName === '--target-line').map((l) => [l.label, l.value]));
+  d = await draw('1M', {}, daily);
+  assert.equal(goals(d), '[["목표↑",130],["목표↓",80]]', '상한 · 하한 — 상한가와 헷갈리지 않게 목표↑ · 목표↓');
+  run("state.alerts.targets['005930.KS'] = { down: 80 };");
+  d = await draw('1D', {}, oneDay);
+  assert.equal(goals(d), '[["목표↓",80]]', '한쪽만 넣었으면 그 선만');
+  run('state.plainChart = true;');
+  d = await draw('1D', {}, oneDay);
+  assert.equal(goals(d), '[]', '차트만 보기');
+  run('state.plainChart = false; state.alerts.targets = {};');
+  assert.match(realFunction('renderAlerts'), /save\(\);\s*if \(item\.symbol === state\.selected\) loadChart\(\)/, '설정에서 목표가를 바꾸면 차트를 바로 다시 그린다');
+
   // 1D 거래량 평균은 6봉(30분) — 20봉이면 장 초반 거래에 끌려 오후까지 내려가기만 했다(2026-11-06)
   const eight = { ok: true, closes: new Array(8).fill(100), volumes: new Array(8).fill(100), opens: new Array(8).fill(100),
     highs: new Array(8).fill(100), lows: new Array(8).fill(100), ext: new Array(8).fill(null),
@@ -1692,6 +1706,21 @@ await test('metrics: brokers — today\'s top sellers and buyers side by side, f
   assert.ok(h.indexOf('투자자별 순매수') < h.indexOf('<h5>거래원') && h.indexOf('<h5>거래원') < h.indexOf('주주 구성'), '매매동향 다음, 주주 구성 앞');
   assert.doesNotMatch(html(null), /거래원/, '없으면(미국 · 실패) 단락이 없다');
   assert.doesNotMatch(text(html({ ...T, foreignBuy: null })), /외국계 매수/, '합이 없으면 그 줄은 없다');
+});
+
+// 최근 공시(국내, 2026-11-17 사용자 요청) — 다음 금융의 DART 목록 10건(main 의 recentFilings, tests/detail.mjs 9번). 줄을 누르면 DART 원문
+await test('metrics: recent filings — date and title per line after earnings, title escaped, receipt number for DART; no section without data', () => {
+  const { c, run } = harness(METRICS_FNS);
+  run(helpers());
+  run("quotes['005930.KS'] = { price: 219000, currency: 'KRW' };");
+  const html = (filings) => { c.D = { ...KR_DETAIL, filings }; return run("metricsHtml({ symbol: '005930.KS', name: '삼성전자' }, D, quotes['005930.KS'])"); };
+  const h = html([{ no: '20261116001482', day: '2026-11-16', name: '분기보고서 (2026.09)' }, { no: '20261113801115', day: '2026-11-13', name: '<i>x</i>' }]);
+  assert.match(h, /<h5>최근 공시 <span>\(DART · 다음 금융\)<\/span><\/h5><ul class="mxfil"><li data-dart="20261116001482" title="분기보고서 \(2026\.09\) — 누르면 DART 원문 \(브라우저\)"><span class="mxmute">11\/16<\/span> 분기보고서 \(2026\.09\)<\/li>/);
+  assert.ok(h.includes('&lt;i&gt;x&lt;/i&gt;') && !h.includes('<i>x</i>'), '제목은 이스케이프한다');
+  assert.ok(h.indexOf('<h5>실적') < h.indexOf('최근 공시') && h.indexOf('최근 공시') < h.indexOf('<h5>가치 지표'), '실적 다음, 가치 지표 앞');
+  assert.doesNotMatch(html(null), /최근 공시/, '없으면(미국 · 실패) 단락이 없다');
+  assert.doesNotMatch(html([]), /최근 공시/);
+  assert.match(source, /const f = e\.target\.closest\('\[data-dart\]'\);\s*if \(f\) \{ api\.openDart\(f\.dataset\.dart\); return; \}/, '누르면 main 에 번호만 넘긴다');
 });
 
 // 기법 점검 — 받아 둔 일봉으로 추세 추종 · 모멘텀 · 적립식 · 보유 비중 · 반등 점검 · 코스톨라니 달걀(계산은 tests/techniques.mjs).

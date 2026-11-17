@@ -66,7 +66,9 @@ class ShiftDate extends RealDate {
   constructor(...a) { super(...(a.length ? a : [RealDate.now() + SHIFT])); }
   static now() { return RealDate.now() + SHIFT; }
 }
-const handlers = loadMain({ globals: { fetch: fakeFetch, Date: ShiftDate } });
+const opened = []; // dart:open 이 기본 브라우저로 연 주소(shell.openExternal)
+const handlers = loadMain({ globals: { fetch: fakeFetch, Date: ShiftDate },
+  electron: { shell: { openExternal: async (url) => { opened.push(url); } } } });
 const detail = (symbol) => handlers['naver:detail']({}, symbol);
 
 // --- 1. 국내 주식(삼성전자) ------------------------------------------------------------
@@ -75,10 +77,10 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   const d = await detail('005930.KS');
   check('성공', d.ok === true, d.error);
   check('국내 · 주식', d.market === 'kr' && d.kind === 'stock');
-  check('여섯 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 · 기업정보 · 다음 거래원), 모두 시간 제한을 건다',
-    calls.length === 6 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
+  check('일곱 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 · 기업정보 · 다음 거래원 · 다음 공시 목록), 모두 시간 제한을 건다',
+    calls.length === 7 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
   // 거래원(2026-10-30 사용자 요청) — 종목의 장중 투자자별 수급은 무료 출처에 없어 외국계 창구로 외국인 매매를 어림한다
-  const daum = calls.find((c) => c.url.includes('finance.daum.net'));
+  const daum = calls.find((c) => c.url.includes('finance.daum.net/api/trader'));
   check('거래원은 다음 금융 — 오늘 매수 · 매도 상위 10개사, 브라우저처럼 Referer', daum?.url === 'https://finance.daum.net/api/trader/ranks?'
     + 'symbolCode=A005930&BidFieldName=bidAccTradeVolume&BidOrder=desc&AskFieldName=askAccTradeVolume&AskOrder=desc&intervalType=TODAY&limit=10'
     && daum.referer === 'https://finance.daum.net/', JSON.stringify(daum));
@@ -379,6 +381,41 @@ const past = (date) => ({ kind: 'irPast', title: '잠정실적 공시', date });
   await detail('005930.KS');
   check('받으면 다시 6시간 기억한다', asked() === 0);
   SHIFT = 0;
+}
+
+// --- 9. 최근 공시(국내, 2026-11-17) — 다음 금융 공시 목록에서 최근 10건, 누르면 DART 원문 ------------------------------
+// 응답은 최근 날부터 온다(2026-11-17 브라우저 실측, 삼성전자 561건 — 같은 날 안은 접수 순이 아님). 거래소 공시(…80…)도 DART 에서 열린다.
+{
+  FILINGS['005930'] = [
+    { no: '20261116001482', day: '2026-11-16', name: '분기보고서 (2026.09)', seen: '2026-11-16 16:49:55' },
+    { no: '20261113801115', day: '2026-11-13', name: '기업설명회(IR)개최(안내공시)' },
+    { no: '', day: '2026-11-13', name: '번호 없음' },
+    { no: '20261113001527', day: '2026.11.13', name: '날짜 틀림' },
+    ...Array.from({ length: 12 }, (_, i) => ({ no: `202611010000${String(i).padStart(2, '0')}`, day: '2026-11-01', name: `공시 ${i}` })),
+  ];
+  calls.length = 0;
+  let d = await detail('005930.KS');
+  check('최근 공시 — 받은 순서 그대로 10건, 접수번호 · 날짜가 맞는 줄만, 쓰는 필드만',
+    d.filings?.length === 10 && same(d.filings[0], { no: '20261116001482', day: '2026-11-16', name: '분기보고서 (2026.09)' })
+      && d.filings[1].no === '20261113801115' && d.filings[2].name === '공시 0', JSON.stringify(d.filings?.slice(0, 3)));
+  check('공시 목록도 시간 제한 · Referer', calls.some((c) => c.url === 'https://finance.daum.net/api/home/dart-filings?code=005930'
+    && c.signal && c.referer === 'https://finance.daum.net/'));
+  blocked = ['dart-filings'];
+  d = await detail('005930.KS');
+  check('공시 목록이 실패하면 그 칸만 비운다', d.ok && d.filings === null && d.trend.length === 20, JSON.stringify(d.filings));
+  blocked = [];
+  delete FILINGS['005930'];
+  calls.length = 0;
+  d = await detail('AAPL');
+  check('미국 종목은 공시를 묻지 않는다', d.ok && d.filings === undefined && !calls.some((c) => c.url.includes('dart-filings')));
+
+  // 원문 열기 — 렌더러는 접수번호만 넘기고 주소는 main 이 만든다(아무 주소나 열 수 없게)
+  const ok = await handlers['dart:open']({}, '20261113801115');
+  check('DART 원문을 기본 브라우저로', ok === true && same(opened, ['https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261113801115']), JSON.stringify(opened));
+  opened.length = 0;
+  const bad = [];
+  for (const v of ['https://example.com', '2026111380111', '20261113801115&x=1', null, undefined, { no: 1 }]) bad.push(await handlers['dart:open']({}, v));
+  check('접수번호(14자리)가 아니면 열지 않는다', bad.every((r) => r === false) && opened.length === 0, JSON.stringify(bad));
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');
