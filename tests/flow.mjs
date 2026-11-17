@@ -12,6 +12,11 @@ const market = { ok: true,
     fut: [{ t: Date.parse('2026-11-12T09:05:00+09:00'), foreign: 25 }],
   }, errors: {},
 };
+// 외국인 수급의 긴 이력(market:flowHistory, 다음 금융) — 마지막 날 2026-11-13 에서 1M · 3M · 1Y · 3Y 를 자른다
+const history = { ok: true, errors: {},
+  spotFlows: [['20250110', 5], ['20251114', -40], ['20260814', 30], ['20261014', 10], ['20261015', -20], ['20261112', 70], ['20261113', -100]]
+    .map(([date, foreign]) => ({ date, foreign, final: true })),
+  futFlows: [{ date: '20261113', foreign: 9, final: true }] };
 const stock = { ok: true, market: 'kr', trend: [
   { date: '20261112', foreign: 0, organ: null, individual: 50 },
   { date: '20261111', foreign: -20, organ: 30, individual: -10 },
@@ -38,6 +43,7 @@ function harness() {
   const api = {
     marketExtras: async () => { requests.push('market'); return market; },
     detail: async (symbol) => { requests.push(symbol); return stock; },
+    flowHistory: async () => { requests.push('history'); return history; },
   };
   const context = vm.createContext({ document: { getElementById: get }, api, console,
     getComputedStyle: () => ({ getPropertyValue: () => '#aaaaaa' }), Chart: FakeChart,
@@ -147,6 +153,71 @@ const tests = [
     assert.equal(app.get('flowPlot').hidden, true);
     assert.equal(app.drawings.at(-1).destroyed, true);
     assert.match(app.get('flowStatus').textContent, /데이터가 없습니다/);
+  }],
+  ['일별 수급의 기간 — 마지막 날에서 그 개월 수만큼만, 1Y · 3Y 는 연/월 이름표', () => {
+    const app = harness();
+    const of = (range) => app.data({ kind: 'daily', key: 'SPOT', range }, history);
+    assert.deepEqual(plain(of('1M').datasets[0].data), [10, -20, 70, -100], '10/13 까지는 뺀다(한 달치)');
+    assert.deepEqual(plain(of('1M').labels), ['10/14', '10/15', '11/12', '11/13']);
+    assert.match(of('1M').note, /다음 금융/);
+    assert.equal(of('3M').labels.length, 5);
+    assert.deepEqual(plain(of('1Y').labels), ['25/11', '26/08', '26/10', '26/10', '26/11', '26/11'], '가격 차트처럼 YY/MM');
+    assert.deepEqual(plain(of('1Y').dates).slice(0, 2), ['2025-11-14', '2026-08-14'], '툴팁 제목은 날짜 전체');
+    assert.equal(of('3Y').labels.length, 7);
+    assert.equal(of('10d').labels.length, 7, '10일은 받은 그대로(자르지 않는다)');
+    assert.match(of('10d').note, /네이버/);
+    assert.equal(app.data({ kind: 'daily', key: 'SPOT' }, history).labels.length, 7, '기간이 없으면 10일처럼');
+    assert.deepEqual(plain(app.data({ kind: 'daily', key: 'FUTFLOW', range: '1Y' }, history).datasets[0].data), [9]);
+  }],
+  ['기간 버튼 — 1M 이상은 긴 이력을 고를 때만 받고, 10일은 지표 화면의 값을 그대로 쓴다', async () => {
+    const app = harness();
+    app.context.snapshot = market;
+    app.run("bindFlow(); marketExtras = {at: Date.now(), d: snapshot}; openFlow({kind:'daily', key:'SPOT'})");
+    assert.equal(app.requests.length, 0, '10일은 받아 둔 값');
+    assert.equal(app.get('flowRange').hidden, false);
+    assert.equal(app.get('flowRange').innerHTML, '<button type="button" data-range="10d" class="on">10일</button><button type="button" data-range="1M">1M</button>'
+      + '<button type="button" data-range="3M">3M</button><button type="button" data-range="1Y">1Y</button><button type="button" data-range="3Y">3Y</button>');
+    const pick = (range) => app.get('flowRange').onclick({ target: { closest: () => ({ dataset: { range } }) } });
+    pick('1M');
+    assert.deepEqual(app.requests, ['history']);
+    assert.match(app.get('flowStatus').textContent, /불러오는 중/);
+    await settle();
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [10, -20, 70, -100]);
+    assert.match(app.get('flowNote').textContent, /다음 금융/);
+    assert.match(app.get('flowRange').innerHTML, /data-range="1M" class="on"/);
+    pick('3Y');
+    assert.deepEqual(app.requests, ['history'], '기간만 바꾸면 다시 받지 않는다');
+    assert.equal(app.drawings.at(-1).config.data.labels.length, 7);
+    assert.equal(app.drawings.at(-1).config.data.datasets[0].barPercentage, undefined, '막대가 적으면 틈을 둔다');
+    pick('모르는 기간');
+    assert.match(app.get('flowRange').innerHTML, /data-range="3Y" class="on"/, '모르는 기간은 무시');
+    app.run("closeFlow(); openFlow({kind:'daily', key:'FUTFLOW'})");
+    assert.match(app.get('flowRange').innerHTML, /data-range="3Y" class="on"/, '마지막으로 고른 기간으로 연다');
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [9]);
+    pick('10d');
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [500], '10일은 다시 지표 화면의 값(네이버)');
+    assert.match(app.get('flowNote').textContent, /네이버/);
+    app.run("openFlow({kind:'intraday', key:'INTRA_FOREIGN'})");
+    assert.equal(app.get('flowRange').hidden, true, '장중 · 종목 수급에는 기간 버튼이 없다');
+    assert.equal(app.get('flowRange').innerHTML, '');
+  }],
+  ['긴 이력을 다시 받다 실패하면 있던 것을 그리고 이유를 적는다, 막대가 많으면 틈 없이', async () => {
+    const app = harness();
+    const many = { ok: true, errors: {}, spotFlows: Array.from({ length: 40 }, (_, i) => ({ date: `202610${String(i % 28 + 1).padStart(2, '0')}`, foreign: i, final: true }))
+      .filter((row, i, all) => all.findIndex((x) => x.date === row.date) === i), futFlows: [] };
+    app.api.flowHistory = async () => many;
+    app.run("openFlow({kind:'daily', key:'SPOT', range:'3Y'})");
+    assert.equal(app.drawings.length, 0, '아직 못 받았다');
+    await settle();
+    assert.equal(app.drawings.length, 1);
+    app.api.flowHistory = async () => ({ ok: false, error: 'HTTP 503' });
+    await app.run('loadFlowHistory()');
+    assert.match(app.get('flowStatus').textContent, /503.*이전 데이터를 표시합니다/);
+    assert.equal(app.get('flowPlot').hidden, false);
+    app.api.flowHistory = async () => ({ ...many, spotFlows: Array.from({ length: 31 }, (_, i) => ({ date: String(20260101 + i), foreign: i, final: true })) });
+    await app.run('loadFlowHistory()');
+    assert.equal(app.drawings.at(-1).config.data.datasets[0].barPercentage, 1, '30개가 넘으면 막대를 붙인다(흐려지지 않게)');
+    assert.equal(app.get('flowStatus').hidden, true);
   }],
 ];
 

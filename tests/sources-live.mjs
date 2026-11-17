@@ -104,6 +104,19 @@ export const CHECKS = [
     ] : [])],
   },
   {
+    // 수급 확대 차트의 1M 이상(2026-11-16) — 다음 금융이 요청 한 번에 2016-05 부터 준다. 공식 API 가 아니라 막히거나 줄 수 있다
+    name: '외국인 수급 이력', source: '다음 금융 투자자별 일별(코스피 현물 · 코스피200 선물)',
+    call: (h) => h['market:flowHistory'](),
+    verify: (r) => [...okOf(r), ...(r && r.ok ? [
+      ...need(Array.isArray(r.spotFlows) && r.spotFlows.length >= 700 && r.spotFlows.every((f) => /^\d{8}$/.test(f.date) && num(f.foreign)),
+        '외국인 현물 수급 이력이 3년치(700일) 미만'),
+      ...need(Array.isArray(r.spotFlows) && r.spotFlows.length && recent(r.spotFlows.at(-1).date, 7), '외국인 현물 수급 이력이 7일보다 오래됨'),
+      ...need(Array.isArray(r.futFlows) && r.futFlows.length >= 700 && r.futFlows.every((f) => /^\d{8}$/.test(f.date) && num(f.foreign)),
+        '외국인 선물 수급 이력이 3년치(700일) 미만'),
+      ...need(Array.isArray(r.futFlows) && r.futFlows.length && recent(r.futFlows.at(-1).date, 7), '외국인 선물 수급 이력이 7일보다 오래됨'),
+    ] : [])],
+  },
+  {
     // 일봉 캔들 기준 '통합'(증권사 앱의 통합 캔들) — 네이버 KRX · NXT 일봉을 합친 값. 삼성전자는 NXT 에서 날마다 거래된다.
     name: '통합 일봉 (KRX + NXT)', source: '네이버 KRX · NXT 일봉',
     call: (h) => h['naver:venueDays']({}, '005930.KS', new Date(Date.now() - 30 * DAY + 9 * 3600000).toISOString().slice(0, 10).replace(/-/g, '')),

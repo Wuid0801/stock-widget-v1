@@ -787,6 +787,39 @@ async function daumIntraday() {
   return { spot, fut, program: program == null ? null : program / 1e8 };
 }
 
+// --- 외국인 현물 · 선물 수급의 긴 이력(market:flowHistory) ---------------------------------------
+// 수급 확대 차트에서 1M 이상을 고를 때만 묻는다(2026-11-16 사용자 요청: 더 길게 보고 싶다). 다음 금융의 투자자별 일별 값 —
+// 요청 한 번에 2016-05 부터 온다(같은 날 확인: 현물 2,579일 · 선물 2,578일, 오늘 행 포함). 네이버는 하루에 요청 하나라 열흘치만
+// 받는다(FLOW_DAYS). 웹페이지가 쓰는 데이터라(공식 API 아님) 막히거나 모양이 바뀔 수 있다 — 두 부분을 따로 받고, 둘 다 받았을
+// 때만 10분 기억한다. 값은 원 → 억 원, 날짜 오름차순, 모양은 market:extras 의 spotFlows · futFlows 와 같다({ date, foreign, final }).
+// 지표 화면의 수급 줄 · 데드캣 점검은 그대로 네이버 열흘치를 쓴다(출처가 달라 값이 조금 다를 수 있다).
+const FLOW_HISTORY_TTL = 10 * 60000;
+let flowHistory = null; // { at, d }
+ipcMain.handle('market:flowHistory', async () => {
+  const now = Date.now();
+  if (flowHistory && now - flowHistory.at < FLOW_HISTORY_TTL) return flowHistory.d;
+  const today = kstDay(now);
+  const rows = (url, field) => daumJson(url).then((j) => {
+    if (!Array.isArray(j?.data)) throw new Error('모양이 다른 응답');
+    return j.data.map((r) => {
+      const date = String(r?.date ?? '').slice(0, 10).replace(/-/g, '');
+      return /^\d{8}$/.test(date) && Number.isFinite(r[field])
+        ? { date, foreign: r[field] / 1e8, final: date < today || kstClock(now) >= FLOW_FINAL } : null;
+    }).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+  });
+  const parts = await Promise.allSettled([
+    rows(`${DAUM_API}/investor/KOSPI/days?market=KOSPI&page=1&perPage=3000&pagination=true`, 'foreignStraightPurchasePrice'),
+    rows(`${DAUM_API}/investor/future/days?page=1&perPage=3000&terms=days&pagination=true&type=PRICE`, 'foreignSettlement')]);
+  if (parts.every((p) => p.status === 'rejected')) return { ok: false, error: parts[0].reason?.message || '수급 이력 조회 실패' };
+  const d = { ok: true, errors: {} };
+  ['spotFlows', 'futFlows'].forEach((name, i) => {
+    d[name] = parts[i].status === 'fulfilled' ? parts[i].value : null;
+    if (parts[i].status === 'rejected') d.errors[name] = parts[i].reason?.message || '요청 실패';
+  });
+  if (!Object.keys(d.errors).length) flowHistory = { at: now, d };
+  return d;
+});
+
 ipcMain.handle('market:extras', async () => {
   const now = Date.now();
   const kospi = naverIndexCloses('KOSPI', now);

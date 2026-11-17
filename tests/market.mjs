@@ -27,7 +27,8 @@ const fakeFetch = async (url, opt) => {
     : url.includes('/api/index/KOSPI/trend') ? 'spot' : url.includes('/api/index/FUT/trend') ? 'fut'
       : url.includes('fred.stlouisfed.org') ? 'fred' : url.includes('dataviz.cnn.io/index/fearandgreed') ? 'cnn'
         : url.includes('finance.daum.net/api/investor/KOSPI/times') ? 'daumSpot' : url.includes('finance.daum.net/api/investor/future/times') ? 'daumFut'
-          : url.includes('finance.daum.net/api/domestic/quotes') ? 'daumQuotes' : 'other';
+          : url.includes('finance.daum.net/api/domestic/quotes') ? 'daumQuotes'
+            : url.includes('finance.daum.net/api/investor/KOSPI/days') ? 'daumSpotDays' : url.includes('finance.daum.net/api/investor/future/days') ? 'daumFutDays' : 'other';
   headersOf[route] = opt && opt.headers;
   const date = (/bizdate=(\d{8})/.exec(url) || [])[1];
   const body = typeof reply[route] === 'function' ? reply[route](date) : reply[route];
@@ -347,6 +348,48 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   reply = { ...base(), cnn: { status: 500 } };
   r = await chart('^FNG', '1y');
   check('받다 실패하면 그 이유', r.ok === false && r.error === 'HTTP 500', JSON.stringify(r));
+  reply = base();
+}
+
+// --- 외국인 현물 · 선물 수급의 긴 이력(market:flowHistory, 2026-11-16) — 다음 금융의 투자자별 일별 값. 수급 확대 차트의 1M 이상 ------
+{
+  const hist = () => handlers['market:flowHistory']({});
+  const dayCalls = () => calls.filter((u) => u.includes('/days?'));
+  // 2026-11-16 브라우저에서 본 응답의 쓰는 필드만 — 최신 날이 먼저, 값은 원
+  const spotDays = { data: [
+    { date: '2026-11-16 00:00:00', individualStraightPurchasePrice: 1354958774859, foreignStraightPurchasePrice: -1522392807788, institutionStraightPurchasePrice: -319364695941 },
+    { date: '2026-11-13 00:00:00', foreignStraightPurchasePrice: 250000000000 },
+    { date: '모르는 날', foreignStraightPurchasePrice: 1 }, { date: '2026-11-12 00:00:00', foreignStraightPurchasePrice: null }] };
+  const futDays = { data: [{ date: '2026-11-16 00:00:00', foreignSettlement: -126798750000 }, { date: '2026-11-13 00:00:00', foreignSettlement: 50000000000 }] };
+  NOW = kst('2026-11-16T14:00');
+  reply = { ...base(), daumSpotDays: spotDays, daumFutDays: { status: 500 } };
+  calls.length = 0;
+  let r = await hist();
+  check('현물 — 억 원 · 날짜 오름차순, 모양이 틀린 줄은 뺀다. 장중의 오늘은 잠정', r.ok && same(r.spotFlows, [
+    { date: '20261113', foreign: 2500, final: true }, { date: '20261116', foreign: -1522392807788 / 1e8, final: false }]), JSON.stringify(r.spotFlows));
+  check('한쪽만 실패하면 그 부분만 비고 이유를 준다', r.ok && r.futFlows === null && r.errors.futFlows === 'HTTP 500', JSON.stringify(r.errors));
+  check('부분마다 요청 한 번(perPage=3000) — 브라우저처럼 Referer 를 붙인다', dayCalls().length === 2 && dayCalls().every((u) => u.includes('perPage=3000'))
+    && headersOf.daumSpotDays.Referer === 'https://finance.daum.net/', dayCalls().join(' '));
+  reply = { ...base(), daumSpotDays: spotDays, daumFutDays: futDays };
+  calls.length = 0;
+  r = await hist();
+  check('한쪽이 실패했던 답은 기억하지 않는다 — 다시 묻는다', dayCalls().length === 2 && same(r.futFlows, [
+    { date: '20261113', foreign: 500, final: true }, { date: '20261116', foreign: -126798750000 / 1e8, final: false }]) && same(r.errors, {}), JSON.stringify(r));
+  calls.length = 0;
+  NOW += 9 * 60000;
+  await hist();
+  check('둘 다 받았으면 10분 기억한다', calls.length === 0, calls.join(' '));
+  NOW += 2 * 60000;
+  reply = { ...base(), daumSpotDays: { status: 503 }, daumFutDays: new Error('연결 실패') };
+  r = await hist();
+  check('10분이 지나면 다시 묻고, 둘 다 실패하면 실패', r.ok === false && r.error === 'HTTP 503', JSON.stringify(r));
+  reply = { ...base(), daumSpotDays: { data: '표가 아님' }, daumFutDays: futDays };
+  r = await hist();
+  check('모양이 다른 응답은 그 부분의 실패', r.ok && r.spotFlows === null && r.errors.spotFlows === '모양이 다른 응답' && r.futFlows.length === 2, JSON.stringify(r.errors));
+  NOW = kst('2026-11-16T20:30');
+  reply = { ...base(), daumSpotDays: spotDays, daumFutDays: futDays };
+  r = await hist();
+  check('20:30 뒤의 오늘은 확정(네이버 수급과 같은 기준)', r.ok && r.spotFlows.at(-1).final === true && r.futFlows.at(-1).final === true);
   reply = base();
 }
 

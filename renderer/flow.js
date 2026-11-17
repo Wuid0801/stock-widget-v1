@@ -1,5 +1,30 @@
 let flowView = null;
 let flowChart = null;
+// 일별 수급(외국인 현물 · 선물)의 기간 — 창의 기간 버튼. 값은 개월 수: 10일(0)은 지표 화면이 받는 네이버 열흘치 그대로, 그 밖은
+// 다음 금융의 긴 이력(market:flowHistory)에서 마지막 날부터 그만큼 앞까지 자른다(가격 차트의 1M · 3M · 1Y · 3Y 처럼).
+const FLOW_RANGES = { '10d': 0, '1M': 1, '3M': 3, '1Y': 12, '3Y': 36 };
+let flowRange = '10d'; // 마지막으로 고른 기간 — 다음에 열 때도 그 기간
+// 긴 이력 — 1M 이상을 고를 때만 받고 10분 기억한다(main 도 10분). 받다 실패하면 있던 것을 두고 이유를 남긴다(loadInto 와 같은 꼴)
+const FLOW_HIST_TTL = 10 * 60000;
+let flowHist = null; // { at, d, error }
+let flowHistLoading = false;
+const flowLong = (view) => !!view && view.kind === 'daily' && view.range !== '10d';
+
+async function loadFlowHistory() {
+  if (flowHistLoading) return;
+  flowHistLoading = true;
+  let d;
+  try {
+    d = await api.flowHistory();
+  } catch (e) {
+    d = { ok: false, error: e.message };
+  } finally {
+    flowHistLoading = false;
+  }
+  const keep = flowHist && flowHist.d && flowHist.d.ok && !(d && d.ok);
+  flowHist = { at: Date.now(), d: keep ? flowHist.d : d || { ok: false, error: '응답 없음' }, error: keep ? d && d.error || '응답 없음' : null };
+  renderFlow();
+}
 
 function flowData(view, data) {
   const stock = view.kind === 'stock';
@@ -22,9 +47,18 @@ function flowData(view, data) {
     && keys.some((key) => Number.isFinite(row[key]));
   const rows = (Array.isArray(source) ? source : []).filter(valid)
     .sort((left, right) => intraday ? left.t - right.t : left.date.localeCompare(right.date));
-  const shown = stock ? rows.slice(-20) : rows;
+  const months = !stock && !intraday ? FLOW_RANGES[view.range] || 0 : 0;
+  let shown = stock ? rows.slice(-20) : rows;
+  if (months && rows.length) {
+    // 마지막 날에서 그 개월 수만큼 앞(달력)까지 — 그날은 넣지 않는다(1M 은 한 달치)
+    const last = rows[rows.length - 1].date;
+    const cut = new Date(Date.UTC(+last.slice(0, 4), last.slice(4, 6) - 1 - months, +last.slice(6))).toISOString().slice(0, 10).replace(/-/g, '');
+    shown = rows.filter((row) => row.date > cut);
+  }
+  // 날짜 이름표 — 1Y · 3Y 는 가격 차트처럼 연/월(YY/MM), 그 밖은 월/일
+  const day = (row) => (months >= 12 ? `${row.date.slice(2, 4)}/${row.date.slice(4, 6)}` : mmdd(row.date));
   output.labels = shown.map((row) => intraday ? new Date(row.t + 9 * 3600000).toISOString().slice(11, 16)
-    : `${mmdd(row.date)}${!stock && row.final === false ? ' 잠정' : ''}`);
+    : `${day(row)}${!stock && row.final === false ? ' 잠정' : ''}`);
   output.dates = shown.map((row) => intraday ? new Date(row.t + 9 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
     : `${row.date.slice(0, 4)}-${row.date.slice(4, 6)}-${row.date.slice(6, 8)}${!stock && row.final === false ? ' 잠정' : ''}`);
   output.datasets = keys.map((key, index) => ({ label: stock ? ['외국인', '기관', '개인'][index] : intraday ? subject : '외국인',
@@ -32,13 +66,13 @@ function flowData(view, data) {
   const last = output.dates[output.dates.length - 1];
   output.note = stock ? '일별 순매수 · 주(KRX) · 최대 20거래일 · 네이버 · 장중 실시간 수급이 아닙니다'
     : intraday ? '장중 누적 순매수 · 억 원 · 다음 금융 · 장 마감 전 잠정치'
-      : '일별 순매수 · 억 원 · 네이버 · 잠정 표시는 당일 미확정 값';
+      : `일별 순매수 · 억 원 · ${months ? '다음 금융' : '네이버'} · 잠정 표시는 당일 미확정 값`;
   if (last) output.note += ` · ${last} 기준`;
   return output;
 }
 
 function openFlow(view) {
-  flowView = { ...view, venue: view.venue || 'spot' };
+  flowView = { ...view, venue: view.venue || 'spot', range: view.range || flowRange };
   const dialog = document.getElementById('flowDialog');
   if (!dialog.open) dialog.showModal();
   renderFlow();
@@ -57,19 +91,22 @@ function closeFlow() {
 async function refreshFlow() {
   if (!flowView) return;
   const stock = flowView.kind === 'stock';
-  if (stock ? metricsLoading.has(flowView.symbol) : marketLoading) return;
+  const long = flowLong(flowView);
+  if (stock ? metricsLoading.has(flowView.symbol) : long ? flowHistLoading : marketLoading) return;
   document.getElementById('flowRetry').disabled = true;
   if (stock) await loadMetrics(flowView.symbol);
+  else if (long) await loadFlowHistory();
   else await loadMarket();
 }
 
 function renderFlow() {
   if (!flowView || !document.getElementById('flowDialog').open) return;
   const stock = flowView.kind === 'stock';
-  const cached = stock ? metricsCache.get(flowView.symbol) : marketExtras;
-  const ttl = stock ? METRICS_TTL : RANK_TTL;
+  const long = flowLong(flowView); // 일별 수급의 1M 이상 — 긴 이력(다음 금융)을 쓴다
+  const cached = stock ? metricsCache.get(flowView.symbol) : long ? flowHist : marketExtras;
+  const ttl = stock ? METRICS_TTL : long ? FLOW_HIST_TTL : RANK_TTL;
   if (!cached || Date.now() - cached.at >= ttl) refreshFlow();
-  const loading = stock ? metricsLoading.has(flowView.symbol) : marketLoading;
+  const loading = stock ? metricsLoading.has(flowView.symbol) : long ? flowHistLoading : marketLoading;
   const model = flowData(flowView, cached && cached.d);
   const failure = model.error || cached && cached.error;
   const title = document.getElementById('flowTitle');
@@ -78,6 +115,11 @@ function renderFlow() {
   const venue = document.getElementById('flowVenue');
   venue.hidden = flowView.kind !== 'intraday';
   venue.value = flowView.venue;
+  // 기간 버튼 — 일별 수급(외국인 현물 · 선물)에만. 지금 기간을 강조한다
+  const range = document.getElementById('flowRange');
+  range.hidden = flowView.kind !== 'daily';
+  range.innerHTML = range.hidden ? '' : Object.keys(FLOW_RANGES).map((key) =>
+    `<button type="button" data-range="${key}"${key === flowView.range ? ' class="on"' : ''}>${key === '10d' ? '10일' : key}</button>`).join('');
   document.getElementById('flowRetry').disabled = loading;
   const status = document.getElementById('flowStatus');
   status.textContent = loading ? '수급을 불러오는 중…' : failure ? `조회 실패: ${failure}${model.labels.length ? ' · 이전 데이터를 표시합니다' : ''}`
@@ -95,6 +137,8 @@ function renderFlow() {
     type: bar ? 'bar' : 'line',
     data: { labels: model.labels, datasets: model.datasets.map((series, index) => ({ ...series,
       borderColor: colors[index], backgroundColor: bar ? series.data.map((value) => value == null ? 'transparent' : value >= 0 ? UP : DOWN) : colors[index],
+      // 막대가 많으면(1M 넘게) 틈 없이 붙인다 — 틈을 두면 1px 도 안 되는 막대가 흐려진다
+      ...(bar && series.data.length > 30 ? { barPercentage: 1, categoryPercentage: 1 } : {}),
       borderWidth: bar ? 0 : 1.5, pointRadius: series.data.length === 1 ? 3 : 1,
       pointHoverRadius: 3, spanGaps: false,
     })) },
@@ -127,6 +171,12 @@ function bindFlow() {
   document.getElementById('flowVenue').onchange = (event) => {
     if (!flowView) return;
     flowView.venue = event.target.value === 'fut' ? 'fut' : 'spot';
+    renderFlow();
+  };
+  document.getElementById('flowRange').onclick = (event) => {
+    const button = event.target.closest('button');
+    if (!button || !flowView || !Object.hasOwn(FLOW_RANGES, button.dataset.range)) return;
+    flowRange = flowView.range = button.dataset.range;
     renderFlow();
   };
   dialog.oncancel = (event) => { event.preventDefault(); closeFlow(); };

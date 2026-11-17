@@ -183,6 +183,9 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('정렬 되돌리기는 숨김으로 시작', /<span id="sortMsg"><\/span><button type="button" id="sortUndo" hidden>되돌리기<\/button>/.test(html));
   // 묶음 구분선은 접힌 상태(세 줄 높이)에서 숨긴다 — 구분선이 줄 자리를 차지한다
   check('.lgroup 은 접힌 상태에서 숨는다', /\.widget\.compact \.lgroup \{ display: none; \}/.test(html));
+  // 수급 확대 차트의 기간 버튼 자리 — 버튼은 renderFlow 가 그린다. 숨김 규칙이 없으면 display:flex 가 hidden 을 이긴다
+  check('수급 차트 창에 기간 버튼 자리(숨김으로 시작)', /<div class="flowcontrols"><span class="flowrange" id="flowRange" hidden><\/span>/.test(html)
+    && /\.flowrange\[hidden\] \{ display: none; \}/.test(html));
   check('동종 업종 종목은 누를 수 있는 모양', /\.mxpeer \{ cursor: pointer; \}/.test(html));
   check('맨 위 ✕ 툴팁은 종료', /<button id="close" title="종료">✕<\/button>/.test(html));
   // 버튼은 글꼴을 물려받지 않는다 — 규칙마다 적다 빠뜨린 버튼(기간 탭 · 전체)이 브라우저 기본 글꼴이었다

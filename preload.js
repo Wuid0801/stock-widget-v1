@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   detail: (symbol) => ipcRenderer.invoke('naver:detail', symbol),
   rank: (req) => ipcRenderer.invoke('naver:rank', req),
   marketExtras: () => ipcRenderer.invoke('market:extras'),
+  flowHistory: () => ipcRenderer.invoke('market:flowHistory'),
   events: (symbol) => ipcRenderer.invoke('naver:events', symbol),
   backupExport: () => ipcRenderer.invoke('backup:export'),
   backupImport: () => ipcRenderer.invoke('backup:import'),
