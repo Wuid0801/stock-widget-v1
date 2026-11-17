@@ -393,6 +393,11 @@
     background: var(--panel); color: var(--text); font-family: inherit; -webkit-app-region: no-drag; }
   .flow[open] { display: flex; flex-direction: column; }
   .flow::backdrop { background: rgba(0, 0, 0, .4); }
+  /* 수급 차트는 모달이라 맨 위 층(top layer)에 그려져 .widget 의 옅어짐을 받지 않는다. :hover 로는 못 한다 — 둘레의 뒤 막
+     위에서는 어느 요소도 :hover 가 아니고, dialog 의 :hover 는 html 까지 번지지 않는다(2026-11-17 확인). 그래서 마우스가
+     창 밖으로 나가면 붙는 html.away(start.js)로 옅게 한다 */
+  .flow, .flow::backdrop { transition: opacity 0.18s ease; }
+  html.away .flow, html.away .flow::backdrop { opacity: var(--idle-opacity); }
   .flow h2 { flex: 1; min-width: 0; margin: 0; font-size: 12px; align-self: center; }
   .flowcontrols { display: flex; gap: 6px; padding: 6px 10px; }
   .flowcontrols button, .flowcontrols select { background: var(--tf-on-bg); color: var(--text);

@@ -76,6 +76,10 @@ async function refreshNow() {
   // 지수 줄의 장 넘기기 — 마우스를 올리면 멈춘다(누르려는 사이 넘어가지 않게)
   document.getElementById('indices').onmouseenter = () => { indexHover = true; };
   document.getElementById('indices').onmouseleave = () => { indexHover = false; };
+  // 마우스가 창 밖으로 나갔는지(html.away) — 수급 차트(모달)를 위젯처럼 옅게 한다(index.html .flow). 창 안에서 요소를
+  // 옮겨 갈 때는 relatedTarget 이 있다(수급 차트 ↔ 둘레의 뒤 막도 DIALOG, 2026-11-17 확인)
+  document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) document.documentElement.classList.add('away'); });
+  document.addEventListener('mouseover', () => document.documentElement.classList.remove('away'));
   setInterval(tickIndices, FOLIO_MS);
 
   document.getElementById('add').onclick = () => (searchEl.hidden ? openSearch() : closeSearch());
