@@ -48,11 +48,11 @@ await page.waitForTimeout(1500);
 const back = await state();
 const restored = await app.evaluate(() => global.__restored);
 check('복원됨', back.minimized === false);
-check("'restore' 이벤트 발생 (작업표시줄 재숨김 실행)", restored >= 1, `${restored}회`);
+check("'restore' 이벤트 발생", restored >= 1, `${restored}회`);
 check('복원 후에도 항상 위', back.onTop === true);
 check('복원 후 위치/크기 유지', JSON.stringify(back.bounds) === JSON.stringify(before.bounds), JSON.stringify(back.bounds));
 
-// 두 번째 최소화도 되는지 (skipTaskbar 토글 후에도)
+// 두 번째 최소화도 되는지
 await page.evaluate(() => document.getElementById('min').click());
 await page.waitForTimeout(1200);
 check('두 번째 최소화도 동작', (await state()).minimized === true);

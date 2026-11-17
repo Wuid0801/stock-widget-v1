@@ -133,7 +133,7 @@ const MIN_H = 380;
 // 창 위치를 지금 화면에서 잡을 수 있는가 — 위쪽 끌기 막대(높이 약 30px)가 어느 모니터의
 // 작업 영역과 가로 40px · 세로 20px 이상 겹치면 된다. 외부 모니터에 둔 채 끄고 그 모니터
 // 없이 켜면 저장된 위치는 화면 밖인데, Windows 는 지정한 좌표의 창을 화면 안으로 옮겨 주지
-// 않고 작업표시줄 버튼도 없어서(skipTaskbar) 되살릴 길이 마땅치 않다.
+// 않아 되살릴 길이 마땅치 않다(작업표시줄 버튼을 눌러도 화면 밖에서 뜬다).
 const BAR_H = 30;
 function reachable(b, displays) {
   return displays.some(({ workArea: a }) => {
@@ -166,7 +166,9 @@ function createWindow() {
     transparent: true,
     resizable: true,
     alwaysOnTop: store.get('alwaysOnTop') !== false,
-    skipTaskbar: true,
+    // 작업표시줄에 버튼을 둔다(2026-11-17 사용자 요청) — 예전에는 숨기고(skipTaskbar) 최소화한 동안만 보였다. 다른 창에 가려지거나
+    // 최소화했을 때 그 버튼으로 꺼낸다. 전역 단축키로 숨긴 동안은 Windows 가 버튼도 감춘다.
+    skipTaskbar: false,
     hasShadow: false,
     backgroundColor: '#00000000',
     // build/ 는 electron-builder 가 기본으로 설치본에서 빼므로 package.json build.files 에 이 파일을 따로 넣는다(2026-11-06)
@@ -193,7 +195,7 @@ function createWindow() {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
 
   // 화면(렌더러) 프로세스가 죽으면 창은 남는데 내용이 없고 ✕ 도 안 먹는다 — 테두리 없는 투명
-  // 창이고 작업표시줄에도 없어 빠져나오기 어렵다. 다시 띄운다. 다시 뜬 화면은 펼친 상태로
+  // 창이라 빠져나오기 어렵다. 다시 띄운다. 다시 뜬 화면은 펼친 상태로
   // 시작하므로 접혀 있었으면 창도 편다(그대로 두면 접힌 크기에 갇히고 위치도 저장되지 않는다).
   // 시작하자마자 또 죽으면 끝없이 다시 띄우게 되니 1분 안의 두 번째부터는 되풀이하지 않는다.
   let reloadedAt = -Infinity;
@@ -219,13 +221,11 @@ function createWindow() {
   win.on('moved', saveBounds);
   win.on('resized', saveBounds);
   win.on('close', saveBounds);
-  win.on('restore', () => win.setSkipTaskbar(true));
   win.on('closed', () => { win = null; });
 }
 
 // 항상 위(설정의 고정 / 안 고정 — 저장 키 alwaysOnTop, 끄기로 저장된 때만 끈다). 고정이면 전체화면 앱 위에서도 유지되도록
-// screen-saver 레벨. 안 고정이면 다른 창에 가려질 수 있다 — 작업표시줄 버튼이 없어, 가려지면 전역 단축키를 두 번(숨김 → 보임)
-// 눌러 앞으로 꺼낸다(2026-11-13 사용자 요청).
+// screen-saver 레벨. 안 고정이면 다른 창에 가려질 수 있다 — 가려지면 작업표시줄의 버튼을 눌러 앞으로 꺼낸다(2026-11-13 사용자 요청).
 function applyOnTop() {
   if (win) win.setAlwaysOnTop(store.get('alwaysOnTop') !== false, 'screen-saver');
 }
@@ -412,12 +412,9 @@ ipcMain.on('win:dock', (_e, on, height) => {
   });
 });
 
-// skipTaskbar:true 인 채로 최소화하면 작업표시줄에도 없어서 되살릴 수가 없다.
-// 최소화하는 동안만 작업표시줄에 노출하고, 복원되면 다시 숨긴다.
+// 최소화한 창은 작업표시줄의 버튼으로 되살린다(버튼은 늘 있다 — 예전에는 최소화한 동안만 보이게 했다).
 ipcMain.on('win:minimize', () => {
-  if (!win) return;
-  win.setSkipTaskbar(false);
-  win.minimize();
+  if (win) win.minimize();
 });
 
 // ---- IPC: Yahoo Finance ----------------------------------------------------
@@ -1911,8 +1908,7 @@ ipcMain.handle('yf:chart', async (_e, req) => {
   }
 });
 
-// 작업표시줄에 아이콘이 없어서 창을 한 번 놓치면 되살리기 번거롭다.
-// 전역 단축키로 표시/숨김을 토글한다.
+// 전역 단축키로 표시/숨김을 토글한다. 숨긴 동안은 작업표시줄 버튼도 없어(Windows 가 감춘다) 이 단축키로 다시 띄운다.
 const TOGGLE_KEY = 'CommandOrControl+Alt+S';
 
 function registerToggle() {
@@ -1948,7 +1944,7 @@ if (!app.requestSingleInstanceLock()) {
     // Windows에서 알림이 뜨려면 AppUserModelID가 필요하다
     if (process.platform === 'win32') app.setAppUserModelId('com.wuid0801.kr-stock-widget');
     // 설치본에서는 Electron 기본 메뉴를 없앤다. 테두리 없는 창이라 메뉴줄은 안 보여도 단축키는
-    // 살아 있어서 Ctrl+W 는 앱을 끄고(알림도 끊긴다) Ctrl+M 은 작업표시줄 버튼 없는 창을 숨기고
+    // 살아 있어서 Ctrl+W 는 앱을 끄고(알림도 끊긴다) Ctrl+M 은 창을 최소화하고
     // Ctrl+R 은 접힌 상태를 어긋나게 한다. 개발 실행은 새로고침 · 개발자 도구를 쓰도록 둔다.
     if (app.isPackaged) Menu.setApplicationMenu(null);
     // 이 앱은 권한(카메라 · 마이크 · 위치 · 알림 등)이 필요한 웹 기능을 하나도 쓰지 않는다 — 요청은 모두 거절한다

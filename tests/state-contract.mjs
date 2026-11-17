@@ -60,6 +60,9 @@ check('main 이 받는 채널은 preload 가 모두 내보낸다', !orphan.lengt
 check('항상 위는 저장값을 따른다(못 박은 true 없음)', !/setAlwaysOnTop\(true/.test(main) && !/alwaysOnTop: true,\s*skipTaskbar/.test(main)
   && /alwaysOnTop: store\.get\('alwaysOnTop'\) !== false,/.test(main)
   && /function applyOnTop\(\) \{\s*if \(win\) win\.setAlwaysOnTop\(store\.get\('alwaysOnTop'\) !== false, 'screen-saver'\);/.test(main));
+// 작업표시줄 버튼은 늘 둔다(2026-11-17 사용자 요청) — 예전에는 숨기고(skipTaskbar) 최소화한 동안만 보였다. 복원 때 다시 숨기던
+// 처리가 남으면 최소화했다 되살린 뒤 버튼이 사라진다.
+check('작업표시줄 버튼은 늘 있다', /\n {4}skipTaskbar: false,/.test(main) && !/setSkipTaskbar/.test(main));
 check('저장 · 백업 불러오기 · 다시 보이기가 항상 위를 다시 적용한다', /if \('alwaysOnTop' in next\) applyOnTop\(\);/.test(main)
   && (main.match(/applyOnTop\(\);/g) || []).length >= 5, String((main.match(/applyOnTop\(\);/g) || []).length));
 
