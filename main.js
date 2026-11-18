@@ -781,7 +781,9 @@ async function daumIntraday() {
     v: [r?.privateSettlement, r?.foreignSettlement, r?.institutionalSettlement, r?.etcCorporationSettlement] }));
   const kospi = quotes ? quotes.find((q) => q?.symbolCode === 'KGG01P') : null;
   const program = fin(kospi?.investorSummary?.programStraightPurchasePrice);
-  return { spot, fut, program: program == null ? null : program / 1e8 };
+  // 그 값의 날(다음 금융 date 'YYYY-MM-DD') — 마감 뒤 값을 그날 값으로 모아 둔다(keepIntraday)
+  const programDay = /^\d{4}-\d{2}-\d{2}$/.test(String(kospi?.date ?? '')) ? kospi.date.replace(/-/g, '') : null;
+  return { spot, fut, program: program == null ? null : program / 1e8, programDay: program == null ? null : programDay };
 }
 
 // 지난 장중 수급(2026-11-18 사용자 요청: 당일만이 아니라 이전도) — 다음 금융은 그날 것만 준다(날짜를 붙여도 오늘 것, 같은 날
@@ -794,28 +796,37 @@ let intradayStore = null;
 const intradayDays = () => (intradayStore ||= new Store({ cwd: storeOptions.cwd, name: 'intraday', clearInvalidConfig: true }));
 const intradayKept = {}; // 'spot' | 'fut' → 마지막으로 둔 줄의 시각 — 같으면 파일을 다시 읽고 쓰지 않는다
 function keepIntraday(it, now) {
+  const done = (day) => day !== kstDay(now) || kstClock(now) >= INTRADAY_DONE; // 오늘 장중 것은 아직 다 차지 않았다
   try {
     const fresh = ['spot', 'fut'].map((venue) => {
       const rows = it && it[venue];
       const last = rows && rows.length ? rows[rows.length - 1].t : null;
       const day = last == null ? null : kstDay(last);
-      return last == null || intradayKept[venue] === last || (day === kstDay(now) && kstClock(now) < INTRADAY_DONE) ? null : { venue, rows, last, day };
+      return last == null || intradayKept[venue] === last || !done(day) ? null : { venue, rows, last, day };
     }).filter(Boolean);
-    if (!fresh.length) return;
-    const days = { ...(intradayDays().get('days') || {}) };
-    for (const f of fresh) days[f.day] = { ...days[f.day], [f.venue]: f.rows };
-    intradayDays().set('days', Object.fromEntries(Object.keys(days).sort().slice(-INTRADAY_KEEP).map((d) => [d, days[d]])));
-    for (const f of fresh) intradayKept[f.venue] = f.last;
+    if (fresh.length) {
+      const days = { ...(intradayDays().get('days') || {}) };
+      for (const f of fresh) days[f.day] = { ...days[f.day], [f.venue]: f.rows };
+      intradayDays().set('days', Object.fromEntries(Object.keys(days).sort().slice(-INTRADAY_KEEP).map((d) => [d, days[d]])));
+      for (const f of fresh) intradayKept[f.venue] = f.last;
+    }
+    // 프로그램 매매(2026-11-18 사용자 요청) — 다음 금융이 그날 누적값 하나만 줘서 마감 뒤 값을 그날 값으로 둔다. 날마다 숫자 하나라 모두 둔다
+    const day = it && it.programDay;
+    if (it && Number.isFinite(it.program) && /^\d{8}$/.test(day || '') && done(day) && intradayKept.program !== `${day}:${it.program}`) {
+      intradayDays().set('program', { ...(intradayDays().get('program') || {}), [day]: it.program });
+      intradayKept.program = `${day}:${it.program}`;
+    }
   } catch (e) {
     console.warn('지난 장중 수급 저장 실패', e.message);
   }
 }
-// 지표 화면을 열지 않은 날도 모이게 장이 끝난 뒤(16:00 ~ 다음 날 08:40) 한 번 받는다 — 10분마다 보고, 그 밤에 둘 다 받았으면 다시 묻지 않는다
+// 지표 화면을 열지 않은 날도 모이게 장이 끝난 뒤(16:00 ~ 다음 날 08:40) 받는다 — 10분마다 보고, 그 밤에 둘 다 받았으면 다시 묻지 않는다.
+// 20:30(FLOW_FINAL — 네이버 수급 확정 시각) 뒤에 한 번 더 — 마감 뒤 시간외에 프로그램 값이 더 바뀌었을 수 있다
 let intradayNight = null;
 async function captureIntraday() {
   const now = Date.now();
   const clock = kstClock(now);
-  const night = clock >= INTRADAY_DONE ? kstDay(now) : clock < '0840' ? kstDay(now - 86400000) : null;
+  const night = clock >= INTRADAY_DONE ? `${kstDay(now)}${clock >= FLOW_FINAL ? '' : '-16'}` : clock < '0840' ? kstDay(now - 86400000) : null;
   if (!night || night === intradayNight) return;
   try {
     const it = await daumIntraday();
@@ -825,7 +836,7 @@ async function captureIntraday() {
     console.warn('지난 장중 수급 받기 실패', e.message);
   }
 }
-ipcMain.handle('market:intradayPast', () => ({ days: intradayDays().get('days') || {} }));
+ipcMain.handle('market:intradayPast', () => ({ days: intradayDays().get('days') || {}, program: intradayDays().get('program') || {} }));
 
 // --- 외국인 현물 · 선물 수급의 긴 이력(market:flowHistory) ---------------------------------------
 // 수급 확대 차트에서 1M 이상을 고를 때만 묻는다(2026-11-16 사용자 요청: 더 길게 보고 싶다). 다음 금융의 투자자별 일별 값 —

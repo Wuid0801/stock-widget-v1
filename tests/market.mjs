@@ -292,6 +292,8 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
       institutionStraightPurchasePrice: 0, details: { ETC_CORPORATION: 0, PENSION_FUND: 0, ETC_FOREIGN: 0 } }] },
     daumFut: { code: 200, data: [{ date: `${d} 15:45:00`, privateSettlement: 2e8, foreignSettlement: -2e8, institutionalSettlement: 0,
       etcCorporationSettlement: 0 }] },
+    // 프로그램 — 지금 누적값 하나에 그 날짜가 붙어 온다
+    daumQuotes: [{ symbolCode: 'KGG01P', date: d, investorSummary: { programStraightPurchasePrice: 5e8 } }],
   });
   const past = async () => Object.keys((await h['market:intradayPast']()).days);
   check('파일은 처음 쓸 때 만든다 — 설정 옆 intraday.json, 깨졌으면 비우고 시작', made.length === 0);
@@ -301,18 +303,21 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   check('오늘 장중 것은 두지 않는다', same(await past(), []) && writes === 0, JSON.stringify(intra?.d));
   check('Store 옵션', made.length === 1 && made[0].name === 'intraday' && made[0].clearInvalidConfig === true, JSON.stringify(made));
   NOW = kst('2026-10-30T16:05');
-  await h['market:extras']({});
+  const r16 = await h['market:extras']({});
+  check('프로그램 값에 그 날', r16.intraday?.program === 5 && r16.intraday?.programDay === '20261030', JSON.stringify(r16.intraday));
+  check('16:00 뒤의 프로그램 값은 그날 값으로 둔다', (await h['market:intradayPast']()).program?.['20261030'] === 5, JSON.stringify(intra?.d.program));
   check('16:00 뒤의 오늘 것은 둔다 — 현물 · 선물 그대로', same(await past(), ['20261030'])
     && same(intra.d.days['20261030'].spot, [{ t: kst('2026-10-30T15:30'), individual: 1, foreign: -1, institution: 0, pension: 0, corp: 0 }])
     && intra.d.days['20261030'].fut.length === 1, JSON.stringify(intra?.d));
   NOW = kst('2026-10-31T08:00');
   await h['market:extras']({});
-  check('같은 것을 다시 받으면 파일을 다시 쓰지 않는다', writes === 1, `${writes}번`);
+  check('같은 것을 다시 받으면 파일을 다시 쓰지 않는다(장중 수급 · 프로그램 한 번씩)', writes === 2, `${writes}번`);
   // 08:45 ~ 09:01 — 선물은 새 날, 현물은 아직 어제 것. 줄마다 그 마지막 시각의 날에 둔다(오늘 선물은 장중이라 두지 않는다)
   reply = { ...base(), ...rowsOn('2026-10-31'), daumSpot: rowsOn('2026-10-30').daumSpot };
   NOW = kst('2026-10-31T08:50');
   await h['market:extras']({});
-  check('어제 현물은 그대로, 오늘 장중 선물은 두지 않는다', same(await past(), ['20261030']) && writes === 1, `${writes}번`);
+  check('어제 현물은 그대로, 오늘 장중 선물 · 프로그램은 두지 않는다', same(await past(), ['20261030']) && writes === 2
+    && same(Object.keys(intra.d.program), ['20261030']), `${writes}번`);
   broken = true;
   NOW = kst('2026-10-31T16:10');
   reply = { ...base(), ...rowsOn('2026-10-31') };
@@ -327,6 +332,7 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   }
   const kept = await past();
   check('최근 20일만 남는다', kept.length === 20 && kept[0] === '20261206' && kept.at(-1) === '20261225', `${kept.length} ${kept[0]}..${kept.at(-1)}`);
+  check('프로그램은 날마다 숫자 하나라 모두 둔다', Object.keys(intra.d.program).length === 26, String(Object.keys(intra.d.program).length));
   reply = base();
 }
 

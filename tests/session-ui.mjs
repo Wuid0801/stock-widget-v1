@@ -3991,7 +3991,8 @@ await test('market panel: 장중 수급 shows spot and futures net buying per in
   const fr = keyRow(html, 'INTRA_FOREIGN');
   assert.match(html, /<div class="hit rrow mrow" role="button" tabindex="0" data-flow-key="INTRA_FOREIGN" data-flow-kind="intraday" data-key="INTRA_FOREIGN" title="[^"]+">/,
     '누르면 장중 수급 확대 차트');
-  assert.match(html, /<div class="rrow mrow mfix" data-key="INTRA_PROGRAM"/, '프로그램은 시계열이 없어 누를 수 없다');
+  assert.match(html, /<div class="hit rrow mrow" role="button" tabindex="0" data-flow-key="INTRA_PROGRAM" data-flow-kind="program" data-key="INTRA_PROGRAM"/,
+    '프로그램은 누르면 앱이 모아 둔 날별 막대(2026-11-18 — 예전에는 시계열이 없어 누를 수 없었다)');
   assert.match(fr, /<span class="mname">외국인<\/span>/);
   assert.match(fr, /<span class="mval">-13,737<\/span>/, '현물 누적(억, 반올림)');
   assert.match(fr, /<span class="rpct" style="color:#e24b4a">\+203<\/span>/, '선물 누적(억) — 사면 빨강');

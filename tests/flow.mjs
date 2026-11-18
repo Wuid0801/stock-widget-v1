@@ -180,6 +180,24 @@ const tests = [
     app.run("openFlow({kind:'daily', key:'SPOT'})");
     assert.equal(pick.hidden, true, '일별 수급에는 없다');
   }],
+  ['프로그램 — 앱이 모아 둔 날별 값에 아직 모으지 않은 날의 지금 값(잠정)을 붙여 막대로(2026-11-18)', async () => {
+    const app = harness();
+    app.api.intradayPast = async () => ({ days: {}, program: { 20261110: -120.4, 20261111: 705 } });
+    app.context.snapshot = { ...market, intraday: { ...market.intraday, program: 33.3, programDay: '20261112' } };
+    app.run("bindFlow(); flowRange = '1M'; marketExtras = {at: Date.now(), d: snapshot}; openFlow({kind:'program', key:'INTRA_PROGRAM'})");
+    await settle();
+    const chart = app.drawings.at(-1).config;
+    assert.equal(chart.type, 'bar');
+    assert.deepEqual(plain(chart.data.labels), ['11/10', '11/11', '11/12 잠정'], '마지막으로 고른 기간(1M)으로 자르지 않는다');
+    assert.deepEqual(plain(chart.data.datasets[0].data), [-120.4, 705, 33.3]);
+    assert.equal(app.get('flowTitle').textContent, '프로그램 매매 일별 · 코스피');
+    assert.equal(app.get('flowRange').hidden, true, '기간 버튼 없음 — 모아 둔 날 모두');
+    assert.equal(app.get('flowVenue').hidden, true);
+    assert.equal(app.requests.length, 0);
+    app.context.snapshot2 = { ...market, intraday: { ...market.intraday, program: 1, programDay: '20261111' } };
+    app.run('marketExtras = {at: Date.now(), d: snapshot2}; renderFlow()');
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [-120.4, 705], '이미 모아 둔 날이면 지금 값을 붙이지 않는다');
+  }],
   ['장중 수급 — 모아 둔 날이 없으면 날짜 칸을 숨긴다', async () => {
     const app = harness();
     app.context.snapshot = market;

@@ -320,7 +320,8 @@ function marketHtml() {
       const desc = MARKET_DESC[r.key];
       const tip = r.title || desc;
       // 수급 줄은 누르면 확대 차트(openFlow) — 값이 없는 줄(—)은 다른 지표 줄처럼 누를 수 없다
-      const flowKind = r.empty ? null : ['SPOT', 'FUTFLOW'].includes(r.key) ? 'daily' : INTRADAY_FIELD[r.key] ? 'intraday' : null;
+      const flowKind = r.empty ? null : ['SPOT', 'FUTFLOW'].includes(r.key) ? 'daily' : INTRADAY_FIELD[r.key] ? 'intraday'
+        : r.key === 'INTRA_PROGRAM' ? 'program' : null; // 프로그램은 앱이 모아 둔 일별 값(flow.js programData)
       const open = r.symbol ? `<div class="hit rrow mrow" data-sym="${r.symbol}" data-key="${r.key}" title="${esc(`${tip ? `${tip}\n\n` : ''}${r.name} 차트 보기`)}">`
         : flowKind ? `<div class="hit rrow mrow" role="button" tabindex="0" data-flow-key="${r.key}" data-flow-kind="${flowKind}" data-key="${r.key}" title="${esc(`${tip ? `${tip}\n\n` : ''}수급 차트 보기`)}">`
         : `<div class="rrow mrow mfix" data-key="${r.key}"${tip ? ` title="${esc(tip)}"` : ''}>`;

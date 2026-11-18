@@ -9,7 +9,8 @@ const FLOW_HIST_TTL = 10 * 60000;
 let flowHist = null; // { at, d, error }
 let flowHistLoading = false;
 const flowLong = (view) => !!view && view.kind === 'daily' && view.range !== '10d';
-// 앱이 모아 둔 지난 장중 수급 { days: { YYYYMMDD: { spot, fut } } }(main 의 market:intradayPast) — 장중 수급 창을 열 때마다 받는다
+// 앱이 모아 둔 지난 장중 수급 { days: { YYYYMMDD: { spot, fut } }, program: { YYYYMMDD: 억 원 } }(main 의 market:intradayPast)
+// — 장중 수급 · 프로그램 창을 열 때마다 받는다
 let intradayPast = null;
 
 async function loadFlowHistory() {
@@ -31,25 +32,26 @@ async function loadFlowHistory() {
 function flowData(view, data) {
   const stock = view.kind === 'stock';
   const intraday = view.kind === 'intraday';
+  const program = view.kind === 'program';
   const future = intraday ? view.venue === 'fut' : view.key === 'FUTFLOW';
   const subject = MARKET_EXTRA_NAMES[view.key] || '외국인';
   const output = {
-    title: stock ? `${view.name || '종목'} 투자자별 수급` : intraday
+    title: program ? '프로그램 매매 일별 · 코스피' : stock ? `${view.name || '종목'} 투자자별 수급` : intraday
       ? `${subject} · ${future ? '코스피200 선물' : '코스피 현물'}` : `외국인 ${future ? '선물' : '현물'} 일별 수급`,
     unit: stock ? '주' : '억 원', labels: [], dates: [], datasets: [], note: '', error: null,
   };
   if (!data) return output;
   if (!data.ok) { output.error = data.error || '조회 실패'; return output; }
-  const keys = stock ? ['foreign', 'organ', 'individual'] : [intraday ? INTRADAY_FIELD[view.key] : 'foreign'];
+  const keys = stock ? ['foreign', 'organ', 'individual'] : [program ? 'value' : intraday ? INTRADAY_FIELD[view.key] : 'foreign'];
   if (keys.some((key) => !key)) return output;
-  const part = stock ? 'trend' : intraday ? 'intraday' : future ? 'futFlows' : 'spotFlows';
+  const part = stock ? 'trend' : program ? 'program' : intraday ? 'intraday' : future ? 'futFlows' : 'spotFlows';
   const source = intraday ? data.intraday && data.intraday[future ? 'fut' : 'spot'] : data[part];
   output.error = data.errors && data.errors[part] || null;
   const valid = (row) => row && (intraday ? Number.isFinite(row.t) : /^\d{8}$/.test(row.date))
     && keys.some((key) => Number.isFinite(row[key]));
   const rows = (Array.isArray(source) ? source : []).filter(valid)
     .sort((left, right) => intraday ? left.t - right.t : left.date.localeCompare(right.date));
-  const months = !stock && !intraday ? FLOW_RANGES[view.range] || 0 : 0;
+  const months = view.kind === 'daily' ? FLOW_RANGES[view.range] || 0 : 0;
   let shown = stock ? rows.slice(-20) : rows;
   if (months && rows.length) {
     // 마지막 날에서 그 개월 수만큼 앞(달력)까지 — 그날은 넣지 않는다(1M 은 한 달치)
@@ -63,14 +65,24 @@ function flowData(view, data) {
     : `${day(row)}${!stock && row.final === false ? ' 잠정' : ''}`);
   output.dates = shown.map((row) => intraday ? new Date(row.t + 9 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
     : `${row.date.slice(0, 4)}-${row.date.slice(4, 6)}-${row.date.slice(6, 8)}${!stock && row.final === false ? ' 잠정' : ''}`);
-  output.datasets = keys.map((key, index) => ({ label: stock ? ['외국인', '기관', '개인'][index] : intraday ? subject : '외국인',
+  output.datasets = keys.map((key, index) => ({ label: stock ? ['외국인', '기관', '개인'][index] : intraday ? subject : program ? '프로그램' : '외국인',
     data: shown.map((row) => Number.isFinite(row[key]) ? row[key] : null) }));
   const last = output.dates[output.dates.length - 1];
-  output.note = stock ? '일별 순매수 · 주(KRX) · 최대 20거래일 · 네이버 · 장중 실시간 수급이 아닙니다'
+  output.note = program ? '일별 순매수(차익 · 비차익 합) · 억 원 · 다음 금융 · 앱이 마감 뒤 모아 둔 날만 · 잠정은 오늘 장중 값'
+    : stock ? '일별 순매수 · 주(KRX) · 최대 20거래일 · 네이버 · 장중 실시간 수급이 아닙니다'
     : intraday ? '장중 누적 순매수 · 억 원 · 다음 금융 · 장 마감 전 잠정치'
       : `일별 순매수 · 억 원 · ${months ? '다음 금융' : '네이버'} · 잠정 표시는 당일 미확정 값`;
   if (last) output.note += ` · ${last} 기준`;
   return output;
+}
+
+// 프로그램 일별 — 앱이 모아 둔 날(intradayPast.program)에, 아직 모으지 않은 날의 지금 값(지표 화면 · 잠정)을 붙인다
+function programData(extras) {
+  const kept = (intradayPast && intradayPast.program) || {};
+  const rows = Object.keys(kept).map((date) => ({ date, value: kept[date] }));
+  const live = extras && extras.ok && extras.intraday;
+  if (live && Number.isFinite(live.program) && live.programDay && !(live.programDay in kept)) rows.push({ date: live.programDay, value: live.program, final: false });
+  return { ok: true, program: rows, errors: extras && extras.errors && extras.errors.intraday ? { program: extras.errors.intraday } : {} };
 }
 
 function openFlow(view) {
@@ -78,7 +90,7 @@ function openFlow(view) {
   const dialog = document.getElementById('flowDialog');
   if (!dialog.open) dialog.showModal();
   renderFlow();
-  if (view.kind !== 'intraday') return;
+  if (view.kind !== 'intraday' && view.kind !== 'program') return;
   api.intradayPast().then((d) => {
     intradayPast = d;
     const days = Object.keys((d && d.days) || {}).filter((k) => /^\d{8}$/.test(k)).sort().reverse();
@@ -118,7 +130,7 @@ function renderFlow() {
   // 지난 날을 골랐으면 모아 둔 그날 것을 그린다 — 받는 중 · 실패 표시는 오늘 것의 상태라 보이지 않는다
   const past = flowView.kind === 'intraday' && flowView.day && intradayPast && intradayPast.days ? intradayPast.days[flowView.day] : null;
   const loading = !past && (stock ? metricsLoading.has(flowView.symbol) : long ? flowHistLoading : marketLoading);
-  const model = flowData(flowView, past ? { ok: true, intraday: past } : cached && cached.d);
+  const model = flowData(flowView, past ? { ok: true, intraday: past } : flowView.kind === 'program' ? programData(cached && cached.d) : cached && cached.d);
   const failure = model.error || !past && cached && cached.error;
   const title = document.getElementById('flowTitle');
   title.textContent = model.title;
@@ -145,7 +157,7 @@ function renderFlow() {
   if (!model.labels.length) return;
   const canvas = document.getElementById('flowCanvas');
   canvas.setAttribute('aria-label', `${model.title}, 단위 ${model.unit}, ${model.note}`);
-  const bar = flowView.kind === 'daily';
+  const bar = flowView.kind === 'daily' || flowView.kind === 'program';
   const colors = ['--accent', '--sup-line', '--res-line'].map(cssVar);
   flowChart = new Chart(canvas, {
     type: bar ? 'bar' : 'line',
