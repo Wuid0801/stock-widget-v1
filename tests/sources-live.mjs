@@ -120,12 +120,13 @@ export const CHECKS = [
     ] : [])],
   },
   {
-    // 종목 수급 차트의 3M 이상(2026-11-18) — 다음 금융이 요청 한 번에 2022-01 부터 준다(외국인 · 기관만). 공식 API 가 아니라 막히거나 줄 수 있다
-    name: '종목 수급 이력', source: '다음 금융 종목 투자자별 일별(삼성전자)',
-    call: (h) => h['stock:flowHistory']({}, '005930.KS'),
+    // 종목 수급 차트의 3M 이상(2026-11-18) — 네이버 종목 매매동향을 60일씩 날짜를 넘겨 가며 3년치(요청 13번 남짓). 공식 API 가 아니라 막히거나 줄 수 있다
+    name: '종목 수급 이력', source: '네이버 종목 매매동향(삼성전자, 60일씩 3년)',
+    call: (h) => h['stock:flowHistory']({}, '005930.KS', 36),
     verify: (r) => [...okOf(r), ...(r && r.ok ? [
-      ...need(Array.isArray(r.trend) && r.trend.every((f) => /^\d{8}$/.test(f.date)) && r.trend.filter((f) => num(f.foreign) && num(f.organ)).length >= 700,
-        '종목 수급 이력이 3년치(700일) 미만'),
+      ...need(Array.isArray(r.trend) && r.trend.every((f) => /^\d{8}$/.test(f.date))
+        && r.trend.filter((f) => num(f.foreign) && num(f.organ) && num(f.individual)).length >= 700, '종목 수급 이력이 3년치(700일) 미만'),
+      ...need(Array.isArray(r.trend) && new Set(r.trend.map((f) => f.date)).size === r.trend.length, '종목 수급 이력에 같은 날이 겹침(날짜 넘기기가 어긋남)'),
       ...need(Array.isArray(r.trend) && r.trend.length && recent(r.trend.map((f) => f.date).sort().at(-1), 7), '종목 수급 이력이 7일보다 오래됨'),
     ] : [])],
   },

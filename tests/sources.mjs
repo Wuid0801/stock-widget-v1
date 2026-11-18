@@ -43,7 +43,7 @@ const GOOD = {
   '외국인 수급 이력': { ok: true, errors: {},
     spotFlows: Array.from({ length: 720 }, (_, i) => ({ date: ymd(720 - i), foreign: i - 300, personal: 300 - i, inst: 0, final: true })),
     futFlows: Array.from({ length: 720 }, (_, i) => ({ date: ymd(720 - i), foreign: 300 - i, personal: i - 300, inst: 0, final: true })) },
-  '종목 수급 이력': { ok: true, trend: Array.from({ length: 720 }, (_, i) => ({ date: ymd(i + 1), foreign: i - 300, organ: 300 - i })) },
+  '종목 수급 이력': { ok: true, trend: Array.from({ length: 720 }, (_, i) => ({ date: ymd(i + 1), foreign: i - 300, organ: 300 - i, individual: 0 })) },
   '통합 일봉 (KRX + NXT)': { ok: true,
     days: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [ymd(20 - i), { open: 100, high: 110, low: 90, close: 105 }])) },
   '일봉 5년': { kr: chart(1220, 1), us: chart(1254, 1), ix: chart(1221, 1) },
@@ -97,6 +97,8 @@ const GOOD = {
   check('종목 수급 이력이 3년치가 안 되면 FAIL', by('종목 수급 이력').verify(sh, []).some((p) => p.includes('종목 수급 이력이 3년치')));
   const so = g('종목 수급 이력'); so.trend = so.trend.map((f) => ({ ...f, date: '20260101' }));
   check('종목 수급 이력이 오래되면 FAIL', by('종목 수급 이력').verify(so, []).some((p) => p.includes('7일보다')));
+  const sd = g('종목 수급 이력'); sd.trend = [...sd.trend, sd.trend[0]];
+  check('종목 수급 이력에 같은 날이 겹치면 FAIL', by('종목 수급 이력').verify(sd, []).some((p) => p.includes('겹침')));
   const d5 = g('일봉 5년'); d5.ix.volumes = d5.ix.volumes.map(() => 0);
   check('지수 거래량이 0 이면 FAIL(달걀이 빈다)', by('일봉 5년').verify(d5, []).some((p) => p.startsWith('^KS11: 거래량')));
   check('마지막 봉이 오래되면 FAIL', by('국내 1D 분봉').verify(chart(70, 10), []).some((p) => p.includes('오래됨')));

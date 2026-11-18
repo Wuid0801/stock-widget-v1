@@ -875,18 +875,33 @@ ipcMain.handle('market:flowHistory', async () => {
   return d;
 });
 
-// 종목 수급의 긴 이력(2026-11-18 사용자 요청: 종목 수급 차트를 더 길게) — 다음 금융의 종목 투자자별 일별 값. 요청 한 번에 2022-01 부터
-// 온다(같은 날 확인: 삼성전자 1,179일 · 코스닥 · ETF 도, 어제까지 — 장중에는 오늘 행이 없다). 외국인 · 기관 순매수(주)만 있고 개인 칸은
-// 없다. 모양은 naver:detail 의 trend 와 같다({ date, foreign, organ }). 창에서 3M 이상을 고를 때만 묻고 렌더러가 10분 기억한다.
-ipcMain.handle('stock:flowHistory', async (_e, symbol) => {
+// 종목 수급의 긴 이력(2026-11-18 사용자 요청: 종목 수급 차트를 더 길게 · 개인도) — naver:detail 의 trend 와 같은 네이버 종목 매매동향을
+// 날짜를 넘겨 가며 받는다. 한 번에 60일까지만 준다(100 · 120 · 250 · 500 은 HTTP 400, 같은 날 사용자 터미널 확인). bizdate 를 주면 그
+// 전날부터 60일(최신이 앞). 가장 새 날에서 months 개월 앞까지 닿을 때까지 차례로 묻는다(3M 한 번 · 1Y 다섯 번 · 3Y 열세 번 남짓).
+// 하나라도 실패하면 실패 — 앞부분이 빈 채로 누적을 그리면 틀린 선이 된다. 다음 금융 종목 이력은 개인 칸이 없어 쓰지 않는다(같은 날).
+// 창에서 3M 이상을 고를 때만 묻고 렌더러가 기간마다 10분 기억한다.
+const STOCK_FLOW_PAGE = 60;
+ipcMain.handle('stock:flowHistory', async (_e, symbol, months) => {
   const kr = KR_RE.exec(String(symbol ?? ''));
-  if (!kr) return { ok: false, error: '잘못된 요청' };
+  if (!kr || !Number.isInteger(months) || months < 1 || months > 36) return { ok: false, error: '잘못된 요청' };
+  const trend = [];
   try {
-    const j = await daumJson(`${DAUM_API}/investor/days?symbolCode=A${kr[1]}&page=1&perPage=3000&pagination=true`);
-    if (!Array.isArray(j?.data)) throw new Error('모양이 다른 응답');
-    const num = (v) => (Number.isFinite(v) ? v : null);
-    return { ok: true, trend: j.data.map((r) => ({ date: String(r?.date ?? '').slice(0, 10).replace(/-/g, ''),
-      foreign: num(r?.foreignStraightPurchaseVolume), organ: num(r?.institutionStraightPurchaseVolume) })) };
+    let cut = '';
+    let before = '';
+    for (let page = 0; page < 20; page++) { // 3Y 는 13번 남짓 — 20번에서 멈춘다(날짜를 넘겨도 같은 것이 오면)
+      const j = await naverJson(`https://m.stock.naver.com/api/stock/${kr[1]}/trend?pageSize=${STOCK_FLOW_PAGE}${before ? `&bizdate=${before}` : ''}`);
+      if (!Array.isArray(j)) throw new Error('모양이 다른 응답');
+      const rows = j.map(naverTrendRow).filter((r) => /^\d{8}$/.test(r.date));
+      trend.push(...rows);
+      const oldest = rows.length ? rows[rows.length - 1].date : null;
+      if (!cut && rows.length) { // 가장 새 날에서 months 개월 앞 — 렌더러가 자르는 기준(flowData)과 같다
+        const d = rows[0].date;
+        cut = new Date(Date.UTC(+d.slice(0, 4), d.slice(4, 6) - 1 - months, +d.slice(6))).toISOString().slice(0, 10).replace(/-/g, '');
+      }
+      if (rows.length < STOCK_FLOW_PAGE || !oldest || oldest <= cut || (before && oldest >= before)) break;
+      before = oldest;
+    }
+    return { ok: true, trend };
   } catch (e) {
     return { ok: false, error: e.message || '수급 이력 조회 실패' };
   }
@@ -1112,6 +1127,12 @@ async function krTraders(code) {
   }
 }
 
+// 네이버 종목 매매동향 한 줄 → { date, foreign, organ, individual, foreignRatio }(주) — 지표 보기(20일)와 수급 차트의 긴 이력(stock:flowHistory)
+const naverTrendRow = (r) => ({
+  date: String(r?.bizdate), foreign: detailNum(r?.foreignerPureBuyQuant), organ: detailNum(r?.organPureBuyQuant),
+  individual: detailNum(r?.individualPureBuyQuant), foreignRatio: detailNum(r?.foreignerHoldRatio),
+});
+
 async function krDetail(code) {
   // 주주 구성 · 거래원은 따로 받는다 — 이것만으로는 지표 화면이 되지 않아 '전부 실패' 판정(settleAll)에 넣지 않는다
   const holders = krHolders(code);
@@ -1140,10 +1161,7 @@ async function krDetail(code) {
     },
     valuation: info.valuation,
     consensus: detailConsensus(I?.consensusInfo, 'KRW'),
-    trend: Array.isArray(trend) ? trend.map((r) => ({
-      date: String(r.bizdate), foreign: detailNum(r.foreignerPureBuyQuant), organ: detailNum(r.organPureBuyQuant),
-      individual: detailNum(r.individualPureBuyQuant), foreignRatio: detailNum(r.foreignerHoldRatio),
-    })) : null,
+    trend: Array.isArray(trend) ? trend.map(naverTrendRow) : null,
     ir: I?.irScheduleInfo?.irScheduleDate ? { title: String(I.irScheduleInfo.title ?? ''),
       date: I.irScheduleInfo.irScheduleDate, dday: detailNum(I.irScheduleInfo.irScheduleDday) } : null,
     // 단위는 억원(삼성전자 2025.06 매출액 745,663 = 74.6조)

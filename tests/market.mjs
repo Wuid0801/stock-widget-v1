@@ -29,7 +29,7 @@ const fakeFetch = async (url, opt) => {
         : url.includes('finance.daum.net/api/investor/KOSPI/times') ? 'daumSpot' : url.includes('finance.daum.net/api/investor/future/times') ? 'daumFut'
           : url.includes('finance.daum.net/api/domestic/quotes') ? 'daumQuotes'
             : url.includes('finance.daum.net/api/investor/KOSPI/days') ? 'daumSpotDays' : url.includes('finance.daum.net/api/investor/future/days') ? 'daumFutDays'
-              : url.includes('finance.daum.net/api/investor/days?symbolCode=') ? 'daumStockDays' : 'other';
+              : url.includes('m.stock.naver.com/api/stock/') && url.includes('/trend?') ? 'naverStockTrend' : 'other';
   headersOf[route] = opt && opt.headers;
   const date = (/bizdate=(\d{8})/.exec(url) || [])[1];
   const body = typeof reply[route] === 'function' ? reply[route](date) : reply[route];
@@ -460,29 +460,49 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   reply = base();
 }
 
-// --- 종목 수급의 긴 이력(stock:flowHistory, 2026-11-18) — 다음 금융의 종목 투자자별 일별 값. 종목 수급 차트의 3M 이상 --------------
+// --- 종목 수급의 긴 이력(stock:flowHistory, 2026-11-18) — 네이버 종목 매매동향을 60일씩 날짜를 넘겨 가며. 종목 수급 차트의 3M 이상 ---------
 {
-  const flow = (symbol) => handlers['stock:flowHistory']({}, symbol);
-  // 2026-11-18 브라우저에서 본 응답의 쓰는 필드만 — 최신 날이 먼저, 값은 주. 개인 칸은 없다
-  const stockDays = { data: [
-    { date: '2026-11-17 00:00:00', foreignStraightPurchaseVolume: -2470768, institutionStraightPurchaseVolume: 875284, foreignOwnSharesRate: 0.46 },
-    { date: '2026-11-16 00:00:00', foreignStraightPurchaseVolume: -3115971, institutionStraightPurchaseVolume: null }] };
-  reply = { ...base(), daumStockDays: stockDays };
+  const flow = (symbol, months) => handlers['stock:flowHistory']({}, symbol, months);
+  // 평일 2023-01-02 ~ 2026-11-17, 최신이 앞(네이버 모양 — 값은 '+1,234' 같은 글자). bizdate 를 주면 그 전날부터 60일
+  const days = [];
+  for (let t = Date.UTC(2026, 10, 17); t >= Date.UTC(2023, 0, 2); t -= 86400000) {
+    if (new Date(t).getUTCDay() % 6) days.push(new Date(t).toISOString().slice(0, 10).replace(/-/g, ''));
+  }
+  const page = (before, all = days) => all.filter((d) => !before || d < before).slice(0, 60)
+    .map((d, i) => ({ bizdate: d, foreignerPureBuyQuant: `+${i},000`, organPureBuyQuant: '-1', individualPureBuyQuant: '2', foreignerHoldRatio: '46.0%' }));
+  const trendCalls = () => calls.filter((u) => u.includes('/api/stock/'));
+  reply = { ...base(), naverStockTrend: page };
   calls.length = 0;
-  let r = await flow('247540.KQ');
-  check('종목 이력 — A + 코드로 한 번(perPage=3000), Referer', calls.length === 1 && calls[0].includes('symbolCode=A247540&') && calls[0].includes('perPage=3000')
-    && headersOf.daumStockDays.Referer === 'https://finance.daum.net/', calls.join(' '));
-  check('외국인 · 기관 순매수(주) — 빈 값은 null', same(r, { ok: true, trend: [
-    { date: '20261117', foreign: -2470768, organ: 875284 }, { date: '20261116', foreign: -3115971, organ: null }] }), JSON.stringify(r));
+  let r = await flow('247540.KQ', 3);
+  const dates = r.trend.map((x) => x.date);
+  check('3M — 60일씩 두 번, 둘째는 앞 페이지의 가장 옛날(bizdate)부터 — 겹치지 않고 석 달 앞까지, Referer', r.ok && trendCalls().length === 2
+    && trendCalls()[0] === 'https://m.stock.naver.com/api/stock/247540/trend?pageSize=60' && trendCalls()[1].endsWith(`pageSize=60&bizdate=${days[59]}`)
+    && new Set(dates).size === 120 && dates[0] === '20261117' && dates.at(-1) <= '20260817'
+    && headersOf.naverStockTrend.Referer === 'https://m.stock.naver.com/', trendCalls().join(' '));
+  check('줄 모양은 지표 보기(naver:detail)의 trend 와 같다 — 개인 포함', same(r.trend[1], { date: days[1], foreign: 1000, organ: -1, individual: 2, foreignRatio: 46 }),
+    JSON.stringify(r.trend[1]));
   calls.length = 0;
-  const bad = [await flow('AAPL'), await flow('^KS11'), await flow('../x.KS'), await flow(undefined)];
-  check('국내 종목이 아니면 묻지 않는다', calls.length === 0 && bad.every((b) => b.ok === false && b.error === '잘못된 요청'), JSON.stringify(bad));
-  reply = { ...base(), daumStockDays: { status: 500 } };
-  r = await flow('005930.KS');
-  check('받다 실패하면 그 이유', r.ok === false && r.error === 'HTTP 500', JSON.stringify(r));
-  reply = { ...base(), daumStockDays: { data: '표가 아님' } };
-  r = await flow('005930.KS');
+  r = await flow('005930.KS', 36);
+  check('3Y — 3년 앞에 닿으면 멈춘다(평일 달력이라 14번 — 실제 거래일은 공휴일이 빠져 13번 남짓)', r.ok && trendCalls().length === 14
+    && r.trend.at(-1).date <= '20231117' && r.trend.at(-1).date > '20230701', `${trendCalls().length}번 ${r.trend.length}일 ${r.trend.at(-1).date}`);
+  reply = { ...base(), naverStockTrend: () => page() }; // 날짜를 넘겨도 같은 것이 온다
+  calls.length = 0;
+  r = await flow('005930.KS', 36);
+  check('날짜를 넘겨도 같은 것이 오면 멈춘다', r.ok && trendCalls().length === 2, `${trendCalls().length}번`);
+  reply = { ...base(), naverStockTrend: (before) => (before ? { status: 503 } : page()) };
+  r = await flow('005930.KS', 12);
+  check('중간에 하나라도 실패하면 실패 — 앞이 빈 누적은 틀린 선이 된다', r.ok === false && r.error === 'HTTP 503', JSON.stringify(r));
+  reply = { ...base(), naverStockTrend: (before) => page(before, days.slice(0, 70)) };
+  calls.length = 0;
+  r = await flow('005930.KS', 36);
+  check('이력이 짧으면(새로 상장) 있는 만큼', r.ok && r.trend.length === 70 && trendCalls().length === 2, `${r.trend.length}일 ${trendCalls().length}번`);
+  reply = { ...base(), naverStockTrend: { result: '표가 아님' } };
+  r = await flow('005930.KS', 3);
   check('모양이 다른 응답은 실패', r.ok === false && r.error === '모양이 다른 응답', JSON.stringify(r));
+  calls.length = 0;
+  const bad = [await flow('AAPL', 3), await flow('^KS11', 3), await flow('../x.KS', 3), await flow(undefined, 3),
+    await flow('005930.KS'), await flow('005930.KS', 37), await flow('005930.KS', 1.5), await flow('005930.KS', '3')];
+  check('국내 종목 · 1~36개월이 아니면 묻지 않는다', calls.length === 0 && bad.every((b) => b.ok === false && b.error === '잘못된 요청'), JSON.stringify(bad));
   reply = base();
 }
 

@@ -12,7 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   rank: (req) => ipcRenderer.invoke('naver:rank', req),
   marketExtras: () => ipcRenderer.invoke('market:extras'),
   flowHistory: () => ipcRenderer.invoke('market:flowHistory'),
-  stockFlowHistory: (symbol) => ipcRenderer.invoke('stock:flowHistory', symbol),
+  stockFlowHistory: (symbol, months) => ipcRenderer.invoke('stock:flowHistory', symbol, months),
   intradayPast: () => ipcRenderer.invoke('market:intradayPast'),
   events: (symbol) => ipcRenderer.invoke('naver:events', symbol),
   backupExport: () => ipcRenderer.invoke('backup:export'),

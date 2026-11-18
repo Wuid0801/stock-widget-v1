@@ -4,25 +4,28 @@ let flowChart = null;
 // 다음 금융의 긴 이력(market:flowHistory)에서 마지막 날부터 그만큼 앞까지 자른다(가격 차트의 1M · 3M · 1Y · 3Y 처럼).
 const FLOW_RANGES = { '10d': 0, '1M': 1, '3M': 3, '1Y': 12, '3Y': 36 };
 let flowRange = '10d'; // 마지막으로 고른 기간 — 다음에 열 때도 그 기간
-// 종목 수급의 기간(2026-11-18 사용자 요청: 더 길게) — 20일(0)은 종목 지표가 받는 네이버 20거래일(외국인 · 기관 · 개인) 그대로, 그 밖은
-// 다음 금융의 종목 일별 이력(stock:flowHistory, 2022-01 부터 · 개인 칸 없음)에서 자른다. 마지막으로 고른 기간은 시장 수급과 따로
+// 종목 수급의 기간(2026-11-18 사용자 요청: 더 길게) — 20일(0)은 종목 지표가 받는 네이버 20거래일 그대로, 그 밖은 같은 네이버 매매동향을
+// 그 기간만큼 거슬러 받은 것(stock:flowHistory — 60일씩 여러 번)을 자른다. 마지막으로 고른 기간은 시장 수급과 따로
 const STOCK_FLOW_RANGES = { '20d': 0, '3M': 3, '1Y': 12, '3Y': 36 };
 let stockFlowRange = '20d';
 const flowRanges = (view) => (view.kind === 'stock' ? STOCK_FLOW_RANGES : FLOW_RANGES);
 // 일별 수급의 주체(2026-11-18 사용자 요청: 개인 · 기관도) — 창의 고르기, 열 때마다 외국인(누른 줄이 외국인 줄이다)
 const FLOW_WHO = { foreign: '외국인', personal: '개인', inst: '기관' };
-// 긴 이력 — 시장('') · 종목(기호)마다. 긴 기간을 고를 때만 받고 10분 기억한다. 받다 실패하면 있던 것을 두고 이유를 남긴다(loadInto)
+// 긴 이력 — 시장('') · 종목(기호|기간)마다. 긴 기간을 고를 때만 받고 10분 기억한다. 받다 실패하면 있던 것을 두고 이유를 남긴다(loadInto).
+// 종목은 고른 기간만큼만 거슬러 받아(3Y 는 요청이 열세 번 남짓) 기간마다 따로 둔다
 const FLOW_HIST_TTL = 10 * 60000;
-const flowHist = new Map(); // '' · 종목 기호 → { at, d, error }
+const flowHist = new Map(); // '' · '종목 기호|기간' → { at, d, error }
 const flowHistLoading = new Set();
 const flowLong = (view) => !!view && (view.kind === 'daily' || view.kind === 'stock') && !!flowRanges(view)[view.range];
-const flowHistKey = (view) => (view.kind === 'stock' ? view.symbol : '');
+const flowHistKey = (view) => (view.kind === 'stock' ? `${view.symbol}|${view.range}` : '');
 // 앱이 모아 둔 지난 장중 수급 { days: { YYYYMMDD: { spot, fut } }, program: { YYYYMMDD: 억 원 } }(main 의 market:intradayPast)
 // — 장중 수급 · 프로그램 창을 열 때마다 받는다
 let intradayPast = null;
 
-function loadFlowHistory(key = '') {
-  return loadInto(flowHist, flowHistLoading, key, () => (key ? api.stockFlowHistory(key) : api.flowHistory()), renderFlow);
+function loadFlowHistory(view = null) {
+  const stock = !!view && view.kind === 'stock';
+  return loadInto(flowHist, flowHistLoading, stock ? flowHistKey(view) : '',
+    () => (stock ? api.stockFlowHistory(view.symbol, STOCK_FLOW_RANGES[view.range]) : api.flowHistory()), renderFlow);
 }
 
 function flowData(view, data) {
@@ -40,8 +43,7 @@ function flowData(view, data) {
   };
   if (!data) return output;
   if (!data.ok) { output.error = data.error || '조회 실패'; return output; }
-  // 종목의 긴 이력(다음 금융)에는 개인 칸이 없다
-  const keys = stock ? ['foreign', 'organ', 'individual'].slice(0, months ? 2 : 3) : [program ? 'value' : intraday ? INTRADAY_FIELD[view.key] : who];
+  const keys = stock ? ['foreign', 'organ', 'individual'] : [program ? 'value' : intraday ? INTRADAY_FIELD[view.key] : who];
   if (keys.some((key) => !key)) return output;
   const part = stock ? 'trend' : program ? 'program' : intraday ? 'intraday' : future ? 'futFlows' : 'spotFlows';
   const source = intraday ? data.intraday && data.intraday[future ? 'fut' : 'spot'] : data[part];
@@ -72,7 +74,7 @@ function flowData(view, data) {
   });
   const last = output.dates[output.dates.length - 1];
   output.note = program ? '일별 순매수(차익 · 비차익 합) · 억 원 · 다음 금융 · 앱이 마감 뒤 모아 둔 날만 · 잠정은 오늘 장중 값'
-    : stock ? (months ? '기간 첫날부터 더한 누적 순매수 · 주 · 다음 금융(개인 칸 없음) · 장중 실시간 수급이 아닙니다'
+    : stock ? (months ? '기간 첫날부터 더한 누적 순매수 · 주(KRX) · 네이버 · 장중 실시간 수급이 아닙니다'
       : '일별 순매수 · 주(KRX) · 최대 20거래일 · 네이버 · 장중 실시간 수급이 아닙니다')
     : intraday ? '장중 누적 순매수 · 억 원 · 다음 금융 · 장 마감 전 잠정치'
       : `일별 순매수 · 억 원 · ${months ? '다음 금융' : '네이버'} · 잠정 표시는 당일 미확정 값`;
@@ -120,7 +122,7 @@ async function refreshFlow() {
   const key = flowHistKey(flowView);
   if (long ? flowHistLoading.has(key) : stock ? metricsLoading.has(flowView.symbol) : marketLoading) return;
   document.getElementById('flowRetry').disabled = true;
-  if (long) await loadFlowHistory(key);
+  if (long) await loadFlowHistory(flowView);
   else if (stock) await loadMetrics(flowView.symbol);
   else await loadMarket();
 }
