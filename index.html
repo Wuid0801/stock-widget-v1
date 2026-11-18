@@ -872,6 +872,7 @@
     <div class="search" id="search" hidden>
       <div class="qbar">
         <input id="q" type="text" spellcheck="false" placeholder="종목명 또는 코드 (예: 삼성전자, 005930)" />
+        <button class="pmin" title="최소화">─</button>
         <button id="qclose" title="닫기(Esc)">✕</button>
       </div>
       <div id="results"></div>
@@ -883,6 +884,7 @@
       <div class="qbar">
         <span class="ptitle">시장 순위</span>
         <span class="seg" id="rankMarket"></span>
+        <button class="pmin" title="최소화">─</button>
         <button id="rankClose" title="닫기(Esc)">✕</button>
       </div>
       <div class="rtabs" id="rankTabs"></div>
@@ -894,6 +896,7 @@
     <div class="search" id="alerts" hidden>
       <div class="qbar">
         <span class="ptitle">설정</span>
+        <button class="pmin" title="최소화">─</button>
         <button id="alertClose" title="닫기(Esc)">✕</button>
       </div>
       <div id="alertList">
@@ -978,7 +981,7 @@
   </div>
 
   <dialog class="flow" id="flowDialog" aria-labelledby="flowTitle" aria-describedby="flowNote">
-    <div class="qbar"><h2 id="flowTitle">수급 차트</h2><button id="flowClose" type="button" aria-label="수급 차트 닫기" autofocus>✕</button></div>
+    <div class="qbar"><h2 id="flowTitle">수급 차트</h2><button class="pmin" type="button" title="최소화" aria-label="창 최소화">─</button><button id="flowClose" type="button" aria-label="수급 차트 닫기" autofocus>✕</button></div>
     <div class="flowcontrols"><span class="flowrange" id="flowRange" hidden></span><select id="flowVenue" aria-label="수급 시장" hidden><option value="spot">코스피 현물</option><option value="fut">코스피200 선물</option></select><button id="flowRetry" type="button">새로고침</button></div>
     <p class="qhint" id="flowNote"></p>
     <p class="qhint" id="flowStatus" role="status" aria-live="polite" hidden></p>

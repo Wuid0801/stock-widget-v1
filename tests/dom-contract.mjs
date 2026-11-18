@@ -191,6 +191,11 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('수급 차트도 마우스가 창 밖이면 옅어진다', /html\.away \.flow, html\.away \.flow::backdrop \{ opacity: var\(--idle-opacity\); \}/.test(html)
     && /document\.addEventListener\('mouseout', \(e\) => \{ if \(!e\.relatedTarget\) document\.documentElement\.classList\.add\('away'\); \}\);/.test(startSrc)
     && /document\.addEventListener\('mouseover', \(\) => document\.documentElement\.classList\.remove\('away'\)\);/.test(startSrc));
+  // 검색 · 순위 · 설정 · 수급 차트는 위쪽 줄(─ · ✕)을 덮는다 — 제목 줄의 ✕ 왼쪽에도 ─ (2026-11-18 사용자 요청)
+  for (const id of ['qclose', 'rankClose', 'alertClose', 'flowClose']) {
+    check(`${id} 왼쪽에 창 최소화 ─`, new RegExp(`<button class="pmin"[^>]*>─</button>\\s*<button id="${id}"`).test(html));
+  }
+  check('팝업의 ─ 도 창을 최소화한다', /for \(const b of document\.querySelectorAll\('\.pmin'\)\) b\.onclick = \(\) => api\.minimizeWindow\(\);/.test(startSrc));
   check('동종 업종 종목은 누를 수 있는 모양', /\.mxpeer \{ cursor: pointer; \}/.test(html));
   check('맨 위 ✕ 툴팁은 종료', /<button id="close" title="종료">✕<\/button>/.test(html));
   // 버튼은 글꼴을 물려받지 않는다 — 규칙마다 적다 빠뜨린 버튼(기간 탭 · 전체)이 브라우저 기본 글꼴이었다

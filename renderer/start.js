@@ -63,6 +63,8 @@ async function refreshNow() {
   };
 
   document.getElementById('min').onclick = () => api.minimizeWindow();
+  // 검색 · 순위 · 설정 · 수급 차트는 위쪽 줄을 덮어 ─ 가 가려진다 — 그 창들의 제목 줄에도 둔다(2026-11-18 사용자 요청)
+  for (const b of document.querySelectorAll('.pmin')) b.onclick = () => api.minimizeWindow();
   document.getElementById('close').onclick = () => api.closeWindow();
   document.getElementById('refresh').onclick = refreshNow;
   document.getElementById('undoBtn').onclick = () => undoRemove();
