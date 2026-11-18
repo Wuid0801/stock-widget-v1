@@ -187,6 +187,8 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   check('수급 차트 창에 기간 버튼 자리(숨김으로 시작)', /<div class="flowcontrols"><span class="flowrange" id="flowRange" hidden><\/span>/.test(html)
     && /\.flowrange\[hidden\] \{ display: none; \}/.test(html));
   check('장중 수급 날짜 칸(숨김으로 시작, 모아 둔 날이 있으면 renderFlow 가 보인다)', /<select id="flowDay" aria-label="장중 수급 날짜" hidden><\/select>/.test(html));
+  check('일별 수급 주체 고르기(숨김으로 시작 — 외국인 · 개인 · 기관, 2026-11-18)', /<select id="flowWho" aria-label="수급 주체" hidden><option value="foreign">외국인<\/option><option value="personal">개인<\/option><option value="inst">기관<\/option><\/select>/.test(html));
+  check('수급 창 버튼 줄은 좁으면 두 줄로 접힌다', /\.flowcontrols \{ display: flex; flex-wrap: wrap;/.test(html));
   // 수급 차트(모달)는 맨 위 층이라 .widget 의 옅어짐을 받지 않고 :hover 로도 못 한다 — 마우스가 창 밖이면 html.away(2026-11-17)
   const startSrc = fs.readFileSync(new URL('../renderer/start.js', import.meta.url), 'utf8');
   check('수급 차트도 마우스가 창 밖이면 옅어진다', /html\.away \.flow, html\.away \.flow::backdrop \{ opacity: var\(--idle-opacity\); \}/.test(html)
@@ -197,6 +199,10 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
     check(`${id} 왼쪽에 창 최소화 ─`, new RegExp(`<button class="pmin"[^>]*>─</button>\\s*<button id="${id}"`).test(html));
   }
   check('팝업의 ─ 도 창을 최소화한다', /for \(const b of document\.querySelectorAll\('\.pmin'\)\) b\.onclick = \(\) => api\.minimizeWindow\(\);/.test(startSrc));
+  // 순위 창은 위쪽 ↻ 도 덮는다 — 제목 줄의 ─ 왼쪽에 ↻, 지금 보는 것을 다시 받고 받는 동안 꺼진 모양(2026-11-18 사용자 요청)
+  check('순위 창 제목 줄에 ↻ — 지금 보는 순위 · 시장 지표를 다시 받는다', /<button id="rankRefresh" title="지금 다시 받기">↻<\/button>\s*<button class="pmin"/.test(html)
+    && /\.qbar > button:disabled, \.qbar > button:disabled:hover \{ opacity: \.35;/.test(html)
+    && /getElementById\('rankRefresh'\)\.onclick = \(\) => \{\s*const \{ market, kind, group \} = rankView;\s*if \(market === 'mk'\) loadMarket\(\);\s*else loadRank\(market, kind, group \? group\.no : undefined\);\s*renderRank\(\);/.test(startSrc));
   check('동종 업종 종목은 누를 수 있는 모양', /\.mxpeer \{ cursor: pointer; \}/.test(html));
   check('맨 위 ✕ 툴팁은 종료', /<button id="close" title="종료">✕<\/button>/.test(html));
   // 버튼은 글꼴을 물려받지 않는다 — 규칙마다 적다 빠뜨린 버튼(기간 탭 · 전체)이 브라우저 기본 글꼴이었다

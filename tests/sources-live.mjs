@@ -114,6 +114,19 @@ export const CHECKS = [
       ...need(Array.isArray(r.futFlows) && r.futFlows.length >= 700 && r.futFlows.every((f) => /^\d{8}$/.test(f.date) && num(f.foreign)),
         '외국인 선물 수급 이력이 3년치(700일) 미만'),
       ...need(Array.isArray(r.futFlows) && r.futFlows.length && recent(r.futFlows.at(-1).date, 7), '외국인 선물 수급 이력이 7일보다 오래됨'),
+      // 창의 주체 고르기(2026-11-18) — 최근 20일에 개인 · 기관 값이 있어야 한다(필드 이름이 바뀌면 여기서 걸린다)
+      ...need([r.spotFlows, r.futFlows].every((rows) => Array.isArray(rows) && rows.length >= 20 && rows.slice(-20).every((f) => num(f.personal) && num(f.inst))),
+        '개인 · 기관 수급 이력(최근 20일)이 비었음'),
+    ] : [])],
+  },
+  {
+    // 종목 수급 차트의 3M 이상(2026-11-18) — 다음 금융이 요청 한 번에 2022-01 부터 준다(외국인 · 기관만). 공식 API 가 아니라 막히거나 줄 수 있다
+    name: '종목 수급 이력', source: '다음 금융 종목 투자자별 일별(삼성전자)',
+    call: (h) => h['stock:flowHistory']({}, '005930.KS'),
+    verify: (r) => [...okOf(r), ...(r && r.ok ? [
+      ...need(Array.isArray(r.trend) && r.trend.every((f) => /^\d{8}$/.test(f.date)) && r.trend.filter((f) => num(f.foreign) && num(f.organ)).length >= 700,
+        '종목 수급 이력이 3년치(700일) 미만'),
+      ...need(Array.isArray(r.trend) && r.trend.length && recent(r.trend.map((f) => f.date).sort().at(-1), 7), '종목 수급 이력이 7일보다 오래됨'),
     ] : [])],
   },
   {

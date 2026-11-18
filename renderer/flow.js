@@ -4,29 +4,25 @@ let flowChart = null;
 // 다음 금융의 긴 이력(market:flowHistory)에서 마지막 날부터 그만큼 앞까지 자른다(가격 차트의 1M · 3M · 1Y · 3Y 처럼).
 const FLOW_RANGES = { '10d': 0, '1M': 1, '3M': 3, '1Y': 12, '3Y': 36 };
 let flowRange = '10d'; // 마지막으로 고른 기간 — 다음에 열 때도 그 기간
-// 긴 이력 — 1M 이상을 고를 때만 받고 10분 기억한다(main 도 10분). 받다 실패하면 있던 것을 두고 이유를 남긴다(loadInto 와 같은 꼴)
+// 종목 수급의 기간(2026-11-18 사용자 요청: 더 길게) — 20일(0)은 종목 지표가 받는 네이버 20거래일(외국인 · 기관 · 개인) 그대로, 그 밖은
+// 다음 금융의 종목 일별 이력(stock:flowHistory, 2022-01 부터 · 개인 칸 없음)에서 자른다. 마지막으로 고른 기간은 시장 수급과 따로
+const STOCK_FLOW_RANGES = { '20d': 0, '3M': 3, '1Y': 12, '3Y': 36 };
+let stockFlowRange = '20d';
+const flowRanges = (view) => (view.kind === 'stock' ? STOCK_FLOW_RANGES : FLOW_RANGES);
+// 일별 수급의 주체(2026-11-18 사용자 요청: 개인 · 기관도) — 창의 고르기, 열 때마다 외국인(누른 줄이 외국인 줄이다)
+const FLOW_WHO = { foreign: '외국인', personal: '개인', inst: '기관' };
+// 긴 이력 — 시장('') · 종목(기호)마다. 긴 기간을 고를 때만 받고 10분 기억한다. 받다 실패하면 있던 것을 두고 이유를 남긴다(loadInto)
 const FLOW_HIST_TTL = 10 * 60000;
-let flowHist = null; // { at, d, error }
-let flowHistLoading = false;
-const flowLong = (view) => !!view && view.kind === 'daily' && view.range !== '10d';
+const flowHist = new Map(); // '' · 종목 기호 → { at, d, error }
+const flowHistLoading = new Set();
+const flowLong = (view) => !!view && (view.kind === 'daily' || view.kind === 'stock') && !!flowRanges(view)[view.range];
+const flowHistKey = (view) => (view.kind === 'stock' ? view.symbol : '');
 // 앱이 모아 둔 지난 장중 수급 { days: { YYYYMMDD: { spot, fut } }, program: { YYYYMMDD: 억 원 } }(main 의 market:intradayPast)
 // — 장중 수급 · 프로그램 창을 열 때마다 받는다
 let intradayPast = null;
 
-async function loadFlowHistory() {
-  if (flowHistLoading) return;
-  flowHistLoading = true;
-  let d;
-  try {
-    d = await api.flowHistory();
-  } catch (e) {
-    d = { ok: false, error: e.message };
-  } finally {
-    flowHistLoading = false;
-  }
-  const keep = flowHist && flowHist.d && flowHist.d.ok && !(d && d.ok);
-  flowHist = { at: Date.now(), d: keep ? flowHist.d : d || { ok: false, error: '응답 없음' }, error: keep ? d && d.error || '응답 없음' : null };
-  renderFlow();
+function loadFlowHistory(key = '') {
+  return loadInto(flowHist, flowHistLoading, key, () => (key ? api.stockFlowHistory(key) : api.flowHistory()), renderFlow);
 }
 
 function flowData(view, data) {
@@ -35,14 +31,17 @@ function flowData(view, data) {
   const program = view.kind === 'program';
   const future = intraday ? view.venue === 'fut' : view.key === 'FUTFLOW';
   const subject = MARKET_EXTRA_NAMES[view.key] || '외국인';
+  const who = Object.hasOwn(FLOW_WHO, view.who || '') ? view.who : 'foreign';
+  const months = flowLong(view) ? flowRanges(view)[view.range] : 0;
   const output = {
     title: program ? '프로그램 매매 일별 · 코스피' : stock ? `${view.name || '종목'} 투자자별 수급` : intraday
-      ? `${subject} · ${future ? '코스피200 선물' : '코스피 현물'}` : `외국인 ${future ? '선물' : '현물'} 일별 수급`,
+      ? `${subject} · ${future ? '코스피200 선물' : '코스피 현물'}` : `${FLOW_WHO[who]} ${future ? '선물' : '현물'} 일별 수급`,
     unit: stock ? '주' : '억 원', labels: [], dates: [], datasets: [], note: '', error: null,
   };
   if (!data) return output;
   if (!data.ok) { output.error = data.error || '조회 실패'; return output; }
-  const keys = stock ? ['foreign', 'organ', 'individual'] : [program ? 'value' : intraday ? INTRADAY_FIELD[view.key] : 'foreign'];
+  // 종목의 긴 이력(다음 금융)에는 개인 칸이 없다
+  const keys = stock ? ['foreign', 'organ', 'individual'].slice(0, months ? 2 : 3) : [program ? 'value' : intraday ? INTRADAY_FIELD[view.key] : who];
   if (keys.some((key) => !key)) return output;
   const part = stock ? 'trend' : program ? 'program' : intraday ? 'intraday' : future ? 'futFlows' : 'spotFlows';
   const source = intraday ? data.intraday && data.intraday[future ? 'fut' : 'spot'] : data[part];
@@ -51,8 +50,7 @@ function flowData(view, data) {
     && keys.some((key) => Number.isFinite(row[key]));
   const rows = (Array.isArray(source) ? source : []).filter(valid)
     .sort((left, right) => intraday ? left.t - right.t : left.date.localeCompare(right.date));
-  const months = view.kind === 'daily' ? FLOW_RANGES[view.range] || 0 : 0;
-  let shown = stock ? rows.slice(-20) : rows;
+  let shown = stock && !months ? rows.slice(-20) : rows;
   if (months && rows.length) {
     // 마지막 날에서 그 개월 수만큼 앞(달력)까지 — 그날은 넣지 않는다(1M 은 한 달치)
     const last = rows[rows.length - 1].date;
@@ -65,11 +63,17 @@ function flowData(view, data) {
     : `${day(row)}${!stock && row.final === false ? ' 잠정' : ''}`);
   output.dates = shown.map((row) => intraday ? new Date(row.t + 9 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
     : `${row.date.slice(0, 4)}-${row.date.slice(4, 6)}-${row.date.slice(6, 8)}${!stock && row.final === false ? ' 잠정' : ''}`);
-  output.datasets = keys.map((key, index) => ({ label: stock ? ['외국인', '기관', '개인'][index] : intraday ? subject : program ? '프로그램' : '외국인',
-    data: shown.map((row) => Number.isFinite(row[key]) ? row[key] : null) }));
+  // 종목의 긴 기간(3M 이상)은 날마다 크게 튀는 선이라 읽기 어려워(2026-11-18 사용자) 그 기간 첫날부터 더해 간 누적 순매수 선으로
+  const cumulative = stock && months > 0;
+  output.datasets = keys.map((key, index) => {
+    let sum = 0;
+    return { label: stock ? `${['외국인', '기관', '개인'][index]}${cumulative ? ' 누적' : ''}` : intraday ? subject : program ? '프로그램' : FLOW_WHO[who],
+      data: shown.map((row) => (Number.isFinite(row[key]) ? (cumulative ? (sum += row[key]) : row[key]) : null)) };
+  });
   const last = output.dates[output.dates.length - 1];
   output.note = program ? '일별 순매수(차익 · 비차익 합) · 억 원 · 다음 금융 · 앱이 마감 뒤 모아 둔 날만 · 잠정은 오늘 장중 값'
-    : stock ? '일별 순매수 · 주(KRX) · 최대 20거래일 · 네이버 · 장중 실시간 수급이 아닙니다'
+    : stock ? (months ? '기간 첫날부터 더한 누적 순매수 · 주 · 다음 금융(개인 칸 없음) · 장중 실시간 수급이 아닙니다'
+      : '일별 순매수 · 주(KRX) · 최대 20거래일 · 네이버 · 장중 실시간 수급이 아닙니다')
     : intraday ? '장중 누적 순매수 · 억 원 · 다음 금융 · 장 마감 전 잠정치'
       : `일별 순매수 · 억 원 · ${months ? '다음 금융' : '네이버'} · 잠정 표시는 당일 미확정 값`;
   if (last) output.note += ` · ${last} 기준`;
@@ -86,7 +90,7 @@ function programData(extras) {
 }
 
 function openFlow(view) {
-  flowView = { ...view, venue: view.venue || 'spot', range: view.range || flowRange, day: '' };
+  flowView = { ...view, venue: view.venue || 'spot', range: view.range || (view.kind === 'stock' ? stockFlowRange : flowRange), who: 'foreign', day: '' };
   const dialog = document.getElementById('flowDialog');
   if (!dialog.open) dialog.showModal();
   renderFlow();
@@ -113,23 +117,25 @@ async function refreshFlow() {
   if (!flowView) return;
   const stock = flowView.kind === 'stock';
   const long = flowLong(flowView);
-  if (stock ? metricsLoading.has(flowView.symbol) : long ? flowHistLoading : marketLoading) return;
+  const key = flowHistKey(flowView);
+  if (long ? flowHistLoading.has(key) : stock ? metricsLoading.has(flowView.symbol) : marketLoading) return;
   document.getElementById('flowRetry').disabled = true;
-  if (stock) await loadMetrics(flowView.symbol);
-  else if (long) await loadFlowHistory();
+  if (long) await loadFlowHistory(key);
+  else if (stock) await loadMetrics(flowView.symbol);
   else await loadMarket();
 }
 
 function renderFlow() {
   if (!flowView || !document.getElementById('flowDialog').open) return;
   const stock = flowView.kind === 'stock';
-  const long = flowLong(flowView); // 일별 수급의 1M 이상 — 긴 이력(다음 금융)을 쓴다
-  const cached = stock ? metricsCache.get(flowView.symbol) : long ? flowHist : marketExtras;
-  const ttl = stock ? METRICS_TTL : long ? FLOW_HIST_TTL : RANK_TTL;
+  const long = flowLong(flowView); // 일별 수급의 1M 이상 · 종목 수급의 3M 이상 — 긴 이력(다음 금융)을 쓴다
+  const histKey = flowHistKey(flowView);
+  const cached = long ? flowHist.get(histKey) : stock ? metricsCache.get(flowView.symbol) : marketExtras;
+  const ttl = long ? FLOW_HIST_TTL : stock ? METRICS_TTL : RANK_TTL;
   if (!cached || Date.now() - cached.at >= ttl) refreshFlow();
   // 지난 날을 골랐으면 모아 둔 그날 것을 그린다 — 받는 중 · 실패 표시는 오늘 것의 상태라 보이지 않는다
   const past = flowView.kind === 'intraday' && flowView.day && intradayPast && intradayPast.days ? intradayPast.days[flowView.day] : null;
-  const loading = !past && (stock ? metricsLoading.has(flowView.symbol) : long ? flowHistLoading : marketLoading);
+  const loading = !past && (long ? flowHistLoading.has(histKey) : stock ? metricsLoading.has(flowView.symbol) : marketLoading);
   const model = flowData(flowView, past ? { ok: true, intraday: past } : flowView.kind === 'program' ? programData(cached && cached.d) : cached && cached.d);
   const failure = model.error || !past && cached && cached.error;
   const title = document.getElementById('flowTitle');
@@ -138,14 +144,17 @@ function renderFlow() {
   const venue = document.getElementById('flowVenue');
   venue.hidden = flowView.kind !== 'intraday';
   venue.value = flowView.venue;
+  const who = document.getElementById('flowWho'); // 일별 수급에만
+  who.hidden = flowView.kind !== 'daily';
+  who.value = flowView.who;
   const daySel = document.getElementById('flowDay'); // 모아 둔 날이 있을 때만
   daySel.hidden = flowView.kind !== 'intraday' || daySel.options.length < 2;
   daySel.value = flowView.day;
-  // 기간 버튼 — 일별 수급(외국인 현물 · 선물)에만. 지금 기간을 강조한다
+  // 기간 버튼 — 일별 수급(외국인 현물 · 선물) · 종목 수급에만. 지금 기간을 강조한다
   const range = document.getElementById('flowRange');
-  range.hidden = flowView.kind !== 'daily';
-  range.innerHTML = range.hidden ? '' : Object.keys(FLOW_RANGES).map((key) =>
-    `<button type="button" data-range="${key}"${key === flowView.range ? ' class="on"' : ''}>${key === '10d' ? '10일' : key}</button>`).join('');
+  range.hidden = flowView.kind !== 'daily' && flowView.kind !== 'stock';
+  range.innerHTML = range.hidden ? '' : Object.keys(flowRanges(flowView)).map((key) =>
+    `<button type="button" data-range="${key}"${key === flowView.range ? ' class="on"' : ''}>${key.endsWith('d') ? `${parseInt(key, 10)}일` : key}</button>`).join('');
   document.getElementById('flowRetry').disabled = loading;
   const status = document.getElementById('flowStatus');
   status.textContent = loading ? '수급을 불러오는 중…' : failure ? `조회 실패: ${failure}${model.labels.length ? ' · 이전 데이터를 표시합니다' : ''}`
@@ -199,6 +208,11 @@ function bindFlow() {
     flowView.venue = event.target.value === 'fut' ? 'fut' : 'spot';
     renderFlow();
   };
+  document.getElementById('flowWho').onchange = (event) => {
+    if (!flowView) return;
+    flowView.who = Object.hasOwn(FLOW_WHO, event.target.value) ? event.target.value : 'foreign';
+    renderFlow();
+  };
   document.getElementById('flowDay').onchange = (event) => {
     if (!flowView) return;
     flowView.day = /^\d{8}$/.test(event.target.value) ? event.target.value : '';
@@ -206,8 +220,10 @@ function bindFlow() {
   };
   document.getElementById('flowRange').onclick = (event) => {
     const button = event.target.closest('button');
-    if (!button || !flowView || !Object.hasOwn(FLOW_RANGES, button.dataset.range)) return;
-    flowRange = flowView.range = button.dataset.range;
+    if (!button || !flowView || !Object.hasOwn(flowRanges(flowView), button.dataset.range)) return;
+    flowView.range = button.dataset.range;
+    if (flowView.kind === 'stock') stockFlowRange = flowView.range;
+    else flowRange = flowView.range;
     renderFlow();
   };
   dialog.oncancel = (event) => { event.preventDefault(); closeFlow(); };

@@ -842,7 +842,8 @@ ipcMain.handle('market:intradayPast', () => ({ days: intradayDays().get('days') 
 // 수급 확대 차트에서 1M 이상을 고를 때만 묻는다(2026-11-16 사용자 요청: 더 길게 보고 싶다). 다음 금융의 투자자별 일별 값 —
 // 요청 한 번에 2016-05 부터 온다(같은 날 확인: 현물 2,579일 · 선물 2,578일, 오늘 행 포함). 네이버는 하루에 요청 하나라 열흘치만
 // 받는다(FLOW_DAYS). 웹페이지가 쓰는 데이터라(공식 API 아님) 막히거나 모양이 바뀔 수 있다 — 두 부분을 따로 받고, 둘 다 받았을
-// 때만 10분 기억한다. 값은 원 → 억 원, 날짜 오름차순, 모양은 market:extras 의 spotFlows · futFlows 와 같다({ date, foreign, final }).
+// 때만 10분 기억한다. 값은 원 → 억 원, 날짜 오름차순, 모양은 market:extras 의 spotFlows · futFlows 와 같다({ date, foreign, personal, inst, final }
+// — 개인 · 기관은 2026-11-18 사용자 요청으로 더했다. 창의 주체 고르기).
 // 지표 화면의 수급 줄 · 데드캣 점검은 그대로 네이버 열흘치를 쓴다(출처가 달라 값이 조금 다를 수 있다).
 const FLOW_HISTORY_TTL = 10 * 60000;
 let flowHistory = null; // { at, d }
@@ -850,17 +851,20 @@ ipcMain.handle('market:flowHistory', async () => {
   const now = Date.now();
   if (flowHistory && now - flowHistory.at < FLOW_HISTORY_TTL) return flowHistory.d;
   const today = kstDay(now);
-  const rows = (url, field) => daumJson(url).then((j) => {
+  const won = (v) => (Number.isFinite(v) ? v / 1e8 : null);
+  const rows = (url, [foreign, personal, inst]) => daumJson(url).then((j) => {
     if (!Array.isArray(j?.data)) throw new Error('모양이 다른 응답');
     return j.data.map((r) => {
       const date = String(r?.date ?? '').slice(0, 10).replace(/-/g, '');
-      return /^\d{8}$/.test(date) && Number.isFinite(r[field])
-        ? { date, foreign: r[field] / 1e8, final: date < today || kstClock(now) >= FLOW_FINAL } : null;
+      return /^\d{8}$/.test(date) && Number.isFinite(r[foreign])
+        ? { date, foreign: r[foreign] / 1e8, personal: won(r[personal]), inst: won(r[inst]), final: date < today || kstClock(now) >= FLOW_FINAL } : null;
     }).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
   });
   const parts = await Promise.allSettled([
-    rows(`${DAUM_API}/investor/KOSPI/days?market=KOSPI&page=1&perPage=3000&pagination=true`, 'foreignStraightPurchasePrice'),
-    rows(`${DAUM_API}/investor/future/days?page=1&perPage=3000&terms=days&pagination=true&type=PRICE`, 'foreignSettlement')]);
+    rows(`${DAUM_API}/investor/KOSPI/days?market=KOSPI&page=1&perPage=3000&pagination=true`,
+      ['foreignStraightPurchasePrice', 'individualStraightPurchasePrice', 'institutionStraightPurchasePrice']),
+    rows(`${DAUM_API}/investor/future/days?page=1&perPage=3000&terms=days&pagination=true&type=PRICE`,
+      ['foreignSettlement', 'privateSettlement', 'institutionalSettlement'])]);
   if (parts.every((p) => p.status === 'rejected')) return { ok: false, error: parts[0].reason?.message || '수급 이력 조회 실패' };
   const d = { ok: true, errors: {} };
   ['spotFlows', 'futFlows'].forEach((name, i) => {
@@ -869,6 +873,23 @@ ipcMain.handle('market:flowHistory', async () => {
   });
   if (!Object.keys(d.errors).length) flowHistory = { at: now, d };
   return d;
+});
+
+// 종목 수급의 긴 이력(2026-11-18 사용자 요청: 종목 수급 차트를 더 길게) — 다음 금융의 종목 투자자별 일별 값. 요청 한 번에 2022-01 부터
+// 온다(같은 날 확인: 삼성전자 1,179일 · 코스닥 · ETF 도, 어제까지 — 장중에는 오늘 행이 없다). 외국인 · 기관 순매수(주)만 있고 개인 칸은
+// 없다. 모양은 naver:detail 의 trend 와 같다({ date, foreign, organ }). 창에서 3M 이상을 고를 때만 묻고 렌더러가 10분 기억한다.
+ipcMain.handle('stock:flowHistory', async (_e, symbol) => {
+  const kr = KR_RE.exec(String(symbol ?? ''));
+  if (!kr) return { ok: false, error: '잘못된 요청' };
+  try {
+    const j = await daumJson(`${DAUM_API}/investor/days?symbolCode=A${kr[1]}&page=1&perPage=3000&pagination=true`);
+    if (!Array.isArray(j?.data)) throw new Error('모양이 다른 응답');
+    const num = (v) => (Number.isFinite(v) ? v : null);
+    return { ok: true, trend: j.data.map((r) => ({ date: String(r?.date ?? '').slice(0, 10).replace(/-/g, ''),
+      foreign: num(r?.foreignStraightPurchaseVolume), organ: num(r?.institutionStraightPurchaseVolume) })) };
+  } catch (e) {
+    return { ok: false, error: e.message || '수급 이력 조회 실패' };
+  }
 });
 
 ipcMain.handle('market:extras', async () => {

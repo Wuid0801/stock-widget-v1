@@ -377,6 +377,7 @@
     color: var(--dim); font-size: 12px; cursor: pointer;
   }
   .qbar > button:hover { background: var(--field-border); color: var(--btn-fg-hover); }
+  .qbar > button:disabled, .qbar > button:disabled:hover { opacity: .35; cursor: default; background: transparent; color: var(--dim); } /* 순위 창 ↻ — 받는 중 */
 
   #results { flex: 1 1 auto; overflow-y: auto; }
   #results .rk { flex: 0 0 16px; text-align: right; font-size: 10px; color: var(--mute); }
@@ -399,7 +400,7 @@
   .flow, .flow::backdrop { transition: opacity 0.18s ease; }
   html.away .flow, html.away .flow::backdrop { opacity: var(--idle-opacity); }
   .flow h2 { flex: 1; min-width: 0; margin: 0; font-size: 12px; align-self: center; }
-  .flowcontrols { display: flex; gap: 6px; padding: 6px 10px; }
+  .flowcontrols { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; } /* 좁은 창(280px)에서 기간 · 주체 · 새로고침이 한 줄에 안 들어간다 */
   .flowcontrols button, .flowcontrols select { background: var(--tf-on-bg); color: var(--text);
     border: 1px solid var(--field-border); border-radius: 5px; padding: 4px 6px; font: inherit; font-size: 11px; }
   .flowcontrols button { cursor: pointer; }
@@ -884,6 +885,7 @@
       <div class="qbar">
         <span class="ptitle">시장 순위</span>
         <span class="seg" id="rankMarket"></span>
+        <button id="rankRefresh" title="지금 다시 받기">↻</button>
         <button class="pmin" title="최소화">─</button>
         <button id="rankClose" title="닫기(Esc)">✕</button>
       </div>
@@ -982,7 +984,7 @@
 
   <dialog class="flow" id="flowDialog" aria-labelledby="flowTitle" aria-describedby="flowNote">
     <div class="qbar"><h2 id="flowTitle">수급 차트</h2><button class="pmin" type="button" title="최소화" aria-label="창 최소화">─</button><button id="flowClose" type="button" aria-label="수급 차트 닫기" autofocus>✕</button></div>
-    <div class="flowcontrols"><span class="flowrange" id="flowRange" hidden></span><select id="flowVenue" aria-label="수급 시장" hidden><option value="spot">코스피 현물</option><option value="fut">코스피200 선물</option></select><select id="flowDay" aria-label="장중 수급 날짜" hidden></select><button id="flowRetry" type="button">새로고침</button></div>
+    <div class="flowcontrols"><span class="flowrange" id="flowRange" hidden></span><select id="flowWho" aria-label="수급 주체" hidden><option value="foreign">외국인</option><option value="personal">개인</option><option value="inst">기관</option></select><select id="flowVenue" aria-label="수급 시장" hidden><option value="spot">코스피 현물</option><option value="fut">코스피200 선물</option></select><select id="flowDay" aria-label="장중 수급 날짜" hidden></select><button id="flowRetry" type="button">새로고침</button></div>
     <p class="qhint" id="flowNote"></p>
     <p class="qhint" id="flowStatus" role="status" aria-live="polite" hidden></p>
     <div class="flowplot" id="flowPlot" hidden><canvas id="flowCanvas" role="img" aria-label="수급 차트"></canvas></div>

@@ -41,8 +41,9 @@ const GOOD = {
       month: 38.2, year: 32.6, days: Array(30).fill(25) },
     curve: Array.from({ length: 60 }, (_, i) => ({ date: ymd(61 - i), value: i % 2 ? 0.5 : -0.1 })) },
   '외국인 수급 이력': { ok: true, errors: {},
-    spotFlows: Array.from({ length: 720 }, (_, i) => ({ date: ymd(720 - i), foreign: i - 300, final: true })),
-    futFlows: Array.from({ length: 720 }, (_, i) => ({ date: ymd(720 - i), foreign: 300 - i, final: true })) },
+    spotFlows: Array.from({ length: 720 }, (_, i) => ({ date: ymd(720 - i), foreign: i - 300, personal: 300 - i, inst: 0, final: true })),
+    futFlows: Array.from({ length: 720 }, (_, i) => ({ date: ymd(720 - i), foreign: 300 - i, personal: i - 300, inst: 0, final: true })) },
+  '종목 수급 이력': { ok: true, trend: Array.from({ length: 720 }, (_, i) => ({ date: ymd(i + 1), foreign: i - 300, organ: 300 - i })) },
   '통합 일봉 (KRX + NXT)': { ok: true,
     days: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [ymd(20 - i), { open: 100, high: 110, low: 90, close: 105 }])) },
   '일봉 5년': { kr: chart(1220, 1), us: chart(1254, 1), ix: chart(1221, 1) },
@@ -90,6 +91,12 @@ const GOOD = {
   check('외국인 수급 이력이 3년치가 안 되면 FAIL', by('외국인 수급 이력').verify(fh, []).some((p) => p.includes('현물 수급 이력이 3년치')));
   const fo = g('외국인 수급 이력'); fo.futFlows = fo.futFlows.map((f) => ({ ...f, date: '20260101' }));
   check('외국인 수급 이력이 오래되면 FAIL', by('외국인 수급 이력').verify(fo, []).some((p) => p.includes('선물 수급 이력이 7일보다')));
+  const fp = g('외국인 수급 이력'); fp.futFlows = fp.futFlows.map((f) => ({ ...f, inst: null }));
+  check('개인 · 기관 칸이 사라지면 FAIL', by('외국인 수급 이력').verify(fp, []).some((p) => p.includes('개인 · 기관')));
+  const sh = g('종목 수급 이력'); sh.trend = sh.trend.slice(0, 100);
+  check('종목 수급 이력이 3년치가 안 되면 FAIL', by('종목 수급 이력').verify(sh, []).some((p) => p.includes('종목 수급 이력이 3년치')));
+  const so = g('종목 수급 이력'); so.trend = so.trend.map((f) => ({ ...f, date: '20260101' }));
+  check('종목 수급 이력이 오래되면 FAIL', by('종목 수급 이력').verify(so, []).some((p) => p.includes('7일보다')));
   const d5 = g('일봉 5년'); d5.ix.volumes = d5.ix.volumes.map(() => 0);
   check('지수 거래량이 0 이면 FAIL(달걀이 빈다)', by('일봉 5년').verify(d5, []).some((p) => p.startsWith('^KS11: 거래량')));
   check('마지막 봉이 오래되면 FAIL', by('국내 1D 분봉').verify(chart(70, 10), []).some((p) => p.includes('오래됨')));

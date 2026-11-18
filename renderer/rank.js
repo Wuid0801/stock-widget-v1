@@ -368,6 +368,7 @@ function renderRank() {
   rankShown = writeIfChanged(list, rankShown, key, html);
   if (!mk && (!hit || Date.now() - hit.at >= RANK_TTL)) loadRank(market, kind, group ? group.no : undefined);
   if (mk && (!marketExtras || Date.now() - marketExtras.at >= RANK_TTL)) loadMarket();
+  document.getElementById('rankRefresh').disabled = mk ? marketLoading : rankLoading.has(key); // 받는 중이면 ↻ 를 끈다 — 받으면 다시 그린다
 }
 
 // 지표 화면의 market:extras — 받는 중이면 또 묻지 않고, 다시 받다 실패하면 있던 것을 둔다(loadRank 와 같다). 받으면 다시 그린다.

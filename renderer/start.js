@@ -90,6 +90,13 @@ async function refreshNow() {
   document.getElementById('bell').onclick = () => (alertsEl.hidden ? openAlerts() : closeAlerts());
   document.getElementById('rankBtn').onclick = () => (rankEl.hidden ? openRank() : closeRank());
   document.getElementById('rankClose').onclick = closeRank;
+  // 순위 창이 위쪽 ↻ 를 덮는다 — 창 안에서 지금 보는 순위 · 시장 지표를 다시 받는다(2026-11-18 사용자 요청)
+  document.getElementById('rankRefresh').onclick = () => {
+    const { market, kind, group } = rankView;
+    if (market === 'mk') loadMarket();
+    else loadRank(market, kind, group ? group.no : undefined);
+    renderRank();
+  };
   // 목록 · 탭은 다시 그려지므로 항목이 아니라 상자에 한 번만 붙인다
   document.getElementById('rankMarket').onclick = (e) => {
     const b = e.target.closest('[data-market]');

@@ -1932,9 +1932,11 @@ await test('rank: market and tab switch fetch only what is shown, reuse it for a
   assert.match(elements.get('rankMarket').innerHTML, /<button data-market="kr" class="on">국내<\/button><button data-market="us">미국<\/button>/);
   run('renderRank();');
   assert.equal(asked.length, 1, '받는 중이면 또 묻지 않는다');
+  assert.equal(elements.get('rankRefresh').disabled, true, '받는 동안 창의 ↻ 를 끈다(2026-11-18)');
   replies.shift()({ ok: true, n: 1 });
   await settle();
   assert.equal(list(), 'kr/search:1');
+  assert.equal(elements.get('rankRefresh').disabled, false, '받으면 다시 켠다');
 
   run("setRankView('us');");
   assert.equal(asked.at(-1), 'us/up', '미국에는 인기 검색이 없어 첫 탭(급등)으로');

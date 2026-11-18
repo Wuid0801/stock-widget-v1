@@ -17,6 +17,9 @@ const history = { ok: true, errors: {},
   spotFlows: [['20250110', 5], ['20251114', -40], ['20260814', 30], ['20261014', 10], ['20261015', -20], ['20261112', 70], ['20261113', -100]]
     .map(([date, foreign]) => ({ date, foreign, final: true })),
   futFlows: [{ date: '20261113', foreign: 9, final: true }] };
+// 종목 수급의 긴 이력(stock:flowHistory, 다음 금융) — 외국인 · 기관만(개인 칸 없음), 최신이 앞. 마지막 날 2026-11-17
+const stockHistory = { ok: true, trend: [['20261117', 4], ['20260818', 3], ['20260817', 2], ['20251117', 1], ['20230101', 9]]
+  .map(([date, foreign]) => ({ date, foreign, organ: -foreign })) };
 const stock = { ok: true, market: 'kr', trend: [
   { date: '20261112', foreign: 0, organ: null, individual: 50 },
   { date: '20261111', foreign: -20, organ: 30, individual: -10 },
@@ -45,6 +48,7 @@ function harness() {
     marketExtras: async () => { requests.push('market'); return market; },
     detail: async (symbol) => { requests.push(symbol); return stock; },
     flowHistory: async () => { requests.push('history'); return history; },
+    stockFlowHistory: async (symbol) => { requests.push(`stockHistory:${symbol}`); return stockHistory; },
     intradayPast: async () => ({ days: {} }),
   };
   const context = vm.createContext({ document: { getElementById: get }, api, console,
@@ -249,7 +253,7 @@ const tests = [
     assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [500], '10일은 다시 지표 화면의 값(네이버)');
     assert.match(app.get('flowNote').textContent, /네이버/);
     app.run("openFlow({kind:'intraday', key:'INTRA_FOREIGN'})");
-    assert.equal(app.get('flowRange').hidden, true, '장중 · 종목 수급에는 기간 버튼이 없다');
+    assert.equal(app.get('flowRange').hidden, true, '장중 수급에는 기간 버튼이 없다');
     assert.equal(app.get('flowRange').innerHTML, '');
   }],
   ['긴 이력을 다시 받다 실패하면 있던 것을 그리고 이유를 적는다, 막대가 많으면 틈 없이', async () => {
@@ -269,6 +273,71 @@ const tests = [
     await app.run('loadFlowHistory()');
     assert.equal(app.drawings.at(-1).config.data.datasets[0].barPercentage, 1, '30개가 넘으면 막대를 붙인다(흐려지지 않게)');
     assert.equal(app.get('flowStatus').hidden, true);
+  }],
+  ['종목 수급의 기간 — 20일은 네이버 세 주체, 3M 이상은 고를 때만 다음 금융 이력을 받아 외국인 · 기관 누적 선(2026-11-18)', async () => {
+    const app = harness();
+    const pick = (range) => app.get('flowRange').onclick({ target: { closest: () => ({ dataset: { range } }) } });
+    app.run("bindFlow(); openFlow({kind:'stock', symbol:'005930.KS', name:'삼성전자'})");
+    await settle();
+    assert.equal(app.get('flowRange').hidden, false);
+    assert.equal(app.get('flowRange').innerHTML, '<button type="button" data-range="20d" class="on">20일</button><button type="button" data-range="3M">3M</button>'
+      + '<button type="button" data-range="1Y">1Y</button><button type="button" data-range="3Y">3Y</button>');
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets.map((series) => series.label)), ['외국인', '기관', '개인'], '20일은 그대로');
+    assert.deepEqual(app.requests, ['005930.KS']);
+    assert.equal(app.get('flowWho').hidden, true, '종목에는 주체 고르기가 없다');
+    pick('3M');
+    assert.deepEqual(app.requests, ['005930.KS', 'stockHistory:005930.KS'], '3M 을 고를 때 처음 받는다');
+    assert.match(app.get('flowStatus').textContent, /불러오는 중/);
+    await settle();
+    let chart = app.drawings.at(-1).config;
+    assert.equal(chart.type, 'line');
+    assert.deepEqual(plain(chart.data.labels), ['08/18', '11/17'], '마지막 날에서 석 달');
+    assert.deepEqual(plain(chart.data.datasets.map((series) => [series.label, series.data])), [['외국인 누적', [3, 7]], ['기관 누적', [-3, -7]]],
+      '그 기간 첫날부터 더해 간 누적 — 개인 칸은 없는 출처');
+    assert.match(app.get('flowNote').textContent, /누적 순매수 · 주 · 다음 금융\(개인 칸 없음\)/);
+    pick('3Y');
+    chart = app.drawings.at(-1).config;
+    assert.equal(app.requests.length, 2, '기간만 바꾸면 다시 받지 않는다');
+    assert.deepEqual(plain(chart.data.labels), ['25/11', '26/08', '26/08', '26/11'], 'YY/MM');
+    assert.deepEqual(plain(chart.data.datasets[0].data), [1, 3, 6, 10], '누적은 그 기간 첫날부터 다시');
+    pick('1M');
+    assert.match(app.get('flowRange').innerHTML, /data-range="3Y" class="on"/, '종목에 없는 기간은 무시');
+    app.run("closeFlow(); openFlow({kind:'daily', key:'SPOT'})");
+    assert.match(app.get('flowRange').innerHTML, /data-range="10d" class="on"/, '시장 수급의 기간은 따로 기억한다');
+    app.run("closeFlow(); openFlow({kind:'stock', symbol:'000660.KS', name:'SK하이닉스'})");
+    assert.match(app.get('flowRange').innerHTML, /data-range="3Y" class="on"/, '종목은 마지막으로 고른 기간으로 연다');
+    assert.equal(app.requests.at(-1), 'stockHistory:000660.KS', '종목마다 따로 받는다');
+    const gap = app.data({ kind: 'stock', range: '3Y' }, { ok: true, trend: [{ date: '20261116', foreign: 5, organ: null }, { date: '20261117', foreign: 1, organ: 2 }] });
+    assert.deepEqual(plain(gap.datasets.map((series) => series.data)), [[5, 6], [null, 2]], '빈 날은 0 으로 만들지 않고, 그 뒤는 이어서 더한다');
+  }],
+  ['일별 수급의 주체 — 외국인 · 개인 · 기관을 골라 같은 막대로, 열 때마다 외국인(2026-11-18)', async () => {
+    const app = harness();
+    app.context.snapshot = { ...market, spotFlows: [{ date: '20261111', foreign: -100, personal: 70, inst: 30, final: true },
+      { date: '20261112', foreign: 0, personal: null, inst: -5, final: false }] };
+    app.api.flowHistory = async () => ({ ...history, spotFlows: history.spotFlows.map((row) => ({ ...row, personal: -row.foreign, inst: row.foreign * 2 })) });
+    app.run("bindFlow(); marketExtras = {at: Date.now(), d: snapshot}; openFlow({kind:'daily', key:'SPOT'})");
+    const who = app.get('flowWho');
+    assert.equal(who.hidden, false);
+    assert.equal(who.value, 'foreign');
+    assert.equal(app.get('flowTitle').textContent, '외국인 현물 일별 수급');
+    who.onchange({ target: { value: 'personal' } });
+    let chart = app.drawings.at(-1).config;
+    assert.equal(app.get('flowTitle').textContent, '개인 현물 일별 수급');
+    assert.equal(chart.type, 'bar');
+    assert.deepEqual(plain(chart.data.datasets.map((series) => [series.label, series.data])), [['개인', [70]]], '값이 없는 날은 뺀다');
+    who.onchange({ target: { value: 'inst' } });
+    app.get('flowRange').onclick({ target: { closest: () => ({ dataset: { range: '1M' } }) } });
+    await settle();
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [20, -40, 140, -200], '1M 이상(다음 금융)도 같은 주체');
+    assert.equal(app.get('flowTitle').textContent, '기관 현물 일별 수급');
+    who.onchange({ target: { value: '__proto__' } });
+    assert.equal(app.get('flowTitle').textContent, '외국인 현물 일별 수급', '모르는 주체는 외국인');
+    who.onchange({ target: { value: 'personal' } });
+    app.run("openFlow({kind:'daily', key:'FUTFLOW'})");
+    assert.equal(who.value, 'foreign', '열 때마다 외국인 — 누른 줄이 외국인 줄');
+    assert.equal(app.get('flowTitle').textContent, '외국인 선물 일별 수급');
+    app.run("openFlow({kind:'intraday', key:'INTRA_FOREIGN'})");
+    assert.equal(who.hidden, true, '장중에는 없다');
   }],
 ];
 

@@ -28,7 +28,8 @@ const fakeFetch = async (url, opt) => {
       : url.includes('fred.stlouisfed.org') ? 'fred' : url.includes('dataviz.cnn.io/index/fearandgreed') ? 'cnn'
         : url.includes('finance.daum.net/api/investor/KOSPI/times') ? 'daumSpot' : url.includes('finance.daum.net/api/investor/future/times') ? 'daumFut'
           : url.includes('finance.daum.net/api/domestic/quotes') ? 'daumQuotes'
-            : url.includes('finance.daum.net/api/investor/KOSPI/days') ? 'daumSpotDays' : url.includes('finance.daum.net/api/investor/future/days') ? 'daumFutDays' : 'other';
+            : url.includes('finance.daum.net/api/investor/KOSPI/days') ? 'daumSpotDays' : url.includes('finance.daum.net/api/investor/future/days') ? 'daumFutDays'
+              : url.includes('finance.daum.net/api/investor/days?symbolCode=') ? 'daumStockDays' : 'other';
   headersOf[route] = opt && opt.headers;
   const date = (/bizdate=(\d{8})/.exec(url) || [])[1];
   const body = typeof reply[route] === 'function' ? reply[route](date) : reply[route];
@@ -423,21 +424,24 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
     { date: '2026-11-16 00:00:00', individualStraightPurchasePrice: 1354958774859, foreignStraightPurchasePrice: -1522392807788, institutionStraightPurchasePrice: -319364695941 },
     { date: '2026-11-13 00:00:00', foreignStraightPurchasePrice: 250000000000 },
     { date: '모르는 날', foreignStraightPurchasePrice: 1 }, { date: '2026-11-12 00:00:00', foreignStraightPurchasePrice: null }] };
-  const futDays = { data: [{ date: '2026-11-16 00:00:00', foreignSettlement: -126798750000 }, { date: '2026-11-13 00:00:00', foreignSettlement: 50000000000 }] };
+  const futDays = { data: [{ date: '2026-11-16 00:00:00', foreignSettlement: -126798750000, privateSettlement: 226755287500, institutionalSettlement: -100000000000 },
+    { date: '2026-11-13 00:00:00', foreignSettlement: 50000000000 }] };
   NOW = kst('2026-11-16T14:00');
   reply = { ...base(), daumSpotDays: spotDays, daumFutDays: { status: 500 } };
   calls.length = 0;
   let r = await hist();
-  check('현물 — 억 원 · 날짜 오름차순, 모양이 틀린 줄은 뺀다. 장중의 오늘은 잠정', r.ok && same(r.spotFlows, [
-    { date: '20261113', foreign: 2500, final: true }, { date: '20261116', foreign: -1522392807788 / 1e8, final: false }]), JSON.stringify(r.spotFlows));
+  check('현물 — 억 원 · 날짜 오름차순, 모양이 틀린 줄은 뺀다. 장중의 오늘은 잠정. 개인 · 기관(2026-11-18, 없으면 null)', r.ok && same(r.spotFlows, [
+    { date: '20261113', foreign: 2500, personal: null, inst: null, final: true },
+    { date: '20261116', foreign: -1522392807788 / 1e8, personal: 1354958774859 / 1e8, inst: -319364695941 / 1e8, final: false }]), JSON.stringify(r.spotFlows));
   check('한쪽만 실패하면 그 부분만 비고 이유를 준다', r.ok && r.futFlows === null && r.errors.futFlows === 'HTTP 500', JSON.stringify(r.errors));
   check('부분마다 요청 한 번(perPage=3000) — 브라우저처럼 Referer 를 붙인다', dayCalls().length === 2 && dayCalls().every((u) => u.includes('perPage=3000'))
     && headersOf.daumSpotDays.Referer === 'https://finance.daum.net/', dayCalls().join(' '));
   reply = { ...base(), daumSpotDays: spotDays, daumFutDays: futDays };
   calls.length = 0;
   r = await hist();
-  check('한쪽이 실패했던 답은 기억하지 않는다 — 다시 묻는다', dayCalls().length === 2 && same(r.futFlows, [
-    { date: '20261113', foreign: 500, final: true }, { date: '20261116', foreign: -126798750000 / 1e8, final: false }]) && same(r.errors, {}), JSON.stringify(r));
+  check('한쪽이 실패했던 답은 기억하지 않는다 — 다시 묻는다. 선물 개인 · 기관', dayCalls().length === 2 && same(r.futFlows, [
+    { date: '20261113', foreign: 500, personal: null, inst: null, final: true },
+    { date: '20261116', foreign: -126798750000 / 1e8, personal: 226755287500 / 1e8, inst: -1000, final: false }]) && same(r.errors, {}), JSON.stringify(r));
   calls.length = 0;
   NOW += 9 * 60000;
   await hist();
@@ -453,6 +457,32 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
   reply = { ...base(), daumSpotDays: spotDays, daumFutDays: futDays };
   r = await hist();
   check('20:30 뒤의 오늘은 확정(네이버 수급과 같은 기준)', r.ok && r.spotFlows.at(-1).final === true && r.futFlows.at(-1).final === true);
+  reply = base();
+}
+
+// --- 종목 수급의 긴 이력(stock:flowHistory, 2026-11-18) — 다음 금융의 종목 투자자별 일별 값. 종목 수급 차트의 3M 이상 --------------
+{
+  const flow = (symbol) => handlers['stock:flowHistory']({}, symbol);
+  // 2026-11-18 브라우저에서 본 응답의 쓰는 필드만 — 최신 날이 먼저, 값은 주. 개인 칸은 없다
+  const stockDays = { data: [
+    { date: '2026-11-17 00:00:00', foreignStraightPurchaseVolume: -2470768, institutionStraightPurchaseVolume: 875284, foreignOwnSharesRate: 0.46 },
+    { date: '2026-11-16 00:00:00', foreignStraightPurchaseVolume: -3115971, institutionStraightPurchaseVolume: null }] };
+  reply = { ...base(), daumStockDays: stockDays };
+  calls.length = 0;
+  let r = await flow('247540.KQ');
+  check('종목 이력 — A + 코드로 한 번(perPage=3000), Referer', calls.length === 1 && calls[0].includes('symbolCode=A247540&') && calls[0].includes('perPage=3000')
+    && headersOf.daumStockDays.Referer === 'https://finance.daum.net/', calls.join(' '));
+  check('외국인 · 기관 순매수(주) — 빈 값은 null', same(r, { ok: true, trend: [
+    { date: '20261117', foreign: -2470768, organ: 875284 }, { date: '20261116', foreign: -3115971, organ: null }] }), JSON.stringify(r));
+  calls.length = 0;
+  const bad = [await flow('AAPL'), await flow('^KS11'), await flow('../x.KS'), await flow(undefined)];
+  check('국내 종목이 아니면 묻지 않는다', calls.length === 0 && bad.every((b) => b.ok === false && b.error === '잘못된 요청'), JSON.stringify(bad));
+  reply = { ...base(), daumStockDays: { status: 500 } };
+  r = await flow('005930.KS');
+  check('받다 실패하면 그 이유', r.ok === false && r.error === 'HTTP 500', JSON.stringify(r));
+  reply = { ...base(), daumStockDays: { data: '표가 아님' } };
+  r = await flow('005930.KS');
+  check('모양이 다른 응답은 실패', r.ok === false && r.error === '모양이 다른 응답', JSON.stringify(r));
   reply = base();
 }
 

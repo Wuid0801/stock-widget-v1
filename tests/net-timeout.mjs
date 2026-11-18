@@ -29,6 +29,7 @@ const CALLS = {
   'naver:rank': [{ market: 'kr', kind: 'up' }],
   'market:extras': [],
   'market:flowHistory': [],
+  'stock:flowHistory': ['005930.KS'],
   'naver:events': ['005930.KS'],
   'yf:search': ['삼성'],
   'yf:chart': [{ symbol: '005930.KS', range: '1d', interval: '5m' }],
