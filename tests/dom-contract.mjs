@@ -35,6 +35,11 @@ if (nameTag && sectorTag) {
   check('#dname 이 #dsector 를 감싸지 않는다 (사이에 닫는 태그가 있다)',
     between.includes('</span>'), between.replace(/\s+/g, ' ').slice(0, 80));
 
+  // 시장(코스피 · 코스닥, 2026-11-18)은 업종 바로 오른쪽 — 이름 줄 안, #dname 밖. 업종과 같은 글씨 · 값이 없으면 자리 없음
+  check('#dmarket 이 업종 바로 뒤에 있다(이름 줄 안)', /<span class="dsector" id="dsector"><\/span><span class="dmarket" id="dmarket"><\/span>/.test(html)
+    && /\.dsector, \.dmarket \{ font-size: 9px; color: var\(--faint\); \}/.test(html)
+    && /\.dsector:not\(:empty\)::before, \.dmarket:not\(:empty\)::before \{ content: ' · '; \}/.test(html));
+
   // 지표 보기 버튼은 업종 오른쪽, 이름 줄(#dnameRow) 밖에 둔다. 안에 넣으면 긴 업종을 말줄임할 때
   // 버튼까지 잘리고, #dname 안이면 textContent 에 '지표' 가 섞인다.
   const btnTag = /<(\w+)[^>]*\bid="metricsBtn"/.exec(html);

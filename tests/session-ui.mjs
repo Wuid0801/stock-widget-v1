@@ -256,6 +256,15 @@ await test('selected detail updates header, independent of aggregate; quote and 
   run("state.selected = '000660.KS'; state.infoOpen = false;");
   c.renderDetail();
   assert.equal(elements.get('infoToggle').title, '누르면 펼칩니다');
+  // 업종 오른쪽의 시장(2026-11-18) — 야후 기호 끝으로(.KS 코스피 · .KQ 코스닥), 미국 · 지수는 비운다
+  assert.equal(elements.get('dmarket').textContent, '코스피');
+  run("state.watchlist.push({ symbol: '247540.KQ', name: '에코프로비엠' }, { symbol: 'AAPL', name: '애플' }); state.selected = '247540.KQ';");
+  c.sectors.set('247540.KQ', '').set('AAPL', '');
+  c.renderDetail();
+  assert.equal(elements.get('dmarket').textContent, '코스닥');
+  run("state.selected = 'AAPL';");
+  c.renderDetail();
+  assert.equal(elements.get('dmarket').textContent, '', '미국 종목에는 없다');
 });
 
 await test('1D appends only active regular; pre/after lines retain price origin after close', async () => {

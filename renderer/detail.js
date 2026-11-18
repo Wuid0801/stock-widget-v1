@@ -134,6 +134,9 @@ function renderDetail() {
   secEl.textContent = cached || '';
   // 지수는 업종이 없다
   if (item && !isIndex(item.symbol) && !sectors.has(item.symbol)) loadSector(item).catch(console.error);
+  // 국내 종목의 시장 — 업종 오른쪽(2026-11-18 사용자 요청). 야후 기호 끝으로 안다(.KS 코스피 · .KQ 코스닥 — 검색 결과의 표시와 같은 규칙)
+  const venue = item && /\.(KS|KQ)$/i.exec(item.symbol);
+  document.getElementById('dmarket').textContent = venue ? (venue[1].toUpperCase() === 'KQ' ? '코스닥' : '코스피') : '';
 
   const chgEl = document.getElementById('dchg');
   const badge = document.getElementById('badge');

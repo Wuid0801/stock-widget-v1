@@ -611,9 +611,9 @@
     font-size: 11px; color: var(--dname);
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   }
-  /* 업종 — 종목명보다 한 단계 더 흐리고 작게. 값이 없으면 자리를 차지하지 않는다 */
-  .dsector { font-size: 9px; color: var(--faint); }
-  .dsector:not(:empty)::before { content: ' · '; }
+  /* 업종 · 시장(코스피 / 코스닥) — 종목명보다 한 단계 더 흐리고 작게. 값이 없으면 자리를 차지하지 않는다 */
+  .dsector, .dmarket { font-size: 9px; color: var(--faint); }
+  .dsector:not(:empty)::before, .dmarket:not(:empty)::before { content: ' · '; }
   /* 이름 줄 + 지표 버튼. 이름 줄만 줄어들며 말줄임하고 버튼은 늘 보인다 */
   /* 아래 3px — 이름이 짧으면 버튼이 오늘 캔들 바로 위에 와서, 꼬리가 줄 맨 위까지 뻗으면 맞닿았다 */
   .dnamebar { display: flex; align-items: center; gap: 5px; min-width: 0; margin-bottom: 3px; }
@@ -814,7 +814,7 @@
           <!-- 지표 보기 버튼은 이름 줄 밖에 둔다 — 안에 두면 긴 업종을 말줄임할 때 같이 잘린다 -->
           <div class="dnamebar">
             <div class="dname" id="dnameRow">
-              <span id="dname">—</span><span class="dsector" id="dsector"></span>
+              <span id="dname">—</span><span class="dsector" id="dsector"></span><span class="dmarket" id="dmarket"></span>
             </div>
             <button class="mxbtn" id="metricsBtn" type="button" hidden>지표</button>
           </div>
