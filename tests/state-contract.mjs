@@ -65,6 +65,8 @@ check('항상 위는 저장값을 따른다(못 박은 true 없음)', !/setAlway
 check('작업표시줄 버튼은 늘 있다', /\n {4}skipTaskbar: false,/.test(main) && !/setSkipTaskbar/.test(main));
 check('저장 · 백업 불러오기 · 다시 보이기가 항상 위를 다시 적용한다', /if \('alwaysOnTop' in next\) applyOnTop\(\);/.test(main)
   && (main.match(/applyOnTop\(\);/g) || []).length >= 5, String((main.match(/applyOnTop\(\);/g) || []).length));
+// 지난 장중 수급은 지표 화면을 열지 않은 날도 모인다 — 창을 띄운 뒤 한 번, 그다음 10분마다 마감 뒤인지 본다(2026-11-18)
+check('지난 장중 수급을 장 마감 뒤 모으는 타이머', /registerToggle\(\);\s*captureIntraday\(\);\s*setInterval\(captureIntraday, 10 \* 60000\);/.test(main));
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
 process.exit(fails === 0 ? 0 : 1);

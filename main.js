@@ -784,6 +784,49 @@ async function daumIntraday() {
   return { spot, fut, program: program == null ? null : program / 1e8 };
 }
 
+// 지난 장중 수급(2026-11-18 사용자 요청: 당일만이 아니라 이전도) — 다음 금융은 그날 것만 준다(날짜를 붙여도 오늘 것, 같은 날
+// 브라우저 확인). 그래서 마감 뒤 받은 그날 것을 날마다 따로 파일(intraday.json, 설정 옆)에 모아 둔다. 현물(09:01~) · 선물(08:45~)은
+// 새 날로 바뀌는 시각이 달라 줄마다 마지막 시각의 날에 둔다. 오늘 장중(16:00 전)의 것은 아직 다 차지 않아 두지 않는다. 최근 INTRADAY_KEEP 일.
+// Store 는 처음 쓸 때 만든다 — 창을 띄우기 전 설정 파일 처리(openStore)와 섞이지 않게.
+const INTRADAY_KEEP = 20;
+const INTRADAY_DONE = '1600'; // 선물이 15:45 에 끝난다 — 이 뒤에 받은 그날 것은 다 찬 것
+let intradayStore = null;
+const intradayDays = () => (intradayStore ||= new Store({ cwd: storeOptions.cwd, name: 'intraday', clearInvalidConfig: true }));
+const intradayKept = {}; // 'spot' | 'fut' → 마지막으로 둔 줄의 시각 — 같으면 파일을 다시 읽고 쓰지 않는다
+function keepIntraday(it, now) {
+  try {
+    const fresh = ['spot', 'fut'].map((venue) => {
+      const rows = it && it[venue];
+      const last = rows && rows.length ? rows[rows.length - 1].t : null;
+      const day = last == null ? null : kstDay(last);
+      return last == null || intradayKept[venue] === last || (day === kstDay(now) && kstClock(now) < INTRADAY_DONE) ? null : { venue, rows, last, day };
+    }).filter(Boolean);
+    if (!fresh.length) return;
+    const days = { ...(intradayDays().get('days') || {}) };
+    for (const f of fresh) days[f.day] = { ...days[f.day], [f.venue]: f.rows };
+    intradayDays().set('days', Object.fromEntries(Object.keys(days).sort().slice(-INTRADAY_KEEP).map((d) => [d, days[d]])));
+    for (const f of fresh) intradayKept[f.venue] = f.last;
+  } catch (e) {
+    console.warn('지난 장중 수급 저장 실패', e.message);
+  }
+}
+// 지표 화면을 열지 않은 날도 모이게 장이 끝난 뒤(16:00 ~ 다음 날 08:40) 한 번 받는다 — 10분마다 보고, 그 밤에 둘 다 받았으면 다시 묻지 않는다
+let intradayNight = null;
+async function captureIntraday() {
+  const now = Date.now();
+  const clock = kstClock(now);
+  const night = clock >= INTRADAY_DONE ? kstDay(now) : clock < '0840' ? kstDay(now - 86400000) : null;
+  if (!night || night === intradayNight) return;
+  try {
+    const it = await daumIntraday();
+    keepIntraday(it, now);
+    if (it.spot && it.spot.length && it.fut && it.fut.length) intradayNight = night;
+  } catch (e) {
+    console.warn('지난 장중 수급 받기 실패', e.message);
+  }
+}
+ipcMain.handle('market:intradayPast', () => ({ days: intradayDays().get('days') || {} }));
+
 // --- 외국인 현물 · 선물 수급의 긴 이력(market:flowHistory) ---------------------------------------
 // 수급 확대 차트에서 1M 이상을 고를 때만 묻는다(2026-11-16 사용자 요청: 더 길게 보고 싶다). 다음 금융의 투자자별 일별 값 —
 // 요청 한 번에 2016-05 부터 온다(같은 날 확인: 현물 2,579일 · 선물 2,578일, 오늘 행 포함). 네이버는 하루에 요청 하나라 열흘치만
@@ -829,7 +872,7 @@ ipcMain.handle('market:extras', async () => {
   const parts = await Promise.allSettled([flows('KOSPI'), flows('FUT'), kospi, naverIndexCloses('FUT', now), fredHyOas(now),
     naverIndexCloses('KPI200', now), // 코스피200 현물 일별 종가 — 5일 변화 · 날마다의 베이시스(선물 종가 - 현물 종가)
     naverMinuteCloses('KPI200', now), // 오늘 1분 종가 — 장중 베이시스를 20분 늦은 선물의 시각에 맞춘다
-    daumIntraday(), // 장중 수급(현물 · 선물 · 프로그램)
+    daumIntraday().then((it) => { keepIntraday(it, now); return it; }), // 장중 수급(현물 · 선물 · 프로그램) — 마감 뒤 것은 모아 둔다
     cnnFearGreed(now),
     fredCurve(now)]); // 미국 장단기 금리차(10년 − 2년)
   if (parts.every((p) => p.status === 'rejected')) {
@@ -1969,6 +2012,8 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     createWindow();
     registerToggle();
+    captureIntraday();
+    setInterval(captureIntraday, 10 * 60000);
     // 깨진 설정을 옮겨 두고 처음 상태로 떴다 — 목록이 비어 보이는 까닭과 원래 파일 자리를 알린다
     if (brokenConfig && Notification.isSupported()) {
       new Notification({

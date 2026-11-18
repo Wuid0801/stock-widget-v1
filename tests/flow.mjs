@@ -29,6 +29,7 @@ function harness() {
   const get = (id) => {
     if (!elements.has(id)) elements.set(id, {
       open: false, hidden: true, textContent: '', innerHTML: '', value: '', disabled: false,
+      get options() { return this.innerHTML.match(/<option/g) || []; }, // select 의 options — 그린 <option> 수만큼
       setAttribute(name, value) { this[name] = value; },
       showModal() { this.open = true; },
       close() { this.open = false; if (this.onclose) this.onclose(); },
@@ -44,6 +45,7 @@ function harness() {
     marketExtras: async () => { requests.push('market'); return market; },
     detail: async (symbol) => { requests.push(symbol); return stock; },
     flowHistory: async () => { requests.push('history'); return history; },
+    intradayPast: async () => ({ days: {} }),
   };
   const context = vm.createContext({ document: { getElementById: get }, api, console,
     getComputedStyle: () => ({ getPropertyValue: () => '#aaaaaa' }), Chart: FakeChart,
@@ -153,6 +155,37 @@ const tests = [
     assert.equal(app.get('flowPlot').hidden, true);
     assert.equal(app.drawings.at(-1).destroyed, true);
     assert.match(app.get('flowStatus').textContent, /데이터가 없습니다/);
+  }],
+  ['장중 수급 — 앱이 모아 둔 날이 있으면 날짜를 골라 그날 것을 그린다(2026-11-18)', async () => {
+    const app = harness();
+    const past = { spot: [{ t: Date.parse('2026-11-11T09:01:00+09:00'), foreign: 10 }, { t: Date.parse('2026-11-11T15:30:00+09:00'), foreign: -40 }], fut: [] };
+    app.api.intradayPast = async () => ({ days: { 20261110: past, 20261111: past, bad: past } });
+    app.context.snapshot = market;
+    app.run("bindFlow(); marketExtras = {at: Date.now(), d: snapshot}; openFlow({kind:'intraday', key:'INTRA_FOREIGN'})");
+    const pick = app.get('flowDay');
+    assert.equal(pick.hidden, true, '받기 전에는 숨긴다');
+    await settle();
+    assert.equal(pick.hidden, false);
+    assert.equal(pick.innerHTML, '<option value="">오늘</option><option value="20261111">11/11</option><option value="20261110">11/10</option>', '최근 날이 위, 모양이 다른 키는 뺀다');
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [0, -30], '처음은 오늘(지표 화면의 값)');
+    pick.onchange({ target: { value: '20261111' } });
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [10, -40]);
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.labels), ['09:01', '15:30']);
+    assert.equal(app.requests.length, 0, '지난 날은 다시 받지 않는다');
+    app.get('flowVenue').onchange({ target: { value: 'fut' } });
+    assert.match(app.get('flowStatus').textContent, /데이터가 없습니다/, '그날 선물이 없으면 빈 차트');
+    pick.onchange({ target: { value: '' } });
+    app.get('flowVenue').onchange({ target: { value: 'spot' } });
+    assert.deepEqual(plain(app.drawings.at(-1).config.data.datasets[0].data), [0, -30], '오늘로 돌아온다');
+    app.run("openFlow({kind:'daily', key:'SPOT'})");
+    assert.equal(pick.hidden, true, '일별 수급에는 없다');
+  }],
+  ['장중 수급 — 모아 둔 날이 없으면 날짜 칸을 숨긴다', async () => {
+    const app = harness();
+    app.context.snapshot = market;
+    app.run("marketExtras = {at: Date.now(), d: snapshot}; openFlow({kind:'intraday', key:'INTRA_FOREIGN'})");
+    await settle();
+    assert.equal(app.get('flowDay').hidden, true);
   }],
   ['일별 수급의 기간 — 마지막 날에서 그 개월 수만큼만, 1Y · 3Y 는 연/월 이름표', () => {
     const app = harness();

@@ -33,8 +33,10 @@ const CALLS = {
   'yf:search': ['삼성'],
   'yf:chart': [{ symbol: '005930.KS', range: '1d', interval: '5m' }],
 };
-// 설정(state:) · 백업(backup:, 파일 창 · 로컬 파일) · 공시 원문 열기(dart:open, 기본 브라우저에 맡긴다)는 네트워크를 쓰지 않는다
-const network = Object.keys(handlers).filter((k) => !k.startsWith('state:') && !k.startsWith('backup:') && k !== 'dart:open');
+// 설정(state:) · 백업(backup:, 파일 창 · 로컬 파일) · 공시 원문 열기(dart:open, 기본 브라우저에 맡긴다) · 모아 둔 장중 수급
+// (market:intradayPast, 로컬 파일)은 네트워크를 쓰지 않는다
+const network = Object.keys(handlers).filter((k) => !k.startsWith('state:') && !k.startsWith('backup:') && k !== 'dart:open'
+  && k !== 'market:intradayPast');
 const unlisted = network.filter((k) => !(k in CALLS));
 check('네트워크 핸들러가 전부 이 스위트에 있다', unlisted.length === 0,
   unlisted.length ? `목록에 없음: ${unlisted.join(' ')}` : `${network.length}개`);

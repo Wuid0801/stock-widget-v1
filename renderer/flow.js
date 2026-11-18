@@ -9,6 +9,8 @@ const FLOW_HIST_TTL = 10 * 60000;
 let flowHist = null; // { at, d, error }
 let flowHistLoading = false;
 const flowLong = (view) => !!view && view.kind === 'daily' && view.range !== '10d';
+// 앱이 모아 둔 지난 장중 수급 { days: { YYYYMMDD: { spot, fut } } }(main 의 market:intradayPast) — 장중 수급 창을 열 때마다 받는다
+let intradayPast = null;
 
 async function loadFlowHistory() {
   if (flowHistLoading) return;
@@ -72,10 +74,17 @@ function flowData(view, data) {
 }
 
 function openFlow(view) {
-  flowView = { ...view, venue: view.venue || 'spot', range: view.range || flowRange };
+  flowView = { ...view, venue: view.venue || 'spot', range: view.range || flowRange, day: '' };
   const dialog = document.getElementById('flowDialog');
   if (!dialog.open) dialog.showModal();
   renderFlow();
+  if (view.kind !== 'intraday') return;
+  api.intradayPast().then((d) => {
+    intradayPast = d;
+    const days = Object.keys((d && d.days) || {}).filter((k) => /^\d{8}$/.test(k)).sort().reverse();
+    document.getElementById('flowDay').innerHTML = '<option value="">오늘</option>' + days.map((k) => `<option value="${k}">${mmdd(k)}</option>`).join('');
+    renderFlow();
+  }).catch(console.error);
 }
 
 function clearFlow() {
@@ -106,15 +115,20 @@ function renderFlow() {
   const cached = stock ? metricsCache.get(flowView.symbol) : long ? flowHist : marketExtras;
   const ttl = stock ? METRICS_TTL : long ? FLOW_HIST_TTL : RANK_TTL;
   if (!cached || Date.now() - cached.at >= ttl) refreshFlow();
-  const loading = stock ? metricsLoading.has(flowView.symbol) : long ? flowHistLoading : marketLoading;
-  const model = flowData(flowView, cached && cached.d);
-  const failure = model.error || cached && cached.error;
+  // 지난 날을 골랐으면 모아 둔 그날 것을 그린다 — 받는 중 · 실패 표시는 오늘 것의 상태라 보이지 않는다
+  const past = flowView.kind === 'intraday' && flowView.day && intradayPast && intradayPast.days ? intradayPast.days[flowView.day] : null;
+  const loading = !past && (stock ? metricsLoading.has(flowView.symbol) : long ? flowHistLoading : marketLoading);
+  const model = flowData(flowView, past ? { ok: true, intraday: past } : cached && cached.d);
+  const failure = model.error || !past && cached && cached.error;
   const title = document.getElementById('flowTitle');
   title.textContent = model.title;
   document.getElementById('flowNote').textContent = model.note;
   const venue = document.getElementById('flowVenue');
   venue.hidden = flowView.kind !== 'intraday';
   venue.value = flowView.venue;
+  const daySel = document.getElementById('flowDay'); // 모아 둔 날이 있을 때만
+  daySel.hidden = flowView.kind !== 'intraday' || daySel.options.length < 2;
+  daySel.value = flowView.day;
   // 기간 버튼 — 일별 수급(외국인 현물 · 선물)에만. 지금 기간을 강조한다
   const range = document.getElementById('flowRange');
   range.hidden = flowView.kind !== 'daily';
@@ -171,6 +185,11 @@ function bindFlow() {
   document.getElementById('flowVenue').onchange = (event) => {
     if (!flowView) return;
     flowView.venue = event.target.value === 'fut' ? 'fut' : 'spot';
+    renderFlow();
+  };
+  document.getElementById('flowDay').onchange = (event) => {
+    if (!flowView) return;
+    flowView.day = /^\d{8}$/.test(event.target.value) ? event.target.value : '';
     renderFlow();
   };
   document.getElementById('flowRange').onclick = (event) => {

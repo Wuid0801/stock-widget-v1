@@ -273,6 +273,63 @@ const futRow = (t, p, f, inst, corp, pension) => ({ date: `2026-10-30 ${t}:00`, 
     JSON.stringify(r).slice(0, 160));
 }
 
+// --- 8b. 지난 장중 수급을 날마다 모아 둔다(2026-11-18 사용자 요청) ---------------------------------------------
+// 다음 금융은 그날 것만 준다 — 마감 뒤(16:00) · 다음 날 받은 그날 것만 파일(intraday.json)에 두고, 오늘 장중 것은 두지 않는다. 최근 20일.
+{
+  const made = []; // 장중 수급 Store 를 만들 때 넘긴 옵션(설정 Store 는 뺀다)
+  let intra = null;
+  let writes = 0;
+  let broken = false;
+  class MemStore {
+    constructor(o) { this.d = {}; if (o.name === 'intraday') { made.push(o); intra = this; } }
+    get(k) { return structuredClone(this.d[k]); }
+    set(k, v) { if (this === intra) { if (broken) throw new Error('디스크 가득'); writes++; } this.d[k] = structuredClone(v); }
+  }
+  const h = loadMain({ globals: { fetch: fakeFetch, AbortSignal, Date: FixedDate }, store: MemStore,
+    electron: { net: { fetch: fakeFetch } } });
+  const rowsOn = (d) => ({
+    daumSpot: { code: 200, data: [{ date: `${d} 15:30:00`, individualStraightPurchasePrice: 1e8, foreignStraightPurchasePrice: -1e8,
+      institutionStraightPurchasePrice: 0, details: { ETC_CORPORATION: 0, PENSION_FUND: 0, ETC_FOREIGN: 0 } }] },
+    daumFut: { code: 200, data: [{ date: `${d} 15:45:00`, privateSettlement: 2e8, foreignSettlement: -2e8, institutionalSettlement: 0,
+      etcCorporationSettlement: 0 }] },
+  });
+  const past = async () => Object.keys((await h['market:intradayPast']()).days);
+  check('파일은 처음 쓸 때 만든다 — 설정 옆 intraday.json, 깨졌으면 비우고 시작', made.length === 0);
+  reply = { ...base(), ...rowsOn('2026-10-30') };
+  NOW = kst('2026-10-30T14:30');
+  await h['market:extras']({});
+  check('오늘 장중 것은 두지 않는다', same(await past(), []) && writes === 0, JSON.stringify(intra?.d));
+  check('Store 옵션', made.length === 1 && made[0].name === 'intraday' && made[0].clearInvalidConfig === true, JSON.stringify(made));
+  NOW = kst('2026-10-30T16:05');
+  await h['market:extras']({});
+  check('16:00 뒤의 오늘 것은 둔다 — 현물 · 선물 그대로', same(await past(), ['20261030'])
+    && same(intra.d.days['20261030'].spot, [{ t: kst('2026-10-30T15:30'), individual: 1, foreign: -1, institution: 0, pension: 0, corp: 0 }])
+    && intra.d.days['20261030'].fut.length === 1, JSON.stringify(intra?.d));
+  NOW = kst('2026-10-31T08:00');
+  await h['market:extras']({});
+  check('같은 것을 다시 받으면 파일을 다시 쓰지 않는다', writes === 1, `${writes}번`);
+  // 08:45 ~ 09:01 — 선물은 새 날, 현물은 아직 어제 것. 줄마다 그 마지막 시각의 날에 둔다(오늘 선물은 장중이라 두지 않는다)
+  reply = { ...base(), ...rowsOn('2026-10-31'), daumSpot: rowsOn('2026-10-30').daumSpot };
+  NOW = kst('2026-10-31T08:50');
+  await h['market:extras']({});
+  check('어제 현물은 그대로, 오늘 장중 선물은 두지 않는다', same(await past(), ['20261030']) && writes === 1, `${writes}번`);
+  broken = true;
+  NOW = kst('2026-10-31T16:10');
+  reply = { ...base(), ...rowsOn('2026-10-31') };
+  let r = await h['market:extras']({});
+  check('저장에 실패해도 지표 화면의 장중 수급은 온다', r.intraday?.spot?.length === 1 && same(await past(), ['20261030']), JSON.stringify(r.intraday));
+  broken = false;
+  for (let i = 1; i <= 25; i++) {
+    const d = new Date(Date.UTC(2026, 11, i)).toISOString().slice(0, 10);
+    reply = { ...base(), ...rowsOn(d) };
+    NOW = kst(`${d}T17:00`);
+    await h['market:extras']({});
+  }
+  const kept = await past();
+  check('최근 20일만 남는다', kept.length === 20 && kept[0] === '20261206' && kept.at(-1) === '20261225', `${kept.length} ${kept[0]}..${kept.at(-1)}`);
+  reply = base();
+}
+
 // --- 6. 데드캣 점검 판정(market-check.js — 순수 함수) ---------------------------------------------------
 // 기준(설계 ③): 외국인 현물 2거래일 연속 · SOX 직전 20거래일 최고 돌파 / 최저의 3% 이내 · 원/달러 5일 +1% · VIX 5일 +15% 또는
 // 하루 +10% · HY OAS 5영업일 +0.25%p · 미국채 5일 ±10bp 안정 / +20bp 위험. 경계값은 부동소수 오차에도 같은 쪽으로 판정해야 한다.

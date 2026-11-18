@@ -197,7 +197,7 @@ Electron 을 띄우는 나머지 열여덟 개는 CI 에서 돌리지 않습니�
 | 코스피 · 코스닥 지수 · 코스피200 현물 · 선물 | Naver 실시간 | `KOSPI,KOSDAQ,KPI200,FUT` 1회 요청(현물 · 선물은 시장 지표 화면에만, 선물은 20분 지연). 지수 일봉 · RSI · 52주는 Yahoo `^KS11` · `^KQ11` |
 | 코스피200 현물 · 선물 차트 · 일봉 | Naver 지수 분봉 · 일봉 | 야후에 쓸 것이 없어(`^KS200` 은 오늘 봉 하나, 선물은 없음) 1D · 1W 는 `chart/domestic/index/{KPI200 · FUT}/minute`, 일봉 · RSI 는 같은 경로의 `/day`(`NAVER_ONLY` · `naverDaily`). 선물 기호 `^KS200F` 는 앱이 붙인 것 |
 | 외국인 현물 · 선물 수급의 긴 이력(수급 확대 차트 1M 이상) | 다음 금융 | `finance.daum.net/api/investor/KOSPI/days` · `investor/future/days?terms=days&type=PRICE` 를 `perPage=3000` 으로 한 번씩 — 2016-05 부터 온다(2026-11-16 확인: 현물 2,579일 · 선물 2,578일, 오늘 행 포함). 외국인 순매수(원 → 억 원)만 쓴다. Referer 필요(`daumJson`). 네이버는 하루에 요청 하나라 열흘치(`FLOW_DAYS`)만 받는다 — 지표 화면의 수급 줄 · 데드캣 점검은 그대로 네이버. 웹페이지가 쓰는 데이터라(공식 API 아님) 막히거나 모양이 바뀔 수 있다. 창에서 1M 이상을 고를 때만, 10분 기억(`market:flowHistory`) |
-| 장중 수급(시장 지표) | 다음 금융 | 코스피 현물 시간별(주체 · 세부, 원) · 코스피200 선물 시간별(금액, 원) · 코스피 프로그램 지금 값 — 지표 화면이 열려 있을 때만(1분) 세 건, Referer 필요(`daumIntraday`) |
+| 장중 수급(시장 지표) | 다음 금융 | 코스피 현물 시간별(주체 · 세부, 원) · 코스피200 선물 시간별(금액, 원) · 코스피 프로그램 지금 값 — 지표 화면이 열려 있을 때만(1분) 세 건, Referer 필요(`daumIntraday`). 지난 날을 모으려고 장 마감 뒤 하루 한 번 더(`captureIntraday`) — 그날 것만 주는 곳이다 |
 | 외국인 현물 · 선물 수급(시장 지표) | Naver 모바일 지수 수급 | `m.stock.naver.com/api/index/{KOSPI · FUT}/trend?bizdate=` 날짜마다 1회, 최근 10거래일. 지난 날 · 20:30 뒤의 오늘은 기억. 지표 화면이 열려 있을 때만(1분) |
 | 코스피 · 선물 일별 종가(시장 지표) | Naver 지수 일봉 | `api.stock.naver.com/chart/domestic/index/{KOSPI · FUT}/day` 최근 30일 — 수급을 물을 거래일도 여기서 |
 | 미국 HY OAS(시장 지표) | FRED CSV | `fredgraph.csv?id=BAMLH0A0HYM2`(키 없음), 6시간 기억. 1~2영업일 늦다. **이것만 Electron `net.fetch`(Chromium 네트워크), User-Agent 는 그대로** — Electron 44(10/29 올림) 안의 Node fetch 는 FRED 앞단(Akamai)에서 답이 없어(20초, 헤더를 브라우저처럼 채워도 같다) 줄이 — 였고, `net.fetch` 에 `Mozilla/5.0` 을 달면 HTTP2 프로토콜 오류다(2026-11-02 실측 — PC 의 Node 22 는 0.2초에 받는다). 주간 출처 점검은 Node fetch 로 대신 불러 이것은 못 잡는다 — Electron 을 올릴 때 `npm run check:sources:electron` |
@@ -740,7 +740,7 @@ Yahoo의 1D 봉은 20분 전에서 끊기므로, 장중에는 현재가를 끝�
 | 보기(`view.kind`) | 여는 곳 | 데이터 | 그림 |
 |---|---|---|---|
 | `daily` | 시장 지표의 외국인 현물 · 선물 줄 | `10일`: `market:extras` 의 `spotFlows` · `futFlows`(네이버, 억 원). `1M` 이상: `market:flowHistory` 의 같은 이름(다음 금융, 억 원) | 날짜 오름차순 막대(산 날 빨강 · 판 날 파랑). 당일 미확정 값은 이름표에 `잠정`. 기간 버튼 `10일` · `1M` · `3M` · `1Y` · `3Y` |
-| `intraday` | 장중 수급 줄(외국인 · 개인 · 기관 · 연기금 · 기타법인) | `market:extras` 의 `intraday.spot` · `intraday.fut`(다음 금융, 억 원) | 오늘 누적 순매수 선. 현물 / 선물은 창 안의 고르기(`#flowVenue`) |
+| `intraday` | 장중 수급 줄(외국인 · 개인 · 기관 · 연기금 · 기타법인) | `market:extras` 의 `intraday.spot` · `intraday.fut`(다음 금융, 억 원) | 오늘 누적 순매수 선. 현물 / 선물은 창 안의 고르기(`#flowVenue`). 앱이 모아 둔 지난 날은 날짜 칸(`#flowDay`, `market:intradayPast`) |
 | `stock` | 종목 지표의 `수급 차트 보기` | `naver:detail` 의 `trend`(주, KRX) | 최근 최대 20거래일 외국인 · 기관 · 개인 세 선 |
 
 - 데이터 모양을 그림용으로 바꾸는 것은 `flowData(view, data)` 하나입니다(화면 없이 테스트 — `tests/flow.mjs`). **없는 값은 0 으로 만들지 않고** 비웁니다(`null`, 선은 끊긴다).
@@ -751,6 +751,11 @@ Yahoo의 1D 봉은 20분 전에서 끊기므로, 장중에는 현재가를 끝�
 - **일별 수급의 기간 버튼**(`#flowRange` — `10일` · `1M` · `3M` · `1Y` · `3Y`, `FLOW_RANGES`, 2026-11-16 사용자 요청 "더 길게 · 기존 차트처럼"): 모양은 같은 일별 막대이고 기간만 가격 차트처럼 고릅니다. `10일` 은 지표 화면이 받는 네이버 열흘치 그대로(`marketExtras`), `1M` 이상은 **다음 금융의 긴 이력**(`market:flowHistory` → `flowHist`)에서 마지막 날부터 그 개월 수만큼 앞까지(달력) 자릅니다. `1Y` · `3Y` 는 날짜 이름표가 연/월(`YY/MM`), 막대가 30개를 넘으면 틈 없이 붙입니다(1px 도 안 되는 막대가 흐려진다). 마지막으로 고른 기간은 다음에 열 때도 그 기간입니다(`flowRange`, 저장하지 않는다). 버튼은 `renderFlow` 가 그립니다.
   - 긴 이력은 **1M 이상을 고를 때만** 받고 10분 기억합니다(렌더러 `FLOW_HIST_TTL` · main `FLOW_HISTORY_TTL`). main 은 현물 · 선물을 따로 받아 한쪽만 실패하면 그 부분만 비우고(`errors`), 둘 다 받았을 때만 기억합니다. 다시 받다 실패하면 있던 것을 그리고 이유를 적습니다(`loadFlowHistory` — `loadInto` 와 같은 꼴).
   - 누적 선으로 그리는 안도 냈으나 사용자가 지금 차트 모양을 골랐습니다. 가격 차트의 끌어서 확대는 넣지 않았습니다.
+- **지난 장중 수급**(2026-11-18 사용자 요청 "당일뿐 아니라 이전도"). 다음 금융 시간별(`investor/KOSPI/times` · `future/times`)은 그날 것만 줍니다 — `date` · `tradeDate` · `day` · `page=2` 를 붙여도 오늘 것이고 다음 금융 화면에도 지난 날 고르기가 없습니다(같은 날 브라우저 확인). 그래서 main 이 마감 뒤 받은 그날 것을 날마다 모아 둡니다(`keepIntraday`).
+  - 파일은 설정 옆 `intraday.json`(electron-store `name: 'intraday'`, 깨졌으면 비우고 시작 — `clearInvalidConfig`), 처음 쓸 때 만듭니다(`openStore` 의 깨진 설정 처리와 섞이지 않게). `{ days: { YYYYMMDD: { spot, fut } } }` — 줄 모양은 `market:extras` 의 `intraday.spot` · `fut` 그대로, 최근 20일(`INTRADAY_KEEP`, 하루 약 100KB). 설정 백업에는 넣지 않습니다.
+  - 현물(09:01~) · 선물(08:45~)은 새 날로 바뀌는 시각이 달라 **줄마다 마지막 시각의 날**에 둡니다. 오늘 것은 16:00(`INTRADAY_DONE`, 선물이 15:45 에 끝난다) 전이면 아직 다 차지 않아 두지 않습니다. 같은 줄(마지막 시각이 같다)을 다시 받으면 파일을 읽지도 쓰지도 않습니다(`intradayKept`) — 지표 화면이 열려 있으면 1분마다 받기 때문.
+  - 두 길로 모입니다: 지표 화면의 `market:extras`(요청이 늘지 않는다)와, 화면을 열지 않은 날을 위한 `captureIntraday` — 창을 띄운 뒤 한 번, 그다음 10분마다 보고 마감 뒤(16:00 ~ 다음 날 08:40)면 그 밤에 한 번 받습니다(현물 · 선물 둘 다 받았을 때만 그 밤을 끝낸 것으로). 그 사이 앱이 꺼져 있거나 PC 가 잠들어 있던 날은 빠집니다. 저장에 실패해도 지표 화면의 장중 수급은 그대로 옵니다(경고만).
+  - 창은 장중 수급으로 열 때마다 `market:intradayPast`(로컬 파일, 네트워크 없음)를 받아 날짜 칸을 채우고(최근 날이 위), 모아 둔 날이 없으면 칸을 숨깁니다. 지난 날을 고르면 그날 것을 그리고 받는 중 · 실패 표시는 보이지 않습니다(오늘 것의 상태). 날짜는 열 때마다 `오늘` 로 돌아갑니다. 프로그램은 지금 값 하나뿐이라 남기지 않습니다. 테스트는 `tests/market.mjs`(모으기) · `tests/flow.mjs`(날짜 칸) · `tests/state-contract.mjs`(타이머 배선).
 - OI · API 키 연동은 범위 밖입니다(추후).
 
 ### 검색 — 인기 검색

@@ -186,6 +186,7 @@ check('지표 화면의 단락 사이에 점선이 있다', /\.metrics section \
   // 수급 확대 차트의 기간 버튼 자리 — 버튼은 renderFlow 가 그린다. 숨김 규칙이 없으면 display:flex 가 hidden 을 이긴다
   check('수급 차트 창에 기간 버튼 자리(숨김으로 시작)', /<div class="flowcontrols"><span class="flowrange" id="flowRange" hidden><\/span>/.test(html)
     && /\.flowrange\[hidden\] \{ display: none; \}/.test(html));
+  check('장중 수급 날짜 칸(숨김으로 시작, 모아 둔 날이 있으면 renderFlow 가 보인다)', /<select id="flowDay" aria-label="장중 수급 날짜" hidden><\/select>/.test(html));
   // 수급 차트(모달)는 맨 위 층이라 .widget 의 옅어짐을 받지 않고 :hover 로도 못 한다 — 마우스가 창 밖이면 html.away(2026-11-17)
   const startSrc = fs.readFileSync(new URL('../renderer/start.js', import.meta.url), 'utf8');
   check('수급 차트도 마우스가 창 밖이면 옅어진다', /html\.away \.flow, html\.away \.flow::backdrop \{ opacity: var\(--idle-opacity\); \}/.test(html)
