@@ -539,6 +539,24 @@ function trendFollow(closes, period = 200) {
   return { above, ma: ma[n], days };
 }
 
+// 이동평균 추세(지수 줄, 2026-11-25 사용자 요청) — 종가가 period 일선 위 · 아래와 그 선이 lag 봉 전보다 높은지로 넷.
+// up: 위 · 오름, down: 아래 · 내림, upTry: 위인데 선은 아직 내림, downTry: 아래인데 선은 아직 오름. 같으면 아래 · 내림.
+// days 는 그 상태가 이어진 봉 수(마지막 봉 포함). 봉이 period + lag 개보다 적으면 null.
+function maTrend(closes, period = 80, lag = 5) {
+  if (!closes || closes.length < period + lag) return null;
+  const ma = sma(closes, period);
+  const stateAt = (i) => {
+    const above = closes[i] > ma[i];
+    const rising = ma[i] > ma[i - lag];
+    return above ? (rising ? 'up' : 'upTry') : (rising ? 'downTry' : 'down');
+  };
+  const n = closes.length - 1;
+  const state = stateAt(n);
+  let days = 0;
+  for (let i = n; i - lag >= 0 && ma[i - lag] != null && stateAt(i) === state; i--) days++;
+  return { state, days, close: closes[n], ma: ma[n], maLag: ma[n - lag] };
+}
+
 // ms 의 n 달 전 같은 날(UTC 날짜로, 시각은 그대로). 그달에 그날이 없으면(3/31 의 한 달 전) 그달 마지막 날.
 // 모멘텀과 지표 화면의 기간 수익률(1 · 3개월 · 1년)이 같은 날짜를 쓰게 여기 하나만 둔다(2026-11-05 까지 두 벌).
 function monthsBack(ms, n) {
@@ -695,6 +713,6 @@ if (typeof module !== 'undefined') {
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
     TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
     hull, trendLine, breakoutOf, meetAt,
-    trendFollow, momentum, dcaCost, reboundCheck, EGG_SURGE, EGG_HOT, EGG_PANIC, EGG_CONFIRM, EGG_ORDER, eggNext, eggSeries, eggPhase,
+    trendFollow, maTrend, momentum, dcaCost, reboundCheck, EGG_SURGE, EGG_HOT, EGG_PANIC, EGG_CONFIRM, EGG_ORDER, eggNext, eggSeries, eggPhase,
   };
 }

@@ -51,8 +51,35 @@ function renderIndices(animate = false) {
     const move = ix.cur === '%' && it.change != null ? fmtBp(it.change) : fmtPct(it.pct); // 금리는 bp
     return `<span class="${cls}" data-symbol="${ix.symbol}" title="${ix.name}${ix.delayMin ? ` (${ix.delayMin}분 지연)` : ''} 차트 보기">`
       + `<span class="ixn">${esc(ix.name)}</span><span class="ixv">${money(it.value, curOf(ix.symbol))}</span>`
-      + `<span class="ixp" style="color:${color}">${move}</span></span>`;
+      + `<span class="ixp" style="color:${color}">${move}</span>${ixTrend(ix)}</span>`;
   }).join('')}</div>${dots}`;
+}
+
+// 80일선 추세(2026-11-25 사용자 요청) — 받아 둔 5년 일봉의 확정 봉으로. 그 지수 장이 열려 있거나 모르면(실시간 없음) 마지막
+// 봉은 움직이는 값이라 빼고, 닫힌 것이 확실하면 마지막 봉(그날 종가)까지 쓴다 — 늘 빼면 한국 낮에 미국 지수가 이미 끝난
+// 지난밤 종가를 빼고 그 전날로 판정했다(2026-11-25 실데이터). 대상(INDICES 의 trend)이 아니거나 일봉이 모자라면 빈 문자열.
+// shortcut: 개장 직후 야후 일봉(20분 늦다)에 오늘 봉이 아직 없으면 어제 봉을 빼 그 몇 분은 하루 앞 판정이다 — 경계에 걸친 날만 바뀐다.
+function ixTrend(ix) {
+  const d = ix.trend && dailyCache[ix.symbol];
+  const len = d && (quotes[ix.symbol]?.isTrading === false ? d.closes.length : d.closes.length - 1);
+  const t = d && maTrend(d.closes.slice(0, len), INDEX_TREND_MA, INDEX_TREND_LAG);
+  if (!t) return '';
+  const day = (i) => { const x = new Date(d.times[i]); return `${x.getUTCMonth() + 1}/${x.getUTCDate()}`; };
+  const cur = curOf(ix.symbol);
+  const [short, long] = { up: ['상승', '상승 추세'], down: ['하락', '하락 추세'],
+    upTry: ['상승전환', '상승 전환 시도'], downTry: ['하락전환', '하락 전환 시도'] }[t.state];
+  const tip = [
+    `${INDEX_TREND_MA}일선 추세 — ${long}`,
+    `${day(len - 1)} 종가 ${money(t.close, cur)} · ${INDEX_TREND_MA}일선 ${money(t.ma, cur)} (1주 전 ${money(t.maLag, cur)})`,
+    `${day(len - t.days)}부터 ${t.days}일째`,
+    '',
+    `상승: 종가가 ${INDEX_TREND_MA}일선 위 · 선이 1주 전보다 높음`,
+    `하락: 종가가 ${INDEX_TREND_MA}일선 아래 · 선이 1주 전보다 낮음`,
+    `전환 시도: 종가가 ${INDEX_TREND_MA}일선을 뚫었지만 선은 아직 반대 방향`,
+    '지금 상태일 뿐 다음 방향을 맞히는 신호가 아님',
+  ].join('\n');
+  const color = t.state === 'up' ? ` style="color:${UP}"` : t.state === 'down' ? ` style="color:${DOWN}"` : '';
+  return `<span class="ixt"${color} title="${esc(tip)}">${short} ${t.days}일째</span>`;
 }
 
 // FOLIO_MS 마다 다음 장으로. 한 장뿐이거나, 마우스가 올라가 있거나, 보고 있는 지수가 이 줄에 있으면 그대로.

@@ -1,5 +1,5 @@
 // 기법 점검(지표 화면) 계산 — 앱을 띄우지 않고 indicators.js 의 추세 추종 · 모멘텀 · 적립식 · 반등 점검 · 코스톨라니 달걀을 본다.
-import { trendFollow, momentum, dcaCost, reboundCheck, eggNext, eggPhase, eggSeries, EGG_SURGE, EGG_HOT, EGG_PANIC, EGG_CONFIRM, EGG_ORDER,
+import { trendFollow, maTrend, momentum, dcaCost, reboundCheck, eggNext, eggPhase, eggSeries, EGG_SURGE, EGG_HOT, EGG_PANIC, EGG_CONFIRM, EGG_ORDER,
   sma, calcRSI } from '../indicators.js';
 
 let fails = 0;
@@ -19,6 +19,24 @@ const near = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-9;
   check('200봉보다 적으면 null', trendFollow(up.slice(0, 199)) === null && trendFollow(null) === null);
   check('종가가 200일선과 같으면 위가 아니다', trendFollow(Array(200).fill(7)).above === false);
   check('기간을 바꿀 수 있다', trendFollow(up.slice(0, 20), 20).days === 1);
+}
+
+// --- 이동평균 추세(지수 줄): 80일선 위 · 아래 × 선이 5봉 전보다 높은지. 일수는 그 상태가 이어진 봉 수 ---------------------
+{
+  const up = Array.from({ length: 120 }, (_, i) => 100 + i);
+  const down = Array.from({ length: 120 }, (_, i) => 219 - i);
+  const t = maTrend(up);
+  check('오르기만 하면 up · 5봉 전 80일선이 생긴 봉(84)부터 센다', t && t.state === 'up' && t.days === 36, JSON.stringify(t));
+  check('ma · maLag 는 80일선의 지금 · 5봉 전', near(t.ma, sma(up, 80)[119]) && near(t.maLag, sma(up, 80)[114]) && t.close === 219);
+  check('내리기만 하면 down', maTrend(down).state === 'down');
+  const fall = maTrend([...up, 100, 100, 100]);
+  check('오르다 80일선 아래로 — 선은 아직 오름: downTry', fall.state === 'downTry' && fall.days === 3, JSON.stringify(fall));
+  // 1000 처럼 크게 뛰면 5봉 사이 80일선도 올라 up 이 된다 — 선만 겨우 넘는 값
+  const rise = maTrend([...down, 150, 150]);
+  check('내리다 80일선 위로 — 선은 아직 내림: upTry', rise.state === 'upTry' && rise.days === 2, JSON.stringify(rise));
+  check('85봉(80 + 5)보다 적으면 null', maTrend(up.slice(0, 84)) === null && maTrend(up.slice(0, 85)).days === 1 && maTrend(null) === null);
+  check('종가가 선과 같고 선이 평평하면 down(같으면 아래 · 내림)', maTrend(Array(90).fill(7)).state === 'down');
+  check('기간 · 비교 봉 수를 바꿀 수 있다', maTrend(up.slice(0, 25), 20, 5).days === 1);
 }
 
 // --- 모멘텀 12-1: 1개월 전 종가 / 12개월 전 종가 - 1. 날짜는 달력으로(거래일 수가 아니라) ------------------------------

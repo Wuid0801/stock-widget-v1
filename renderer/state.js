@@ -107,6 +107,8 @@ function withIndicator(key, on) {
   const other = { rsi: 'stoch', stoch: 'rsi' }[key];
   return { ...state.indicators, ...(on && other ? { [other]: false } : {}), [key]: on };
 }
+const INDEX_TREND_MA = 80; // 지수 줄 추세(INDICES 의 trend) — 이 이동평균의 위 · 아래와
+const INDEX_TREND_LAG = 5; //   그 선이 이만큼 봉 전보다 높은지(maTrend)
 const FOLLOW_MA = 200;    // 기법 점검(지표 화면) — 추세 추종의 장기 이동평균
 const DCA_MONTHS = 12;    //   적립식 기간(달, 이번 달 포함)
 const REBOUND_DAYS = 60;  //   반등 점검 — 이 거래일 안의 최고 종가에서
@@ -178,10 +180,11 @@ const YAHOO_KR_DELAY_MIN = 20;
 // loadChart 가 selectedItem 을 부르므로 tests/session-ui.mjs 의 prelude(아래 '과열도 단계'
 // 마커 앞)에 있어야 한다.
 const INDICES = [
-  { symbol: '^KS11', code: 'KOSPI', name: '코스피', page: 0 },
-  { symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥', page: 0 },
-  { symbol: '^IXIC', code: 'NASDAQ', name: '나스닥', page: 1, overseas: true },
-  { symbol: '^GSPC', code: 'SPX', name: 'S&P 500', page: 1, overseas: true },
+  // trend: 지수 줄에 80일선 추세를 붙인다(ixTrend, 2026-11-25 사용자 요청)
+  { symbol: '^KS11', code: 'KOSPI', name: '코스피', page: 0, trend: true },
+  { symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥', page: 0, trend: true },
+  { symbol: '^IXIC', code: 'NASDAQ', name: '나스닥', page: 1, overseas: true, trend: true },
+  { symbol: '^GSPC', code: 'SPX', name: 'S&P 500', page: 1, overseas: true, trend: true },
   { symbol: 'NQ=F', code: 'NQ', name: '나스닥 선물', page: 2, overseas: true, delayMin: 10 },
   { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 2, overseas: true },
   { symbol: 'CL=F', code: 'WTI', name: 'WTI', overseas: true, delayMin: 10 },

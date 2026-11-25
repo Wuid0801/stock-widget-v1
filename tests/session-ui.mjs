@@ -3148,7 +3148,7 @@ function alertRun(watchlist, targets) {
     loadQuote: async (item) => {
       if (tick[item.symbol]) h.run(`quotes[${JSON.stringify(item.symbol)}] = ${JSON.stringify(tick[item.symbol])};`);
     },
-    renderList() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderList() {}, renderIndices() {}, err() {}, quoteErrText: () => '', renderDetail() {},
     renderFolio: async () => {}, loadChart: async () => {}, renderUpdated() {},
   });
   h.run(`state.watchlist = ${JSON.stringify(watchlist)}; state.alerts.targets = ${JSON.stringify(targets)};`);
@@ -3422,7 +3422,7 @@ await test('the 10-year yield keeps three decimals and moves in bp; futures and 
 
 // 지수 줄: 코스피 · 코스닥 → 나스닥 · S&P 500 → 원/달러, 한 장씩. 다섯 개는 340px 한 줄에 들어가지 않는다.
 await test('index line shows one page at a time, marks the selected index, and turns pages unless hovered or viewing one', () => {
-  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices']);
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'ixTrend']);
   run(formatting);
   run(source.match(/^let indexItems = .*$/m)[0]);
   run(source.match(/^let indexPage = .*$/m)[0]);
@@ -3475,7 +3475,7 @@ await test('index line shows one page at a time, marks the selected index, and t
 
 // 지수 줄 오른쪽 끝의 점 — 몇 번째 장인지 보이고, 누르면 그 장으로 바로 간다(4초씩 기다리지 않게).
 await test('index line dots show the page and jump to it; the turn waits a full interval after a click; a viewed index can be paged away from until another pick', () => {
-  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage']);
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage', 'ixTrend']);
   run(formatting);
   for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
   run(source.match(/^const FOLIO_MS = .*$/m)[0]);
@@ -3526,11 +3526,45 @@ await test('index line dots show the page and jump to it; the turn waits a full 
   assert.match(source, /const dot = e\.target\.closest\('\.ixdot'\);\s*if \(dot\) \{ flipIndexPage\(Number\(dot\.dataset\.page\)\); return; \}/);
 });
 
+// 지수 줄 80일선 추세(2026-11-25) — 코스피 · 코스닥 · 나스닥 · S&P 500 옆에 상태와 며칠째. 받아 둔 일봉의 확정 봉으로 —
+// 장이 열려 있거나 모르면 마지막 봉을 빼고, 닫힌 것이 확실하면 마지막 봉(그날 종가)까지.
+await test('index line: 80-day trend beside the four main indices, from finished daily bars only', () => {
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'ixTrend']);
+  run(formatting);
+  for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
+  Object.assign(c, { cssVar: () => '#888888', esc: String });
+  const up = Array.from({ length: 120 }, (_, i) => 100 + i); // 1/1 부터 하루씩 — 80일선이 생기고 1주 뒤(봉 84)부터 상승
+  const days = (n) => JSON.stringify(Array.from({ length: n }, (_, i) => Date.UTC(2026, 0, 1) + i * 86400000));
+  run(`state.selected = '005930.KS'; indexItems = [{ code: 'KOSPI', name: '코스피', value: 7003.74, pct: 0.46 },
+    { code: 'KOSDAQ', name: '코스닥', value: 893.29, pct: -0.11 }, { code: 'USDKRW', name: '원/달러', value: 1351.4, pct: 0.63 }];
+    dailyCache['^KS11'] = { closes: ${JSON.stringify([...up, 1])}, times: ${days(121)} };
+    dailyCache['^KQ11'] = { closes: ${JSON.stringify([...up, 100, 100, 100, 5])}, times: ${days(124)} };
+    dailyCache['KRW=X'] = { closes: ${JSON.stringify([...up, 1])}, times: ${days(121)} };`);
+  c.renderIndices();
+  assert.match(elements.get('indices').innerHTML, /<span class="ixp" [^>]*>[^<]*<\/span><span class="ixt" style="color:#e24b4a" title="80일선 추세 — 상승 추세\n/,
+    '등락률 뒤, 지수 칸(누르면 차트) 안에 붙는다');
+  const ks = () => run("ixTrend(INDICES.find((i) => i.code === 'KOSPI'))");
+  assert.match(ks(), />상승 36일째<\/span>$/, '마지막 봉(1)은 장중일 수 있어 보지 않는다 — 실시간이 없으면(모름)도 같다');
+  assert.match(ks(), /\n4\/30 종가 219\.00 · 80일선 179\.50 \(1주 전 174\.50\)\n3\/26부터 36일째\n/, '쓴 마지막 봉의 날짜 · 값 · 시작일');
+  assert.match(ks(), /\n지금 상태일 뿐 다음 방향을 맞히는 신호가 아님"/);
+  assert.match(run("ixTrend(INDICES.find((i) => i.code === 'KOSDAQ'))"), /^<span class="ixt" title="80일선 추세 — 하락 전환 시도\n[^"]*">하락전환 3일째<\/span>$/,
+    '아래로 뚫었지만 선은 아직 오름 — 전환 시도는 글자색 없이(흐린 CSS 색)');
+  run("quotes['^KS11'] = { isTrading: true };");
+  assert.match(ks(), />상승 36일째</, '장중이면 마지막 봉을 뺀다');
+  run("quotes['^KS11'] = { isTrading: false };");
+  assert.match(ks(), /\n5\/1 종가 1\.00 [^"]*\n5\/1부터 1일째\n[^"]*">하락전환 1일째<\/span>$/, '닫힌 것이 확실하면 마지막 봉(그날 종가)까지');
+  assert.equal(run("ixTrend(INDICES.find((i) => i.code === 'USDKRW'))"), '', '대상(trend)이 아닌 지수에는 없다');
+  run("dailyCache['^KS11'].closes = dailyCache['^KS11'].closes.slice(0, 84);");
+  assert.equal(ks(), '', '80일선 + 1주(85봉)보다 적으면 없다');
+  run("delete dailyCache['^KS11'];");
+  assert.equal(ks(), '', '일봉을 아직 못 받았으면 없다 — 지수 줄은 그대로');
+});
+
 // 선물 · 유가는 셋째 장, 원/달러 · 미국채 10년은 넷째 장. 선물 · 유가는 10분 늦다는 것을 툴팁에, 금리는 등락을 bp 로.
 // 지수 줄은 대표 여섯 — 코스피 · 코스닥 → 나스닥 · S&P 500 → 나스닥 선물 · 원/달러(2026-10-27). WTI · 미국채 10년 · VIX · SOX 는
 // 줄에 없고 시장 지표 화면에서 고른다(고를 수 있는 항목으로는 남는다).
 await test('index line: six items on three pages; WTI · 10-year · VIX · SOX stay selectable but off the line', () => {
-  const { c, run } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage']);
+  const { c, run } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage', 'ixTrend']);
   run(formatting);
   for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
   run(source.match(/^const FOLIO_MS = .*$/m)[0]);
@@ -4099,7 +4133,7 @@ await test('refresh builds index quotes from the Naver index line; a missing ind
       open: 6938.27, high: 7011.04, low: 6927.88, isOpen: true, tradedAt: '2026-10-02T15:20:00+09:00' }],
     fetchLive: async () => ({}),
     loadQuote: async (item, live) => { loaded.push([item.symbol, live]); },
-    renderList() {}, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderList() {}, renderIndices() {}, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
     renderFolio: async () => {}, loadChart: async () => {}, renderUpdated() {},
   });
   await c.refreshAll();
@@ -4129,7 +4163,7 @@ await test('refresh redraws the list once (plus once per first-time stock) and k
       // A 를 받는 사이 C 가 지워진다 — C 는 묻지도 않는다
       if (item.symbol === 'A') run("state.watchlist = state.watchlist.filter((i) => i.symbol !== 'C');");
     },
-    renderList() { renders++; }, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderList() { renders++; }, renderIndices() {}, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
     renderFolio: async () => {}, loadChart: async () => {}, renderUpdated() {},
   });
   const isIndexSym = (s) => c.isIndex(s); // 지수 줄 기호(^ 지수 · =X 환율 · =F 선물)
@@ -4524,7 +4558,7 @@ function dailyRun({ yahoo, live = () => ({}) }) {
   };
   Object.assign(h.c, {
     loadIndices: async () => [], fetchLive: async () => live(),
-    renderList() {}, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
+    renderList() {}, renderIndices() {}, checkAlerts() {}, err() {}, quoteErrText: () => '', renderDetail() {},
     renderFolio: async () => {}, loadChart: async () => {},
   });
   return { ...h, calls, at: (sec) => { clock = NOW + sec * 1000; }, refresh: () => h.c.refreshAll() };
