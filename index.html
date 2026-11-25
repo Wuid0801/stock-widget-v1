@@ -322,6 +322,10 @@
   .row .evchip.est { background: none; border: 1px dashed var(--accent); line-height: 11px; padding: 0 3px; }
   /* 지난 잠정실적(실적 D+3) — 다가올 일정과 헷갈리지 않게 회색 */
   .row .evchip.past { color: var(--flat); }
+  /* 위험 상태(다음 금융 — 거래정지 · 투자경고 · 관리종목 …). 심한 정도로: rk2 위험 · rk1 주의 · rk0 알림(액면병합 · 배당락) */
+  .row .rkchip { flex: 0 0 auto; font-size: 9px; line-height: 13px; padding: 0 4px; border-radius: 3px; color: var(--flat); background: var(--chip); }
+  .row .rkchip.rk2 { color: #e24b4a; background: rgba(226, 75, 74, .16); font-weight: 600; }
+  .row .rkchip.rk1 { color: #e8a94f; background: rgba(232, 169, 79, .16); }
   .row .hsub {
     margin-top: 1px; font-size: 9.5px; color: var(--mute); font-variant-numeric: tabular-nums;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
@@ -732,6 +736,7 @@
   .mxmute, .mxnote { color: var(--mute); }
   .mxi { white-space: nowrap; }
   .mxpeer { cursor: pointer; } /* 동종 업종 종목 — 누르면 그 종목으로 */
+  .mxhome { cursor: pointer; text-decoration: underline; } /* 회사 개요의 홈페이지 — 누르면 브라우저로 */
   .mxpeer:hover { text-decoration: underline; }
   /* 최근 공시 — 한 줄씩, 긴 제목은 … (전체는 툴팁). 누르면 DART 원문 */
   .mxfil { margin: 0; padding: 0; list-style: none; }

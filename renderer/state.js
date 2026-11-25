@@ -489,6 +489,18 @@ const EVENT_TTL = 30 * 60000;
 const EVENT_LABEL = { ir: '실적', irEst: '실적 예상', irPast: '실적', exdiv: '배당락' }; // 목록 칩의 이름(eventBadge)
 const EVENT_DAYS = 14; // 이만큼 남았을 때부터 목록에 보인다
 const EVENT_PAST_DAYS = 7; // 지난 잠정실적(irPast)은 다음 날부터 이만큼 '실적 D+3' 으로 보인다(2026-11-02 사용자 요청 — 일주일)
+// 관심종목의 다음 금융 정보(main 의 daum:quotes, 2026-11-24) — 국내 종목 코드 → { risk, hi52, hi52Date, … }. 국내 종목 모두를 한 번에, 10분마다
+// (관심종목이 바뀌면 바로). 위험 상태 칩(riskChip) · 52주 막대 툴팁이 쓴다.
+const daumInfo = new Map();
+let daumInfoAt = 0;
+let daumInfoSig = ''; // 마지막으로 물은 국내 종목들 — 바뀌면 10분을 기다리지 않는다
+let daumInfoBusy = false;
+const DAUM_INFO_TTL = 10 * 60000;
+// 휴장일 · 장 운영시간(main 의 daum:marketDays) — [{ date, holiday, reason, changed, sessions }] | null. 받으면 6시간, 실패하면 10분 뒤 다시
+let marketDays = null;
+let marketDaysNext = 0;
+const MARKET_DAYS_TTL = 6 * 3600000;
+const MARKET_SESSION_NAME = { REGULAR: '정규장', AFTER_MARKET: '애프터마켓', PRE_MARKET: '프리마켓' }; // 운영시간이 바뀐 날 툴팁의 세션 이름(marketDayNote)
 let isLive = false;      // 마지막 갱신이 실시간 시세였는지 (실패 시 Yahoo 20분 지연)
 // 전체 관심종목의 거래 상태는 폴링/알림에 쓴다. 헤더는 선택 종목의 상태를 쓴다.
 let marketOpen = true;

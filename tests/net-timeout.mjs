@@ -30,14 +30,17 @@ const CALLS = {
   'market:extras': [],
   'market:flowHistory': [],
   'stock:flowHistory': ['005930.KS', 3],
+  'daum:quotes': [['005930.KS']],
+  'daum:marketDays': [],
   'naver:events': ['005930.KS'],
   'yf:search': ['삼성'],
   'yf:chart': [{ symbol: '005930.KS', range: '1d', interval: '5m' }],
 };
-// 설정(state:) · 백업(backup:, 파일 창 · 로컬 파일) · 공시 원문 열기(dart:open, 기본 브라우저에 맡긴다) · 모아 둔 장중 수급
-// (market:intradayPast, 로컬 파일)은 네트워크를 쓰지 않는다
+// 설정(state:) · 백업(backup:, 파일 창 · 로컬 파일) · 공시 원문 · 뉴스 열기(dart:open · news:open, 기본 브라우저에 맡긴다) · 모아 둔 장중 수급
+// (market:intradayPast, 로컬 파일)은 네트워크를 쓰지 않는다. 홈페이지 열기(corp:open)는 회사 정보를 물을 수 있지만 { ok } 가 아니라 참 · 거짓을
+// 돌려줘 아래에서 따로 본다
 const network = Object.keys(handlers).filter((k) => !k.startsWith('state:') && !k.startsWith('backup:') && k !== 'dart:open'
-  && k !== 'market:intradayPast');
+  && k !== 'news:open' && k !== 'corp:open' && k !== 'market:intradayPast');
 const unlisted = network.filter((k) => !(k in CALLS));
 check('네트워크 핸들러가 전부 이 스위트에 있다', unlisted.length === 0,
   unlisted.length ? `목록에 없음: ${unlisted.join(' ')}` : `${network.length}개`);
@@ -55,6 +58,15 @@ const results = await Promise.all(Object.entries(CALLS).map(async ([name, args])
 for (const [name, out] of results) {
   check(`${name} 가 답 없는 서버에 멈추지 않고 실패로 끝난다`, out && out.ok === false,
     out === 'hang' ? `${GUARD}ms 안에 안 끝남` : out === 'missing' ? '핸들러 없음' : JSON.stringify(out));
+}
+
+// 홈페이지 열기 — 답 없는 서버에 멈추지 않고 false(브라우저를 열지 않는다)
+{
+  let timer;
+  const guard = new Promise((r) => { timer = setTimeout(() => r('hang'), GUARD); });
+  const out = await Promise.race([handlers['corp:open']({}, '005930'), guard]);
+  clearTimeout(timer);
+  check('corp:open 도 답 없는 서버에 멈추지 않고 false', out === false, String(out));
 }
 
 const chart = results.find(([n]) => n === 'yf:chart')[1];

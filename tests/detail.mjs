@@ -34,10 +34,13 @@ const route = (url) => {
   if (m) return TRADERS[m[1]];
   m = /finance\.daum\.net\/api\/home\/dart-filings\?code=(\w+)$/.exec(url);
   if (m) return FILINGS[m[1]] && { code: m[1], rows: FILINGS[m[1]] };
+  for (const [part, body] of Object.entries(DAUM)) if (url.includes(part)) return typeof body === 'function' ? body(url) : body;
   return undefined;
 };
 // 다음 금융 공시 목록(home/dart-filings) — { code, rows: [{ no, day, name }] }, 2026-10-30 실측(효성중공업 · 삼성전자). 7번에서 채운다.
 const FILINGS = {};
+// 다음 금융 종목 정보(2026-11-24) — 주소 조각 → 응답(값이 함수면 주소를 받아 만든다). 10번에서 채운다
+const DAUM = {};
 // 다음 금융 거래원(trader/ranks) — 2026-10-30 브라우저 실측에서 쓰는 필드만. BID 는 매수 상위, ASK 는 매도 상위(각 10개사, 주),
 // foreignInvestorAskBidSum 은 그 목록 안 외국계의 합. 목록에 든 반대쪽 수량은 0 으로 오기도 한다(한화투자 매도 0).
 const trader = (traderName, bid, ask, foreign = false) => ({ traderName, bidAccTradeVolume: bid, askAccTradeVolume: ask,
@@ -77,8 +80,9 @@ const detail = (symbol) => handlers['naver:detail']({}, symbol);
   const d = await detail('005930.KS');
   check('성공', d.ok === true, d.error);
   check('국내 · 주식', d.market === 'kr' && d.kind === 'stock');
-  check('일곱 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 · 기업정보 · 다음 거래원 · 다음 공시 목록), 모두 시간 제한을 건다',
-    calls.length === 7 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
+  check('열세 군데를 묻는다(종목 상세 · 매매동향 · 분기 실적 · KRX 실시간 · 기업정보 · 다음 거래원 · 다음 공시 목록 · 다음 금융 종목 정보 여섯 — '
+    + '시세 요약 · 재무 · 추정 실적 · 회사 · 뉴스 · 공시 목록 — 10번), 모두 시간 제한을 건다',
+    calls.length === 13 && calls.every((c) => c.signal), calls.map((c) => c.url).join('\n'));
   // 거래원(2026-10-30 사용자 요청) — 종목의 장중 투자자별 수급은 무료 출처에 없어 외국계 창구로 외국인 매매를 어림한다
   const daum = calls.find((c) => c.url.includes('finance.daum.net/api/trader'));
   check('거래원은 다음 금융 — 오늘 매수 · 매도 상위 10개사, 브라우저처럼 Referer', daum?.url === 'https://finance.daum.net/api/trader/ranks?'
@@ -416,6 +420,136 @@ const past = (date) => ({ kind: 'irPast', title: '잠정실적 공시', date });
   const bad = [];
   for (const v of ['https://example.com', '2026111380111', '20261113801115&x=1', null, undefined, { no: 1 }]) bad.push(await handlers['dart:open']({}, v));
   check('접수번호(14자리)가 아니면 열지 않는다', bad.every((r) => r === false) && opened.length === 0, JSON.stringify(bad));
+}
+
+// --- 10. 다음 금융 종목 정보(2026-11-24) — 관심종목의 위험 상태 · 52주 · 상하한가(daum:quotes), 휴장일(daum:marketDays), 지표 보기의 회사 개요 ·
+// 업종 · 추정 실적 · 재무 · 공시 요약 · 뉴스 · 전일 거래량(naver:detail 의 daum), 뉴스 · 홈페이지 열기. 응답은 같은 날 브라우저에서 본 것의 쓰는 필드만
+// (위험 상태는 깨끗한나라우 · 케이아이이 · 핌스의 값 — 다음 금융 화면에 '투자경고 외 1' · '투자주의' 로 보였다)
+{
+  const state = (o = {}) => ({ isBackDoorListed: false, marketWarning: 'NONE', isTradingSuspended: false, parValueChange: 'NONE', isUnfaithfulDisclosureDesignated: false,
+    ex: 'NONE', isAdministrativeIssue: false, revaluation: 'NONE', isPreDelistingTrading: false, isLowLiquidity: false, isDelisted: false, shortTermOverheat: 'NONE',
+    isAbnormalRise: false, isInvestmentPrecaution: false, ...o });
+  const quote = (code, o = {}) => ({ symbolCode: `A${code}`, market: 'KOSPI', high52wPrice: 374500, high52wDate: '2026-06-19', low52wPrice: 97800, low52wDate: '2025-11-25',
+    high50dPrice: 286500, low50dPrice: 171500, upperLimitPrice: 230500, lowerLimitPrice: 124300, stockState: state(), ...o });
+  const RISK = { '004545': { stockState: state({ marketWarning: 'ALERT', isAdministrativeIssue: true }) }, '009140': { stockState: state({ marketWarning: 'CAUTION' }) },
+    '347770': { stockState: state({ parValueChange: 'MERGE' }) },
+    '111111': { stockState: state({ isTradingSuspended: true, marketWarning: 'CAUTION', ex: 'EX_DIVIDEND', shortTermOverheat: 'DESIGNATED' }) } };
+  DAUM['/api/quotes?symbolCodes='] = (url) => /symbolCodes=([^&]+)/.exec(url)[1].split(',').map((s) => s.slice(1)).filter((c) => c !== '999999')
+    .map((c) => quote(c, RISK[c] || {}));
+  calls.length = 0;
+  let r = await handlers['daum:quotes']({}, ['005930.KS', '004545.KS', '009140.KS', '347770.KQ', '111111.KS', '999999.KQ', 'AAPL', '^KS11', '005930.KS']);
+  check('관심종목 — 국내 종목만 한 번에(같은 종목은 한 번), Referer · 시간 제한', calls.length === 1
+    && calls[0].url === 'https://finance.daum.net/api/quotes?symbolCodes=A005930,A004545,A009140,A347770,A111111,A999999'
+    && calls[0].signal && calls[0].referer === 'https://finance.daum.net/', calls.map((c) => c.url).join(' '));
+  const labels = (c) => r.items[c].risk.map((x) => `${x.label}${x.level}`).join(' ');
+  check('위험 상태 — 다음 금융 화면의 이름, 심한 것부터(같은 정도는 정한 순서)', labels('004545') === '투자경고2 관리종목2' && labels('009140') === '투자주의1'
+    && labels('347770') === '액면병합0' && labels('111111') === '거래정지2 투자주의1 단기과열1 배당락0' && labels('005930') === '',
+    ['004545', '009140', '347770', '111111'].map(labels).join(' / '));
+  check('52주 최고 · 최저(날짜) · 50일 최고 · 최저 · 상하한가', same(r.items['005930'], { risk: [], hi52: 374500, hi52Date: '2026-06-19', lo52: 97800, lo52Date: '2025-11-25',
+    hi50: 286500, lo50: 171500, upper: 230500, lower: 124300 }), JSON.stringify(r.items['005930']));
+  check('모르는 코드는 빠진다', r.ok && !('999999' in r.items));
+  calls.length = 0;
+  r = await handlers['daum:quotes']({}, Array.from({ length: 51 }, (_, i) => `${100000 + i}.KS`));
+  check('50개가 넘으면 나눠 묻는다', calls.length === 2 && Object.keys(r.items).length === 51, `${calls.length}번`);
+  calls.length = 0;
+  r = await handlers['daum:quotes']({}, ['AAPL', null, 5]);
+  check('국내 종목이 없으면 묻지 않는다', r.ok && same(r.items, {}) && calls.length === 0);
+  check('목록이 배열이 아니어도 묻지 않는다', (await handlers['daum:quotes']({}, 'AAPL')).ok === true && calls.length === 0);
+  blocked = ['finance.daum.net'];
+  r = await handlers['daum:quotes']({}, ['005930.KS']);
+  check('받지 못하면 ok:false(렌더러는 있던 것을 둔다)', r.ok === false && typeof r.error === 'string', JSON.stringify(r));
+
+  // 휴장일 · 운영시간 — 처음부터 못 받으면 ok:false. 받으면 6시간 기억
+  r = await handlers['daum:marketDays']({});
+  check('휴장일 — 받지 못하면 ok:false', r.ok === false);
+  blocked = [];
+  DAUM['/api/home/market-days'] = { days: [
+    { date: '2026-11-19', holiday: false, holidayReason: '대학수학능력시험 (1시간 늦춤)', hourChanged: true,
+      sessions: [{ session: 'REGULAR', start: '10:00', end: '16:30' }, { session: 'AFTER_MARKET', start: '17:00', end: '20:00' }, { session: 'X', start: '9시' }] },
+    { date: '2026-11-21', holiday: true, holidayReason: null, hourChanged: false, sessions: [] }, { date: '2026.11.22', holiday: true }] };
+  r = await handlers['daum:marketDays']({});
+  check('휴장일 — 날짜 · 휴장 · 운영시간 변경 · 사유 · 세션(시각이 이상한 세션 · 날짜가 이상한 날은 뺀다)', r.ok && same(r.days, [
+    { date: '2026-11-19', holiday: false, changed: true, reason: '대학수학능력시험 (1시간 늦춤)',
+      sessions: [{ session: 'REGULAR', start: '10:00', end: '16:30' }, { session: 'AFTER_MARKET', start: '17:00', end: '20:00' }] },
+    { date: '2026-11-21', holiday: true, changed: false, reason: null, sessions: [] }]), JSON.stringify(r.days));
+  calls.length = 0;
+  await handlers['daum:marketDays']({});
+  check('휴장일은 6시간 기억한다', calls.length === 0, calls.map((c) => c.url).join(' '));
+
+  // 지표 보기 — 삼성전자
+  Object.assign(DAUM, {
+    '/api/quotes/A005930?summary=true': quote('005930', { companySummary: '동사는 1969년 설립된 글로벌 전자 기업', listingDate: '1975-06-11',
+      wicsSectorCode: 'G453010', wicsSectorName: '반도체와반도체장비', wicsSectorChangeRate: 0.0832836706, sectorPer: 20.43901, marketCapRank: 1,
+      prevAccTradeVolumeChangeRate: 0.6545692727 }),
+    '/api/quote/A005930/financials': { data: { QUARTER: [{ dividendPerShare: 4601, date: '2026-09-01', eps: 11311.791, roe: 0.12851, debtRatio: 28.941 },
+      { dividendPerShare: null, date: '2026-06-01', eps: 10717.849, roe: 0.13718, debtRatio: 31.101 }, { date: '이상한 날', eps: 1 }] } },
+    '/api/home/consensus?code=005930': { code: '005930', date: '2026-11-23', eps: 45565, per: 3.9 },
+    '/api/home/corp?code=005930': { code: '005930', ceo: '전영현, 노태문', home: 'https://www.samsung.com/sec', est: '1969.01.13', emp: 128881 },
+    'keyword%3DA005930': { data: [{ newsId: '20261124131932192', title: '5000피 회복', cpKorName: '이데일리', createdAt: '2026-11-24 13:19:32' },
+      { newsId: 'https://evil', title: '번호가 아님', cpKorName: 'x', createdAt: '2026-11-24 13:00:00' }] },
+    '/api/disclosures?symbolCode=A005930': { data: [
+      { disclosureId: '20261113113820', title: '삼성전자(주) 기업설명회(IR) 개최(안내공시)', createdAt: '2026-11-13 15:37:04' },
+      { disclosureId: '20261029108257', title: '삼성전자(주) (정정)연결재무제표기준영업(잠정)실적(공정공시)', createdAt: '2026-10-29 10:00:16' },
+      { disclosureId: '20261029108254', title: '삼성전자(주) 현금ㆍ현물 배당 결정', createdAt: '2026-10-29 09:53:29' },
+      { disclosureId: '20261029108251', title: '삼성전자(주) 연결재무제표기준영업(잠정)실적(공정공시)', createdAt: '2026-10-29 09:50:31' }] },
+    '/api/home/disclosure?id=20261029108257': { line: '2026년 3분기 · 매출 195.3조원(전년 동기 대비 +126.9%) · 영업이익 107.4조원(+783.1%)' },
+    '/api/home/disclosure?id=20261029108254': { line: '분기배당 · 1주당 4,601원 · 시가배당률 1.7%' },
+    '/api/sector/wics/G453010/stocks': { data: [{ symbolCode: 'A005930', name: '삼성전자', change: 'RISE', changeRate: 0.0839 },
+      { symbolCode: 'A000660', name: 'SK하이닉스', change: 'FALL', changeRate: 0.02 }, { symbolCode: 'A12', name: '코드 이상' }] },
+  });
+  const daumCalls = () => calls.filter((c) => c.url.includes('finance.daum.net') && !/trader|dart-filings/.test(c.url));
+  calls.length = 0;
+  let d = await detail('005930.KS');
+  check('지표 — 다음 금융 여섯 곳 + 업종 시총 상위 + 공시 요약 둘, 모두 Referer · 시간 제한', daumCalls().length === 9
+    && daumCalls().every((c) => c.signal && c.referer === 'https://finance.daum.net/'), daumCalls().map((c) => c.url).join('\n'));
+  const dm = d.daum || {};
+  check('회사 개요 — 소개 · 상장 · 대표 · 설립 · 직원 · 홈페이지는 주소 이름만', same(dm.company, { summary: '동사는 1969년 설립된 글로벌 전자 기업', listed: '1975-06-11',
+    ceo: '전영현, 노태문', est: '1969.01.13', emp: 128881, home: 'www.samsung.com' }), JSON.stringify(dm.company));
+  check('업종 — 이름 · 오늘 등락률(%) · PER · 시장 안 순위 · 시총 상위(목록은 change 로 부호, 코드가 이상한 줄은 뺀다)', dm.sector && dm.sector.name === '반도체와반도체장비'
+    && Math.abs(dm.sector.pct - 8.32836706) < 1e-9 && dm.sector.per === 20.43901 && dm.sector.rank === 1 && dm.sector.market === '코스피'
+    && same(dm.sector.top, [{ name: '삼성전자', code: '005930', pct: 8.39 }, { name: 'SK하이닉스', code: '000660', pct: -2 }]), JSON.stringify(dm.sector));
+  check('추정 실적', same(dm.estimate, { eps: 45565, per: 3.9, date: '2026-11-23' }), JSON.stringify(dm.estimate));
+  check('재무 — 네이버 실적 표의 열 이름(YY.MM), ROE 는 %, 날짜가 이상한 줄은 뺀다', same(Object.keys(dm.finance || {}), ['26.09', '26.06'])
+    && dm.finance['26.09'].dps === 4601 && Math.abs(dm.finance['26.09'].roe - 12.851) < 1e-9 && dm.finance['26.09'].debt === 28.941 && dm.finance['26.06'].dps === null,
+    JSON.stringify(dm.finance));
+  check('뉴스 — 기사 번호가 아닌 것은 뺀다, 시각은 분까지', same(dm.news, [{ id: '20261124131932192', title: '5000피 회복', source: '이데일리', at: '2026-11-24 13:19' }]),
+    JSON.stringify(dm.news));
+  check('공시 요약 — 가장 최근의 잠정실적(정정) · 배당 결정, 다음 금융이 정리한 한 줄', same(dm.notices, [
+    { kind: 'earnings', label: '잠정실적', day: '2026-10-29', line: '2026년 3분기 · 매출 195.3조원(전년 동기 대비 +126.9%) · 영업이익 107.4조원(+783.1%)' },
+    { kind: 'dividend', label: '배당', day: '2026-10-29', line: '분기배당 · 1주당 4,601원 · 시가배당률 1.7%' }]), JSON.stringify(dm.notices));
+  check('전일 대비 거래량', dm.volRatio === 0.6545692727);
+  calls.length = 0;
+  await detail('005930.KS');
+  let again = daumCalls().map((c) => c.url);
+  check('다시 열면 시세 요약만 다시 묻고 나머지는 기억한 것', again.length === 1 && again[0].includes('/api/quotes/A005930?summary=true'), again.join(' '));
+  SHIFT = 11 * 60000;
+  calls.length = 0;
+  await detail('005930.KS');
+  again = daumCalls().map((c) => c.url);
+  check('10분이 지나면 뉴스 · 업종 시총 상위도 다시, 재무 · 추정 · 회사 · 공시는 그대로', again.length === 3 && again.some((u) => u.includes('keyword%3DA005930'))
+    && again.some((u) => u.includes('/sector/wics/')), again.join(' '));
+  SHIFT = 0;
+  blocked = ['finance.daum.net'];
+  d = await detail('017670.KS'); // 다음 금융은 처음 묻는 종목
+  check('다음 금융이 막혀도 지표는 온다 — 그 부분만 빈다', d.ok && d.trend.length === 20 && Object.values(d.daum).every((v) => v == null), JSON.stringify(d.daum));
+  blocked = [];
+  d = await detail('AAPL');
+  check('미국 종목에는 다음 금융 부분이 없다', d.ok && d.daum === undefined);
+
+  // 뉴스 · 홈페이지 열기 — 렌더러는 기사 번호 · 종목 코드만 넘기고 주소는 main 이 만든다(아무 주소나 열 수 없게)
+  opened.length = 0;
+  const news = [await handlers['news:open']({}, '20261124131932192'), await handlers['news:open']({}, 'https://evil.example'),
+    await handlers['news:open']({}, '123'), await handlers['news:open']({}, null)];
+  check('뉴스 원문 — 기사 번호만 받아 다음 뉴스 주소를 만든다', same(news, [true, false, false, false]) && same(opened, ['https://v.daum.net/v/20261124131932192']),
+    `${JSON.stringify(news)} ${JSON.stringify(opened)}`);
+  opened.length = 0;
+  Object.assign(DAUM, { '/api/home/corp?code=035720': { code: '035720', home: 'www.kakaocorp.com' }, // 앞에 scheme 이 없는 꼴
+    '/api/home/corp?code=111111': { code: '111111', home: 'javascript:alert(1)' }, '/api/home/corp?code=222222': { code: '222222', missing: true } });
+  const home = [];
+  for (const c of ['005930', '035720', '111111', '222222', '999998', '../x', 'https://evil.example', null]) home.push(await handlers['corp:open']({}, c));
+  check('홈페이지 — 회사 정보의 http(s) 주소만(scheme 없는 www.… 도), 렌더러가 준 주소 · javascript: · 회사 정보 없음은 열지 않는다',
+    same(home, [true, true, false, false, false, false, false, false]) && same(opened, ['https://www.samsung.com/sec', 'http://www.kakaocorp.com/']),
+    `${JSON.stringify(home)} ${JSON.stringify(opened)}`);
 }
 
 console.log(fails ? `\nFAIL: ${fails}건` : '\nPASS: 실패 0건');

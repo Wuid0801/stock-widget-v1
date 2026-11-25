@@ -10,8 +10,9 @@ const check = (t, c, x = '') => { if (!c) fails++; console.log(`${c ? 'OK  ' : '
 // --- 1. 네트워크를 쓰는 IPC 처리기는 모두 점검한다 — 처리기를 새로 만들고 점검을 빠뜨리면 여기서 걸린다 ---------------------
 {
   const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
-  // 설정 파일만 읽고 쓴다 · 공시 원문은 기본 브라우저에 맡긴다(dart:open — 요청을 보내지 않는다) · 모아 둔 장중 수급 파일을 읽는다
-  const local = new Set(['state:get', 'state:set', 'backup:export', 'backup:import', 'dart:open', 'market:intradayPast']);
+  // 설정 파일만 읽고 쓴다 · 공시 원문 · 뉴스는 기본 브라우저에 맡긴다(dart:open · news:open — 요청을 보내지 않는다) · 모아 둔 장중 수급 파일을 읽는다 ·
+  // 홈페이지 열기(corp:open)가 묻는 회사 정보는 종목 지표(국내) 점검과 같은 곳이고 여는 것은 브라우저다
+  const local = new Set(['state:get', 'state:set', 'backup:export', 'backup:import', 'dart:open', 'news:open', 'corp:open', 'market:intradayPast']);
   const names = [...main.matchAll(/ipcMain\.handle\('([^']+)'/g)].map((m) => m[1]).filter((n) => !local.has(n));
   const called = CHECKS.map((c) => c.call.toString()).join('\n');
   const missing = names.filter((n) => !called.includes(`h['${n}']`));
@@ -58,7 +59,16 @@ const GOOD = {
   '종목 지표 (국내)': { ok: true, today: { volume: 11822115 }, valuation: [{}, {}, {}, {}], trend: Array(20).fill({}),
     quarters: { cols: Array(5).fill({}) }, holders: { rows: [{ name: '삼성생명보험', pct: 8.5 }] }, consensus: { target: 495227 },
     traders: { date: '20261030', buy: Array(10).fill({ name: '한국증권', volume: 1718002, foreign: false }),
-      sell: Array(10).fill({ name: 'BNK증권', volume: 1535498, foreign: false }), foreignBuy: 790499, foreignSell: 999036 } },
+      sell: Array(10).fill({ name: 'BNK증권', volume: 1535498, foreign: false }), foreignBuy: 790499, foreignSell: 999036 },
+    daum: { company: { summary: '동사는' }, sector: { name: '반도체와반도체장비', rank: 1 }, estimate: { eps: 45565 }, finance: { '26.09': {}, '26.06': {} },
+      notices: [{ line: '2026년 3분기 · 매출 195.3조원' }], news: [{ id: '20261124131932192' }] } },
+  '관심종목 위험 상태 · 52주': { ok: true, items: Object.fromEntries(['005930', '000660', '069500'].map((c) => [c,
+    { risk: [], hi52: 374500, hi52Date: '2026-06-19', lo52: 97800, lo52Date: '2025-11-25', upper: 230500, lower: 124300 }])) },
+  '휴장일 · 운영시간': { ok: true, days: Array.from({ length: 20 }, (_, i) => {
+    const date = new Date(Date.now() + (i - 10) * DAY + 9 * 3600000).toISOString().slice(0, 10);
+    const off = [0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
+    return { date, holiday: off, changed: false, reason: null, sessions: off ? [] : [{ session: 'REGULAR', start: '09:00', end: '15:30' }] };
+  }) },
   '종목 지표 (미국 · ETF)': { us: { ok: true, valuation: [{}, {}, {}], quarters: { cols: Array(4).fill({}) } },
     etf: { ok: true, kind: 'etf', etf: { nav: 87025 } } },
   '일정 (실적 · 배당락)': { kr: { ok: true, events: [{ kind: 'ir', title: '실적 발표', date: '2026-10-30' }] }, us: { ok: true, events: [] } },
@@ -99,6 +109,12 @@ const GOOD = {
   check('종목 수급 이력이 오래되면 FAIL', by('종목 수급 이력').verify(so, []).some((p) => p.includes('7일보다')));
   const sd = g('종목 수급 이력'); sd.trend = [...sd.trend, sd.trend[0]];
   check('종목 수급 이력에 같은 날이 겹치면 FAIL', by('종목 수급 이력').verify(sd, []).some((p) => p.includes('겹침')));
+  const kd = g('종목 지표 (국내)'); kd.daum.company = null;
+  check('회사 개요(다음 금융)가 없으면 FAIL', by('종목 지표 (국내)').verify(kd, []).some((p) => p.includes('회사 개요')));
+  const dq = g('관심종목 위험 상태 · 52주'); delete dq.items['000660'];
+  check('관심종목 정보에서 종목이 빠지면 그 종목으로 FAIL', by('관심종목 위험 상태 · 52주').verify(dq, []).some((p) => p.startsWith('000660')));
+  const md = g('휴장일 · 운영시간'); md.days = md.days.slice(0, 5);
+  check('휴장일이 열흘 미만이면 FAIL', by('휴장일 · 운영시간').verify(md, []).some((p) => p.includes('10일 미만')));
   const d5 = g('일봉 5년'); d5.ix.volumes = d5.ix.volumes.map(() => 0);
   check('지수 거래량이 0 이면 FAIL(달걀이 빈다)', by('일봉 5년').verify(d5, []).some((p) => p.startsWith('^KS11: 거래량')));
   check('마지막 봉이 오래되면 FAIL', by('국내 1D 분봉').verify(chart(70, 10), []).some((p) => p.includes('오래됨')));

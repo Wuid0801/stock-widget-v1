@@ -217,7 +217,7 @@ export const CHECKS = [
       ...series(r.futMax, '^KS200F 전체(월봉)', 60, 40), ...yahooCalled(calls)],
   },
   {
-    name: '종목 지표 (국내)', source: '네이버 종목 상세 · 매매동향 · 분기 실적, WiseReport 주주, 다음 거래원',
+    name: '종목 지표 (국내)', source: '네이버 종목 상세 · 매매동향 · 분기 실적, WiseReport 주주, 다음 거래원 · 다음 금융 종목 정보',
     call: (h) => h['naver:detail']({}, '005930.KS'),
     verify: (r) => [...okOf(r), ...(r && r.ok ? [
       ...need(r.today && num(r.today.volume), '오늘 거래량 없음'),
@@ -229,6 +229,34 @@ export const CHECKS = [
       // 거래원(다음 금융, 2026-10-30) — 장 전에도 오늘(또는 마지막 거래일) 목록이 오는지는 아직 모른다
       ...need(r.traders && Array.isArray(r.traders.buy) && r.traders.buy.length >= 5 && Array.isArray(r.traders.sell) && r.traders.sell.length >= 5
         && r.traders.buy.every((t) => t.name && pos(t.volume)), '거래원(다음 금융)이 5개사 미만'),
+      // 다음 금융 종목 정보(2026-11-24) — 회사 개요 · 업종 · 추정 실적 · 재무 · 공시 요약 · 뉴스
+      ...need(r.daum && r.daum.company && r.daum.company.summary, '회사 개요(다음 금융)가 없음'),
+      ...need(r.daum && r.daum.sector && r.daum.sector.name && pos(r.daum.sector.rank), '업종(다음 금융)이 없음'),
+      ...need(r.daum && r.daum.estimate && num(r.daum.estimate.eps), '추정 실적(다음 금융)이 없음'),
+      ...need(r.daum && r.daum.finance && Object.keys(r.daum.finance).length >= 2, '재무(다음 금융)가 2분기 미만'),
+      ...need(r.daum && Array.isArray(r.daum.notices) && r.daum.notices.length >= 1, '공시 요약(다음 금융)이 없음'),
+      ...need(r.daum && Array.isArray(r.daum.news) && r.daum.news.length >= 1, '뉴스(다음 금융)가 없음'),
+    ] : [])],
+  },
+  {
+    // 관심종목의 위험 상태 · 52주 날짜 · 상하한가(2026-11-24) — 다음 금융 시세 요약을 여러 종목 한 번에. 공식 API 가 아니다
+    name: '관심종목 위험 상태 · 52주', source: '다음 금융 시세 요약(quotes?symbolCodes=)',
+    call: (h) => h['daum:quotes']({}, ['005930.KS', '000660.KS', '069500.KS']),
+    verify: (r) => [...okOf(r), ...(r && r.ok ? ['005930', '000660', '069500'].flatMap((c) => {
+      const x = r.items && r.items[c];
+      return need(x && Array.isArray(x.risk) && pos(x.hi52) && pos(x.lo52) && x.hi52 >= x.lo52 && /^\d{4}-\d{2}-\d{2}$/.test(x.hi52Date || '')
+        && pos(x.upper) && pos(x.lower) && x.upper > x.lower, `${c}: 위험 상태 · 52주 · 상하한가가 비었음`);
+    }) : [])],
+  },
+  {
+    // 휴장일 · 장 운영시간(2026-11-24) — 다음 금융 market-days. 약 2주 전 ~ 3주 뒤가 오고 주말은 휴장이다
+    name: '휴장일 · 운영시간', source: '다음 금융 market-days',
+    call: (h) => h['daum:marketDays']({}),
+    verify: (r) => [...okOf(r), ...(r && r.ok ? [
+      ...need(Array.isArray(r.days) && r.days.length >= 10, '날짜가 10일 미만'),
+      ...need(Array.isArray(r.days) && r.days.some((d) => d.date.replace(/-/g, '') === kstToday()), '오늘이 목록에 없음'),
+      ...need(Array.isArray(r.days) && r.days.some((d) => d.holiday) && r.days.some((d) => !d.holiday && d.sessions.some((s) => s.session === 'REGULAR')),
+        '휴장인 날과 정규장이 있는 날이 함께 있지 않음'),
     ] : [])],
   },
   {

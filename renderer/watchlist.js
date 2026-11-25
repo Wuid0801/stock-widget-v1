@@ -66,6 +66,37 @@ function eventChip(symbol) {
   return b ? `<span class="evchip${b.est ? ' est' : ''}${b.past ? ' past' : ''}" title="${esc(b.title)}">${b.label}</span>` : '';
 }
 
+// 위험 상태 칩(다음 금융, 2026-11-24) — 거래정지 · 투자경고 · 관리종목 … 가장 심한 것 하나에 '외 2', 모두는 툴팁. 심한 정도로 색이 다르다
+// (rk2 위험 · rk1 주의 · rk0 알림 — 액면병합 · 배당락처럼 위험이 아닌 것). 국내 종목만.
+function riskChip(symbol) {
+  const info = isDomestic(symbol) ? daumInfo.get(symbol.split('.')[0].toUpperCase()) : null;
+  const r = info && info.risk;
+  if (!r || !r.length) return '';
+  const tip = `${r.map((x) => x.label).join(' · ')}\n거래소 지정 상태 · 다음 금융`;
+  return `<span class="rkchip rk${r[0].level}" title="${esc(tip)}">${esc(r[0].label)}${r.length > 1 ? ` 외 ${r.length - 1}` : ''}</span>`;
+}
+
+// 관심종목의 다음 금융 정보(위험 상태 · 52주 날짜 · 50일 고저 · 상하한가)를 국내 종목 모두 한 번에 받는다(main 의 daum:quotes). 갱신마다 부르되
+// 기다리지 않고, 10분이 지났거나 국내 종목이 바뀌었을 때만 묻는다. 실패하면 있던 것을 둔다. 칩이 바뀌면 목록을 다시 그린다.
+async function loadDaumInfo() {
+  const symbols = state.watchlist.map((w) => w.symbol).filter(isDomestic);
+  const sig = symbols.join(',');
+  if (daumInfoBusy || !symbols.length || (sig === daumInfoSig && Date.now() - daumInfoAt < DAUM_INFO_TTL)) return;
+  daumInfoBusy = true;
+  try {
+    const r = await api.daumQuotes(symbols);
+    if (!r || !r.ok) return;
+    const before = symbols.map(riskChip).join('');
+    daumInfo.clear();
+    for (const [code, v] of Object.entries(r.items || {})) daumInfo.set(code, v);
+    daumInfoAt = Date.now();
+    daumInfoSig = sig;
+    if (symbols.map(riskChip).join('') !== before) renderList();
+  } finally {
+    daumInfoBusy = false;
+  }
+}
+
 // 관심종목의 일정을 받는다(main 의 naver:events — 국내 실적 발표일 · 잠정실적 공시 · 미국 배당락일). 갱신마다 부르되 기다리지 않고,
 // 30분이 지난 종목만 목록 순서대로 하나씩 받는다(한꺼번에 몰리지 않게). 실패한 종목은 기억하지 않아 다음 갱신에
 // 다시 묻는다. 받는 중에 또 불리면(30초 갱신이 겹치면) 그냥 돌아간다. 칩이 바뀐 종목은 받자마자 목록을 다시 그린다 — 예전에는
@@ -139,7 +170,7 @@ function renderList() {
     dot.style.background = lv.color;
     dot.title = q && q.rsi != null ? `${lv.label} · RSI ${q.rsi.toFixed(0)}` : 'RSI —';
     // 이름 칸은 바뀔 때만 새로 넣는다 — 일정 칩에 마우스를 올려 둔 채 갱신되면 칩의 툴팁이 닫힌다
-    const nm = `<span class="nrow"><span class="name">${esc(item.name)}</span>${eventChip(item.symbol)}</span>${holdSub(item.symbol)}`;
+    const nm = `<span class="nrow"><span class="name">${esc(item.name)}</span>${riskChip(item.symbol)}${eventChip(item.symbol)}</span>${holdSub(item.symbol)}`;
     if (row.nmHtml !== nm) { row.querySelector('.nm').innerHTML = nm; row.nmHtml = nm; }
     const px = row.querySelector('.px');
     px.textContent = q && q.price != null ? money(q.price, curOf(item.symbol)) : '—';

@@ -1133,11 +1133,196 @@ const naverTrendRow = (r) => ({
   individual: detailNum(r?.individualPureBuyQuant), foreignRatio: detailNum(r?.foreignerHoldRatio),
 });
 
+// ---- 다음 금융 종목 정보(2026-11-24 사용자 요청) ------------------------------------------------------
+// 위험 상태 · 공시 요약 · 휴장일 · 재무(EPS · ROE · 부채비율 · 주당배당금) · 추정 실적 · 업종 · 회사 개요 · 뉴스 · 시세(상하한가 · 50일 ·
+// 52주 날짜 · 전일 대비 거래량). 모두 다음 금융 웹페이지가 쓰는 데이터라(공식 API 아님, Referer 필요 — daumJson) 막히거나 모양이 바뀌면
+// 그 부분만 빠진다. 같은 날 브라우저에서 쿠키 없이 받아지는 것을 확인했다. 잘 바뀌지 않는 것은 주소마다 기억하고(daumCached), 다시
+// 받다 실패하면 있던 것을 둔다 — 처음부터 못 받으면 null.
+const daumMemo = new Map(); // 주소 → { at, v }
+async function daumCached(url, ttl) {
+  const hit = daumMemo.get(url);
+  if (hit && Date.now() - hit.at < ttl) return hit.v;
+  try {
+    const v = await daumJson(url);
+    daumMemo.set(url, { at: Date.now(), v });
+    return v;
+  } catch {
+    return hit ? hit.v : null;
+  }
+}
+const finiteOr = (v) => (Number.isFinite(v) ? v : null);
+const isoDay = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(String(s ?? '')) ? String(s) : null);
+// 다음 금융 목록(업종 · 순위)의 등락률은 부호가 없고 change(RISE · FALL · LOWER_LIMIT …)가 방향이다(2026-11-24 알테오젠 FALL 0.0314). 종목
+// 시세(quotes)의 changeRate 는 부호가 있다(-0.029). 어느 쪽이든 맞게 — 크기는 절댓값, 방향은 change. % 로.
+const daumPct = (x) => (Number.isFinite(x?.changeRate) ? Math.abs(x.changeRate) * 100 * (/FALL|LOWER/.test(String(x.change)) ? -1 : 1) : null);
+
+// 위험 상태(quotes 의 stockState) → [{ label, level(2 위험 · 1 주의 · 0 알림) }], 심한 것부터. 값은 2026-11-24 확인: marketWarning
+// CAUTION = 투자주의(케이아이이) · ALERT = 투자경고(깨끗한나라우 — 다음 금융 화면의 표시와 견줬다), parValueChange MERGE(핌스). 보지 못한
+// 값은 뜻을 지어내지 않고 넓은 이름으로(시장경보 · 액면변경 · 권리 · 배당락).
+function daumRisk(st) {
+  if (!st || typeof st !== 'object') return [];
+  const out = [];
+  const add = (on, label, level) => { if (on) out.push({ label, level }); };
+  const set = (v) => v != null && String(v) !== 'NONE';
+  const mw = String(st.marketWarning ?? 'NONE');
+  const pv = String(st.parValueChange ?? 'NONE');
+  const ex = String(st.ex ?? 'NONE');
+  add(st.isTradingSuspended === true, '거래정지', 2);
+  add(st.isPreDelistingTrading === true, '정리매매', 2);
+  add(st.isDelisted === true, '상장폐지', 2);
+  add(set(mw), { CAUTION: '투자주의', ALERT: '투자경고' }[mw] || (/RISK|DANGER/.test(mw) ? '투자위험' : '시장경보'), mw === 'CAUTION' ? 1 : 2);
+  add(st.isAdministrativeIssue === true, '관리종목', 2);
+  add(st.isUnfaithfulDisclosureDesignated === true, '불성실공시', 1);
+  add(set(st.shortTermOverheat), '단기과열', 1);
+  add(st.isInvestmentPrecaution === true, '투자유의', 1);
+  add(st.isAbnormalRise === true, '이상급등', 1);
+  add(st.isLowLiquidity === true, '저유동성', 1);
+  add(st.isBackDoorListed === true, '우회상장', 0);
+  add(set(pv), { MERGE: '액면병합', SPLIT: '액면분할' }[pv] || '액면변경', 0);
+  add(set(ex), /DIV/.test(ex) && !/RIGHT/.test(ex) ? '배당락' : /RIGHT/.test(ex) && !/DIV/.test(ex) ? '권리락' : '권리 · 배당락', 0);
+  return out.sort((a, b) => b.level - a.level); // 같은 정도는 위 순서 그대로(안정 정렬)
+}
+
+// 관심종목의 위험 상태와 52주 최고 · 최저(날짜) · 50일 최고 · 최저 · 오늘 상한가 · 하한가 — 국내 종목을 한 번에(quotes?symbolCodes=, 50개까지
+// 확인 — 그보다 많으면 나눠 묻는다). 모르는 코드는 응답에서 빠진다. 렌더러가 10분마다 부른다.
+// 돌려주는 값 { ok, items: { 코드: { risk, hi52, hi52Date, lo52, lo52Date, hi50, lo50, upper, lower } } }
+ipcMain.handle('daum:quotes', async (_e, symbols) => {
+  const codes = [...new Set((Array.isArray(symbols) ? symbols : []).map((s) => KR_RE.exec(String(s ?? ''))).filter(Boolean)
+    .map((m) => m[1].toUpperCase()))].slice(0, 200);
+  if (!codes.length) return { ok: true, items: {} };
+  try {
+    const items = {};
+    for (let i = 0; i < codes.length; i += 50) {
+      const j = await daumJson(`${DAUM_API}/quotes?symbolCodes=${codes.slice(i, i + 50).map((c) => `A${c}`).join(',')}`);
+      if (!Array.isArray(j)) throw new Error('모양이 다른 응답');
+      for (const q of j) {
+        const code = String(q?.symbolCode ?? '').replace(/^A/, '');
+        if (!codes.includes(code)) continue;
+        items[code] = { risk: daumRisk(q.stockState), hi52: finiteOr(q.high52wPrice), hi52Date: isoDay(q.high52wDate), lo52: finiteOr(q.low52wPrice),
+          lo52Date: isoDay(q.low52wDate), hi50: finiteOr(q.high50dPrice), lo50: finiteOr(q.low50dPrice), upper: finiteOr(q.upperLimitPrice),
+          lower: finiteOr(q.lowerLimitPrice) };
+      }
+    }
+    return { ok: true, items };
+  } catch (e) {
+    return { ok: false, error: e.message || '조회 실패' };
+  }
+});
+
+// 휴장일 · 장 운영시간(home/market-days) — 약 2주 전 ~ 3주 뒤(날짜를 줘도 같다), 날짜마다 휴장 여부(주말도 휴장 · 사유는 비어 있다) ·
+// 운영시간 변경(2026-11-19 수능 — 정규장 10:00~16:30 · 애프터마켓 17:00~20:00) · 세션별 시각. 6시간 기억한다.
+ipcMain.handle('daum:marketDays', async () => {
+  const j = await daumCached(`${DAUM_API}/home/market-days`, 6 * 3600000);
+  if (!Array.isArray(j?.days)) return { ok: false, error: '휴장일 조회 실패' };
+  const hm = (s) => (/^\d{2}:\d{2}$/.test(String(s ?? '')) ? String(s) : null);
+  return { ok: true, days: j.days.filter((d) => isoDay(d?.date)).map((d) => ({
+    date: d.date, holiday: d.holiday === true, changed: d.hourChanged === true,
+    reason: typeof d.holidayReason === 'string' && d.holidayReason.trim() ? d.holidayReason.trim() : null,
+    sessions: (Array.isArray(d.sessions) ? d.sessions : []).map((x) => ({ session: String(x?.session ?? ''), start: hm(x?.start), end: hm(x?.end) }))
+      .filter((x) => x.start && x.end),
+  })) };
+});
+
+// 회사 홈페이지 주소(home/corp 의 home) — http(s) 만. 앞에 scheme 이 없으면(www.… 꼴) http:// 를 붙인다. 아니면 null
+function corpHome(corp) {
+  const s = corp && !corp.missing && typeof corp.home === 'string' ? corp.home.trim() : '';
+  if (!s) return null;
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `http://${s}`);
+    return /^https?:$/.test(u.protocol) && u.hostname.includes('.') ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+// 회사 개요 — 소개 문장(quotes 의 companySummary) · 상장일 · 대표 · 설립일 · 직원 수 · 홈페이지 주소 이름(home/corp). ETF 는 corp 가
+// { missing: true }, 소개 문장도 없다. 홈페이지를 누르면 corp:open 이 연다 — 렌더러는 종목 코드만 넘긴다.
+function daumCompany(q, c) {
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const corp = c && !c.missing ? c : null;
+  const home = corpHome(corp);
+  const out = { summary: str(q?.companySummary), listed: isoDay(q?.listingDate), ceo: str(corp?.ceo), est: str(corp?.est),
+    emp: Number.isInteger(corp?.emp) && corp.emp > 0 ? corp.emp : null, home: home ? home.hostname : null };
+  return Object.values(out).some((v) => v != null) ? out : null;
+}
+
+// 업종(WICS) — 이름 · 오늘 업종 등락률 · 업종 PER · 시장 안 시가총액 순위(삼성전자 코스피 1위 · 알테오젠 코스닥 1위 — 시장마다 센다) ·
+// 업종 시총 상위 5종목(sector/wics). 우선주는 업종이 없다(null).
+function daumSector(q, top) {
+  if (!q) return null;
+  const list = Array.isArray(top?.data) ? top.data.map((x) => ({ name: String(x?.name ?? ''), code: String(x?.symbolCode ?? '').replace(/^A/, ''), pct: daumPct(x) }))
+    .filter((x) => x.name && /^[0-9A-Z]{6}$/.test(x.code)) : [];
+  const out = { name: typeof q.wicsSectorName === 'string' && q.wicsSectorName ? q.wicsSectorName : null,
+    // shortcut: 부호 있는 값으로 본다(같은 응답의 changeRate 처럼) — 모든 업종이 오른 날(2026-11-24)에만 봤다. 내린 날 부호가 빠져 있으면 고친다
+    pct: Number.isFinite(q.wicsSectorChangeRate) ? q.wicsSectorChangeRate * 100 : null,
+    per: finiteOr(q.sectorPer), rank: Number.isInteger(q.marketCapRank) && q.marketCapRank > 0 ? q.marketCapRank : null,
+    market: { KOSPI: '코스피', KOSDAQ: '코스닥' }[q.market] || null, top: list };
+  return out.name || out.rank ? out : null;
+}
+
+// 추정 실적 — 와이즈에프엔 컨센서스의 추정 EPS · 추정 PER(home/consensus). 증권사 추정이 없으면(ETF · 커버리지 없는 종목) null.
+const daumEstimate = (c) => (c && (Number.isFinite(c.eps) || Number.isFinite(c.per)) ? { eps: finiteOr(c.eps), per: finiteOr(c.per), date: isoDay(c.date) } : null);
+
+// 재무(분기) — 네이버 실적 표에 없는 EPS(원) · ROE(%) · 부채비율(%) · 주당배당금(원). 열 이름은 네이버 표와 같은 'YY.MM'(date '2026-09-01' → '26.09').
+// roe 는 비율(0.1285), debtRatio 는 이미 %(28.94)다(2026-11-24 삼성전자 — 시세 요약의 debtRatio 0.289 와 단위가 다르다).
+function daumFinance(j) {
+  const rows = Array.isArray(j?.data?.QUARTER) ? j.data.QUARTER : null;
+  if (!rows) return null;
+  const by = {};
+  for (const r of rows) {
+    const m = /^\d{2}(\d{2})-(\d{2})/.exec(String(r?.date ?? ''));
+    if (m) by[`${m[1]}.${m[2]}`] = { eps: finiteOr(r.eps), roe: Number.isFinite(r.roe) ? r.roe * 100 : null, debt: finiteOr(r.debtRatio), dps: finiteOr(r.dividendPerShare) };
+  }
+  return Object.keys(by).length ? by : null;
+}
+
+// 종목 뉴스 — 최근 5건(제목 · 언론사 · 시각). 누르면 news:open 이 다음 뉴스(v.daum.net/v/번호 — 같은 날 다음 금융 화면의 기사 주소)를 기본 브라우저로 연다.
+const NEWS_ID_RE = /^\d{14,20}$/;
+const daumNews = (j) => (Array.isArray(j?.data) ? j.data.map((n) => ({ id: String(n?.newsId ?? ''), title: String(n?.title ?? ''), source: String(n?.cpKorName ?? ''),
+  at: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(String(n?.createdAt ?? '')) ? String(n.createdAt).slice(0, 16) : null }))
+  .filter((n) => NEWS_ID_RE.test(n.id) && n.title).slice(0, 5) : null);
+
+// 공시 요약 — 다음 금융 공시 목록(disclosures, 최근 100건 · 최근이 앞)에서 가장 최근의 잠정실적 · 배당 결정 하나씩과, 다음 금융이 정리한 한 줄
+// (home/disclosure 의 line — '2026년 3분기 · 매출 195.3조원(전년 동기 대비 +126.9%) · 영업이익 107.4조원(+783.1%)', '분기배당 · 1주당 4,601원 ·
+// 시가배당률 1.7% · …'). 다음 금융 화면의 '직전 공시'와 같다. 그 밖의 공시는 한 줄이 없다(404). 공시는 바뀌지 않아 번호마다 앱이 켜져 있는 동안
+// 기억한다. 이 번호는 최근 공시 단락의 DART 접수번호와 다른 번호다(같은 배당 결정이 20261029108254 · 20261029800101).
+const NOTICE_KINDS = [['earnings', '잠정실적', (t) => /영업\(잠정\)실적/.test(t)], ['dividend', '배당', (t) => /배당/.test(t) && /결정/.test(t)]];
+async function daumNotices(j) {
+  const rows = Array.isArray(j?.data) ? j.data : null;
+  if (!rows) return null;
+  const picks = NOTICE_KINDS.map(([kind, label, is]) => {
+    const r = rows.find((x) => /^\d{14}$/.test(String(x?.disclosureId ?? '')) && is(String(x?.title ?? '')));
+    return r && { kind, label, id: String(r.disclosureId), day: isoDay(String(r.createdAt ?? '').slice(0, 10)) };
+  }).filter(Boolean);
+  const got = await Promise.all(picks.map((p) => daumCached(`${DAUM_API}/home/disclosure?id=${p.id}`, Infinity)));
+  return picks.map((p, i) => ({ kind: p.kind, label: p.label, day: p.day, line: typeof got[i]?.line === 'string' && got[i].line.trim() ? got[i].line.trim() : null }))
+    .filter((p) => p.line);
+}
+
+// 지표 보기의 다음 금융 부분(국내). 따로 받아 하나가 실패해도 나머지는 온다 — 지표 화면 판정(settleAll)에는 넣지 않는다. 시세 요약(quotes)은 오늘 값
+// (전일 대비 거래량)이 있어 지표 화면처럼 매번, 나머지는 기억한다(재무 · 추정 6시간 · 회사 하루 · 뉴스 · 업종 10분 · 공시 목록 30분).
+async function daumDetail(code) {
+  const quote = daumJson(`${DAUM_API}/quotes/A${code}?summary=true&changeStatistics=true`).catch(() => null);
+  const [fin, cons, corp, news, dis] = await Promise.all([
+    daumCached(`${DAUM_API}/quote/A${code}/financials`, 6 * 3600000),
+    daumCached(`${DAUM_API}/home/consensus?code=${code}`, 6 * 3600000),
+    daumCached(`${DAUM_API}/home/corp?code=${code}`, 24 * 3600000),
+    daumCached(`${DAUM_API}/home/daum?path=${encodeURIComponent(`/content/news?perPage=5&page=1&category=economy&keyword=A${code}&searchType=all`)}`, 10 * 60000),
+    daumCached(`${DAUM_API}/disclosures?symbolCode=A${code}&perPage=100&page=1&pagination=true`, 30 * 60000),
+  ]);
+  const q = await quote;
+  const wics = /^G\d{6}$/.test(String(q?.wicsSectorCode ?? '')) ? q.wicsSectorCode : null;
+  const top = wics ? await daumCached(`${DAUM_API}/sector/wics/${wics}/stocks?fieldName=marketCap&order=desc&perPage=5&pagination=true`, 10 * 60000) : null;
+  return { company: daumCompany(q, corp), sector: daumSector(q, top), estimate: daumEstimate(cons), finance: daumFinance(fin),
+    news: daumNews(news), notices: await daumNotices(dis), volRatio: q ? finiteOr(q.prevAccTradeVolumeChangeRate) : null };
+}
+
 async function krDetail(code) {
   // 주주 구성 · 거래원은 따로 받는다 — 이것만으로는 지표 화면이 되지 않아 '전부 실패' 판정(settleAll)에 넣지 않는다
   const holders = krHolders(code);
   const traders = krTraders(code);
   const filings = daumFilings(code); // 최근 공시 — 실패하면 null(그 단락만 빠진다)
+  const daum = daumDetail(code).catch(() => null); // 다음 금융 부분(회사 개요 · 업종 · 재무 · 뉴스 …) — 실패하면 null
   const [I, trend, quarter, rt] = await settleAll([
     `https://m.stock.naver.com/api/stock/${code}/integration`,
     `https://m.stock.naver.com/api/stock/${code}/trend?pageSize=20`,
@@ -1178,6 +1363,7 @@ async function krDetail(code) {
     holders: await holders,
     traders: await traders,
     filings: recentFilings(await filings),
+    daum: await daum,
   };
 }
 
@@ -1212,6 +1398,22 @@ ipcMain.handle('dart:open', (_e, no) => {
   const s = String(no ?? '');
   if (!/^\d{14}$/.test(s)) return false;
   return shell.openExternal(`https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${s}`).then(() => true, () => false);
+});
+
+// 종목 뉴스 원문 — 기본 브라우저로 다음 뉴스를 연다. 기사 번호만 받아 주소는 여기서 만든다(dart:open 과 같은 까닭)
+ipcMain.handle('news:open', (_e, id) => {
+  const s = String(id ?? '');
+  if (!NEWS_ID_RE.test(s)) return false;
+  return shell.openExternal(`https://v.daum.net/v/${s}`).then(() => true, () => false);
+});
+
+// 회사 홈페이지 — 기본 브라우저로 연다(2026-11-24 사용자 요청 "홈페이지 클릭이 안 됨"). 렌더러는 종목 코드만 넘기고, 주소는 main 이
+// 다음 금융 회사 정보(home/corp, 하루 기억 — 지표 화면이 받아 둔 것)에서 꺼낸다 — 창에서 아무 주소나 열지 않게. http(s) 만.
+ipcMain.handle('corp:open', async (_e, code) => {
+  const c = String(code ?? '');
+  if (!/^[0-9A-Z]{6}$/.test(c)) return false;
+  const url = corpHome(await daumCached(`${DAUM_API}/home/corp?code=${c}`, 24 * 3600000));
+  return url ? shell.openExternal(url.href).then(() => true, () => false) : false;
 });
 
 ipcMain.handle('naver:detail', async (_e, symbol) => {

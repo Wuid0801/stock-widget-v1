@@ -86,9 +86,42 @@ function priceSessionOf(q) {
   return q && (q.priceSession || q.session) || 'unknown';
 }
 
+// 오늘(한국 날짜)의 휴장 · 운영시간 변경과 다음 개장(다음 금융 휴장일, 2026-11-24) — { holiday, lines } | null. 휴장일 목록은 처음 쓸 때와
+// 6시간마다 받는다(기다리지 않는다 — 받으면 다시 그린다). 주말도 휴장으로 오고 사유는 비어 있다.
+function marketDayNote(now, closed) {
+  if (now >= marketDaysNext) { marketDaysNext = now + 10 * 60000; loadMarketDays(); }
+  if (!marketDays) return null;
+  const kst = new Date(now + 9 * 3600000).toISOString();
+  const today = kst.slice(0, 10);
+  const t = marketDays.find((d) => d.date === today);
+  if (!t) return null;
+  const reg = (d) => d.sessions.find((x) => x.session === 'REGULAR');
+  const wd = (date) => '일월화수목금토'[new Date(`${date}T00:00:00Z`).getUTCDay()];
+  const lines = [];
+  if (t.holiday) lines.push(`오늘 휴장${t.reason ? ` (${t.reason})` : wd(today) === '토' || wd(today) === '일' ? ' (주말)' : ''}`);
+  else if (t.changed) lines.push(`오늘 운영시간 변경${t.reason ? ` (${t.reason})` : ''} — ${t.sessions.map((x) => `${MARKET_SESSION_NAME[x.session] || x.session} ${x.start}~${x.end}`).join(' · ')}`);
+  const hm = kst.slice(11, 16);
+  const next = closed && marketDays.find((d) => !d.holiday && reg(d) && (d.date > today || (d.date === today && hm < reg(d).start)));
+  if (next) lines.push(`다음 개장 ${next.date.slice(5).replace('-', '/')}(${wd(next.date)}) ${reg(next).start}${next.changed ? ' (운영시간 변경)' : ''}`);
+  return { holiday: t.holiday, lines };
+}
+
+async function loadMarketDays() {
+  try {
+    const r = await api.marketDays();
+    if (!r || !r.ok || !Array.isArray(r.days)) return; // 10분 뒤 다시(marketDayNote)
+    marketDays = r.days;
+    marketDaysNext = Date.now() + MARKET_DAYS_TTL;
+    renderUpdated();
+  } catch { /* 10분 뒤 다시 */ }
+}
+
 function renderUpdated() {
   const q = quotes[state.selected];
   const session = quoteSession(q);
+  // 국내 종목은 오늘이 휴장이면 '장마감' 대신 '휴장', 운영시간 변경 · 다음 개장은 툴팁에
+  const day = state.selected && isDomestic(state.selected) ? marketDayNote(Date.now(), session === 'closed') : null;
+  const holiday = !!day && day.holiday && session === 'closed';
   const el = document.getElementById('updated');
   const fetched = q && q.fetchedAt != null ? new Date(q.fetchedAt) : null;
   const validFetched = fetched && Number.isFinite(fetched.getTime());
@@ -104,7 +137,7 @@ function renderUpdated() {
   // 선물 · 유가(지수 줄)는 거래소가 늦게 준다(INDICES 의 delayMin) — 거래 중에 정규장 · 실시간으로 보이지 않게
   const lag = q && q.live && session === 'regular' ? INDICES.find((i) => i.symbol === state.selected)?.delayMin : null;
   el.innerHTML = `<span class="${q && q.live && !lag ? SESSION_CLASS[session] : 'delay'}">`
-    + `${stale ? '갱신 실패' : q && q.error ? '조회 실패' : lag ? `${lag}분지연` : delayed ? '20분지연' : SESSION_TEXT[session]}</span> ${time}`;
+    + `${stale ? '갱신 실패' : q && q.error ? '조회 실패' : lag ? `${lag}분지연` : delayed ? '20분지연' : holiday ? '휴장' : SESSION_TEXT[session]}</span> ${time}`;
   const source = q && !q.error && q.price != null
     ? `${q.live ? (lag ? `${lag}분 지연` : '실시간') : stale ? '마지막으로 받은 값' : delayed ? '20분지연' : '정규장 가격'}`
       + ` · ${q.source || (q.live ? 'Naver' : 'Yahoo')}`
@@ -112,7 +145,8 @@ function renderUpdated() {
   el.title = `소스: ${source}${q && q.market ? ` · ${q.market}` : ''}`
     + `\n세션: ${SESSION_TEXT[session]}`
     + `\n조회 완료: ${validFetched ? fetched.toISOString() : '확인 불가'}`
-    + `\n시세 시각: ${q && q.tradedAt || '확인 불가'}`;
+    + `\n시세 시각: ${q && q.tradedAt || '확인 불가'}`
+    + (day && day.lines.length ? `\n${day.lines.join('\n')}` : '');
 }
 
 function renderDetail() {
@@ -157,7 +191,7 @@ function renderDetail() {
 
   document.getElementById('infoToggle').hidden = !item; // 고른 것이 없으면 접을 것도 없다
   renderHolding(item && item.symbol, q && q.price);
-  renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur);
+  renderW52(q && q.week52Low, q && q.week52High, q && q.price, cur, item && isDomestic(item.symbol) ? daumInfo.get(item.symbol.split('.')[0].toUpperCase()) : null);
   renderTrendCheck(item);
   infoTip(); // 접혀 있으면 위 세 줄의 새 내용을 손잡이 툴팁에 옮긴다
 

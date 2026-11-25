@@ -248,6 +248,10 @@ async function refreshNow() {
       if (item) openFlow({ kind: 'stock', symbol: item.symbol, name: item.name });
       return;
     }
+    const hp = e.target.closest('[data-home]'); // 회사 개요의 홈페이지(브라우저)
+    if (hp) { api.openHome(hp.dataset.home); return; }
+    const n = e.target.closest('[data-news]'); // 최근 뉴스 — 기사 원문(브라우저)
+    if (n) { api.openNews(n.dataset.news); return; }
     const f = e.target.closest('[data-dart]');
     if (f) { api.openDart(f.dataset.dart); return; }
     const p = e.target.closest('[data-peer]');

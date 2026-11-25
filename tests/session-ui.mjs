@@ -64,10 +64,12 @@ function harness(extra = []) {
     renderSearchPopular: () => {}, // 빈 검색창의 인기 목록 — 인기 순위를 받으면 다시 그린다. tests/popular-search.mjs 가 본다
     renderRank: () => {},
     loadEvents: async () => {}, // 갱신이 부르는 관심종목 일정 — 진짜는 extra 로
+    loadDaumInfo: async () => {}, // 갱신이 부르는 관심종목 위험 상태 · 52주(다음 금융) — 진짜는 extra 로
     cssVar: (n) => n, // 0 · 값 없음의 색(plColor) — 화면이 없는 하네스에서는 변수 이름 그대로
   });
   const names = ['quoteSession', 'tradingState', 'isDomestic', 'isUs', 'isOverseas', 'pollingIsOpen', 'priceSessionOf',
-    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'catchUpDaily', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'plColor', 'rankCount', 'rankKey', 'rankBackHtml', 'venueCandles', 'venueDaysFor', ...extra];
+    'renderUpdated', 'intradayEnd', 'kstClockMs', 'infoTip', 'benchReturn', 'benchmarkOf', 'benchLine', 'alignByDay', 'catchUpDaily', 'tipBases', 'marketDay', 'chartTf', 'rankPct', 'plColor', 'rankCount', 'rankKey', 'rankBackHtml', 'venueCandles', 'venueDaysFor',
+    'riskChip', 'marketDayNote', 'loadMarketDays', ...extra]; // 다음 금융(2026-11-24) — 목록 줄의 위험 칩 · 상태 표시의 휴장
   vm.runInContext(prelude + '\n' + [...new Set(names)].map(realFunction).join('\n'), c);
   const run = (code) => vm.runInContext(code, c);
   run(`state = { watchlist: [{symbol:'005930.KS', name:'삼성전자'},
@@ -5156,7 +5158,124 @@ await test('events: list chip counts days by the Korean date, shows the nearest 
   assert.equal(JSON.parse(badge('Z', '2026-11-02T10:00:00')).label, '배당락 D-8', '다가올 일정이 14일 안이면 그것이 먼저');
   c.Date.now = realNow;
   // 목록 줄은 이름 옆에 칩을 둔다(이름은 말줄임, 칩은 늘 보인다)
-  assert.match(realFunction('renderList'), /<span class="nrow"><span class="name">\$\{esc\(item\.name\)\}<\/span>\$\{eventChip\(item\.symbol\)\}<\/span>/);
+  assert.match(realFunction('renderList'), /<span class="nrow"><span class="name">\$\{esc\(item\.name\)\}<\/span>\$\{riskChip\(item\.symbol\)\}\$\{eventChip\(item\.symbol\)\}<\/span>/);
+});
+
+// 위험 상태 칩(다음 금융, 2026-11-24 사용자 요청) — 가장 심한 것 하나에 '외 n', 모두는 툴팁, 정도별 색(rk2 · rk1 · rk0). 국내 종목만, 받은 것이 없으면 없다
+await test('watchlist: risk chip — worst label with a count, all labels in the tooltip, level class; none for US or without info', () => {
+  const { run } = harness();
+  run(helpers());
+  run(`daumInfo.set('004545', { risk: [{ label: '투자경고', level: 2 }, { label: '관리종목', level: 2 }] });
+    daumInfo.set('009140', { risk: [{ label: '투자주의', level: 1 }] }); daumInfo.set('347770', { risk: [{ label: '액면병합', level: 0 }] });
+    daumInfo.set('005930', { risk: [] }); daumInfo.set('AAPL', { risk: [{ label: '투자경고', level: 2 }] });`);
+  assert.equal(run("riskChip('004545.KS')"), '<span class="rkchip rk2" title="투자경고 · 관리종목\n거래소 지정 상태 · 다음 금융">투자경고 외 1</span>');
+  assert.match(run("riskChip('009140.KS')"), /^<span class="rkchip rk1" [^>]*>투자주의<\/span>$/);
+  assert.match(run("riskChip('347770.KQ')"), /^<span class="rkchip rk0" [^>]*>액면병합<\/span>$/);
+  assert.equal(run("riskChip('005930.KS')"), '', '위험이 없으면 없다');
+  assert.equal(run("riskChip('000660.KS')"), '', '아직 못 받았으면 없다');
+  assert.equal(run("riskChip('AAPL')"), '', '국내 종목만');
+  // 목록 줄은 이름 옆, 일정 칩 앞에 둔다
+  assert.match(realFunction('renderList'), /<span class="nrow"><span class="name">\$\{esc\(item\.name\)\}<\/span>\$\{riskChip\(item\.symbol\)\}\$\{eventChip\(item\.symbol\)\}<\/span>/);
+});
+
+// 관심종목의 다음 금융 정보 — 국내 종목 모두를 한 번에(main 의 daum:quotes), 10분마다 · 관심종목이 바뀌면 바로. 실패하면 있던 것을 둔다
+await test('watchlist: Daum info for every domestic stock in one call — every 10 minutes or when the list changes; keeps the old on failure', async () => {
+  const { c, run } = harness(['loadDaumInfo']);
+  run(helpers());
+  const asked = [];
+  let reply = { ok: true, items: { '005930': { risk: [{ label: '투자주의', level: 1 }] } } };
+  c.api.daumQuotes = async (s) => { asked.push([...s]); return reply; };
+  let lists = 0;
+  c.renderList = () => { lists++; };
+  run("state.watchlist.push({ symbol: 'AAPL', name: '애플' });");
+  await run('loadDaumInfo()');
+  assert.deepEqual(asked, [['005930.KS', '000660.KS']], '국내 종목만, 한 번에');
+  assert.equal(lists, 1, '칩이 바뀌면 목록을 다시 그린다');
+  await run('loadDaumInfo()');
+  assert.equal(asked.length, 1, '10분 안에는 다시 묻지 않는다');
+  run("state.watchlist.push({ symbol: '009140.KS', name: '케이아이이' });");
+  reply = { ok: false, error: '막힘' };
+  await run('loadDaumInfo()');
+  assert.equal(asked.length, 2, '국내 종목이 바뀌면 10분을 기다리지 않는다');
+  assert.match(run("riskChip('005930.KS')"), /투자주의/, '받지 못하면 있던 것을 둔다');
+  assert.equal(lists, 1);
+  assert.match(realFunction('refreshAll'), /loadEvents\(\)\.catch\(console\.error\);[^\n]*\n\s*loadDaumInfo\(\)\.catch\(console\.error\);/, '갱신마다 부르되 기다리지 않는다');
+});
+
+// 휴장일 · 운영시간(다음 금융, 2026-11-24) — 국내 종목은 오늘이 휴장이면 '장마감' 대신 '휴장', 사유 · 운영시간 변경 · 다음 개장은 툴팁. 하네스 시각은
+// 2026-09-10(목) 18:30 KST
+await test('header: domestic stock on a market holiday says 휴장; the reason, changed hours and the next open go in the tooltip', () => {
+  const { c, run, elements } = harness();
+  run(`marketDaysNext = Infinity; marketDays = [
+    { date: '2026-09-10', holiday: true, changed: false, reason: '임시공휴일', sessions: [] },
+    { date: '2026-09-11', holiday: false, changed: true, reason: '대학수학능력시험 (1시간 늦춤)', sessions: [{ session: 'REGULAR', start: '10:00', end: '16:30' }] }];
+    quotes['005930.KS'] = { price: 1, live: true, session: 'closed', source: 'Naver', fetchedAt: Date.now() };`);
+  c.renderUpdated();
+  const el = elements.get('updated');
+  assert.match(el.innerHTML, />휴장<\/span>/);
+  assert.match(el.title, /\n오늘 휴장 \(임시공휴일\)\n다음 개장 09\/11\(금\) 10:00 \(운영시간 변경\)$/, el.title);
+  run(`marketDays[0] = { date: '2026-09-10', holiday: false, changed: true, reason: null,
+    sessions: [{ session: 'REGULAR', start: '10:00', end: '16:30' }, { session: 'AFTER_MARKET', start: '17:00', end: '20:00' }] };
+    quotes['005930.KS'].session = 'after';`);
+  c.renderUpdated();
+  assert.match(el.innerHTML, /애프터마켓/);
+  assert.match(el.title, /\n오늘 운영시간 변경 — 정규장 10:00~16:30 · 애프터마켓 17:00~20:00$/, '장이 열려 있으면 다음 개장은 적지 않는다');
+  run("state.selected = 'AAPL'; quotes.AAPL = { price: 1, live: true, session: 'closed', fetchedAt: Date.now() };");
+  c.renderUpdated();
+  assert.doesNotMatch(el.title, /휴장|개장|운영시간/, '미국 종목에는 없다');
+  assert.match(el.innerHTML, /장마감/);
+});
+
+// 52주 막대 툴팁 — 국내 종목은 다음 금융의 52주 최고 · 최저 날짜 · 50일 최고 · 최저 · 오늘 상한가 · 하한가를 붙인다(2026-11-24)
+await test('detail: 52-week bar tooltip adds the Daum 52-week dates, 50-day range and price limits for domestic stocks', () => {
+  const { run, elements } = harness(['renderW52', 'w52Extra']);
+  run(helpers());
+  run("renderW52(97800, 374500, 192400, 'KRW', { hi52: 374500, hi52Date: '2026-06-19', lo52: 97800, lo52Date: '2025-11-25', hi50: 286500, lo50: 171500, upper: 230500, lower: 124300 })");
+  assert.match(elements.get('w52').title, /\n\n다음 금융\n52주 최고 374,500 \(26\/06\/19\) · 최저 97,800 \(25\/11\/25\)\n50일 최고 286,500 · 최저 171,500\n오늘 상한가 230,500 · 하한가 124,300$/,
+    elements.get('w52').title);
+  run("renderW52(97800, 374500, 192400, 'KRW', null)");
+  assert.doesNotMatch(elements.get('w52').title, /다음 금융/, '국내가 아니거나 아직 못 받았으면 붙이지 않는다');
+  assert.match(realFunction('renderDetail'), /renderW52\([^\n]*isDomestic\(item\.symbol\) \? daumInfo\.get\(item\.symbol\.split\('\.'\)\[0\]\.toUpperCase\(\)\) : null\);/);
+});
+
+// 지표 보기의 다음 금융 부분(국내, 2026-11-24 사용자 요청 — main 의 daumDetail, tests/detail.mjs 10번)
+await test('metrics: Daum parts — company first with a clickable homepage, volume vs yesterday, finance rows and notices in earnings, estimate, WICS sector, news', () => {
+  const { c, run } = harness(METRICS_FNS);
+  run(helpers());
+  run("quotes['005930.KS'] = { price: 219000, currency: 'KRW' };");
+  const DM = { company: { summary: '동사는 <b>글로벌</b> 전자 기업', listed: '1975-06-11', ceo: '전영현, 노태문', est: '1969.01.13', emp: 128881, home: 'www.samsung.com' },
+    sector: { name: '반도체와반도체장비', pct: 8.33, per: 20.43901, rank: 1, market: '코스피', top: [{ name: 'SK하이닉스', code: '000660', pct: -2 }] },
+    estimate: { eps: 45565, per: 3.9, date: '2026-11-23' },
+    finance: { '26.03': { eps: 6992.859, roe: 10.487, debt: 30.146, dps: 372 }, '26.06': { eps: 10717.849, roe: 13.718, debt: 31.101, dps: null } },
+    news: [{ id: '20261124131932192', title: '5000피 <회복>', source: '이데일리', at: '2026-11-24 13:19' }],
+    notices: [{ kind: 'earnings', label: '잠정실적', day: '2026-10-29', line: '2026년 3분기 · 매출 195.3조원' }], volRatio: 0.6545 };
+  const html = (daum, kind = 'stock') => { c.D = { ...KR_DETAIL, kind, daum }; return run("metricsHtml({ symbol: '005930.KS', name: '삼성전자' }, D, quotes['005930.KS'])"); };
+  const h = html(DM);
+  assert.ok(h.indexOf('<h5>회사 개요') >= 0 && h.indexOf('<h5>회사 개요') < h.indexOf('<h5>오늘'), '회사 개요가 맨 위');
+  assert.match(text(h), /대표 전영현, 노태문 · 설립 1969\.01\.13 · 상장 1975\.06\.11 · 직원 128,881명 · www\.samsung\.com/);
+  assert.match(h, /<span class="mxhome" data-home="005930" title="누르면 회사 홈페이지 \(브라우저\)">www\.samsung\.com<\/span>/, '홈페이지는 종목 코드만 담는다');
+  assert.ok(h.includes('&lt;b&gt;글로벌&lt;/b&gt;') && !h.includes('<b>글로벌</b>'), '소개 문장은 이스케이프');
+  assert.match(h, /전일 거래량의 0\.65배/);
+  // KR_DETAIL 의 실적 열은 25.12 · 26.03 · 26.06 · 26.09E · 26.12E — 마지막 넷의 같은 분기에
+  assert.match(h, /<tr><td>EPS\(원\)<\/td><td>6,993<\/td><td>10,718<\/td><td>—<\/td><td>—<\/td><\/tr>/);
+  assert.match(h, /<tr><td>ROE<\/td><td>10\.5%<\/td><td>13\.7%<\/td><td>—<\/td><td>—<\/td><\/tr>/);
+  assert.match(h, /<tr><td>배당\(원\)<\/td><td>372<\/td><td>—<\/td>/);
+  assert.match(h, /EPS · ROE · 부채비율 · 배당\(주당\)은 다음 금융/);
+  assert.match(h, /<p>잠정실적 <span class="mxmute">10\/29 공시<\/span> · 2026년 3분기 · 매출 195\.3조원<\/p>/);
+  assert.match(h, /추정 EPS <b>45,565원<\/b>.*추정 PER <b>3\.90배<\/b>/);
+  assert.match(text(h), /반도체와반도체장비 \+8\.33% · 업종 PER 20\.4배 · 코스피 시총 1위 \(WICS\)/);
+  assert.match(h, /업종 시총 상위<\/span> <span class="mxi"><span class="mxpeer" data-peer="000660"/, '업종 시총 상위도 누르면 그 종목으로');
+  assert.match(h, /<h5>최근 뉴스 <span>\(다음 뉴스\)<\/span><\/h5><ul class="mxfil"><li data-news="20261124131932192"/);
+  assert.ok(h.includes('5000피 &lt;회복&gt;'), '뉴스 제목은 이스케이프');
+  assert.match(h, /자료: 네이버 증권 · 다음 금융\(/);
+  assert.match(html({ ...DM, sector: { ...DM.sector, per: -60.7 } }), /업종 PER 적자/);
+  assert.doesNotMatch(html(DM, 'etf'), /시총 1위|WICS/, 'ETF 는 업종 · 순위를 적지 않는다');
+  // 다음 금융이 모두 비었으면(막힘) 단락도 출처 표기도 없다
+  const empty = html({ company: null, sector: null, estimate: null, finance: null, news: null, notices: null, volRatio: null });
+  assert.doesNotMatch(empty, /회사 개요|최근 뉴스|추정 EPS|전일 거래량|다음 금융\(/);
+  // 누르면 main 에 기사 번호 · 종목 코드만 넘긴다
+  assert.match(source, /const hp = e\.target\.closest\('\[data-home\]'\);[^\n]*\n\s*if \(hp\) \{ api\.openHome\(hp\.dataset\.home\); return; \}/);
+  assert.match(source, /const n = e\.target\.closest\('\[data-news\]'\);[^\n]*\n\s*if \(n\) \{ api\.openNews\(n\.dataset\.news\); return; \}/);
 });
 
 // 관심종목 목록: 줄은 종목 · 순서가 바뀔 때만 새로 만들고, 시세 · 일정 · 선택이 바뀌면 있는 줄의 내용만 고친다. 줄을 통째로

@@ -792,6 +792,7 @@ async function refreshAll() {
     renderDetail();
     renderRank(); // 순위 패널이 열려 있으면 1분이 지난 탭을 다시 받는다
     loadEvents().catch(console.error); // 관심종목 일정 — 6시간 지난 종목만, 기다리지 않는다
+    loadDaumInfo().catch(console.error); // 관심종목 위험 상태 · 52주 날짜 — 10분마다 한 번에, 기다리지 않는다
     await renderFolio();
     await loadChart();
 

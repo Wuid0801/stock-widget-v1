@@ -132,6 +132,17 @@ function metricsHtml(item, d, q) {
   // 항목 하나(1년 +117.89% · 외국인 소진율 45.98%)는 줄바꿈하지 않는다 — 폭 340px 에서 '1 / 년' 으로 쪼개졌다
   const list = (items) => items.map((x) => `<span class="mxi">${x}</span>`).join(' · ');
   const parts = [];
+  const dm = d.daum || {}; // 다음 금융 부분(국내, main 의 daumDetail — 2026-11-24). 못 받은 것은 없다
+
+  // 회사 개요(국내) — 대표 · 설립 · 상장 · 직원 · 홈페이지 한 줄과 소개 문장
+  const co = dm.company;
+  if (co) {
+    const facts = [co.ceo ? `대표 ${esc(co.ceo)}` : null, co.est ? `설립 ${esc(co.est)}` : null, co.listed ? `상장 ${esc(co.listed.replace(/-/g, '.'))}` : null,
+      co.emp ? `직원 ${co.emp.toLocaleString('ko-KR')}명` : null,
+      // 홈페이지 — 누르면 기본 브라우저로(corp:open, 종목 코드만 넘긴다)
+      co.home ? `<span class="mxhome" data-home="${esc(item.symbol.split('.')[0])}" title="누르면 회사 홈페이지 (브라우저)">${esc(co.home)}</span>` : null].filter(Boolean);
+    parts.push(sec('회사 개요', (facts.length ? `<p class="mxmute">${list(facts)}</p>` : '') + (co.summary ? `<p>${esc(co.summary)}</p>` : '')));
+  }
 
   // 오늘 — 거래량은 KRX(국내) · 통합(미국). 국내 주식은 NXT 를 더한 거래량을 따로 적는다(ETF 는 NXT 에 없다).
   const t = d.today || {};
@@ -143,7 +154,8 @@ function metricsHtml(item, d, q) {
   }
   const extra = [kr && d.kind !== 'etf' && t.totalVolume != null ? `NXT 포함 ${fmtVol(t.totalVolume)}` : null,
     t.value ? `대금 ${esc(t.value)}` : null, t.marketValue ? `시총 ${esc(t.marketValue)}` : null,
-    t.foreignRate ? `외국인 소진율 ${esc(t.foreignRate)}` : null].filter(Boolean);
+    t.foreignRate ? `외국인 소진율 ${esc(t.foreignRate)}` : null,
+    dm.volRatio != null ? `전일 거래량의 ${dm.volRatio.toFixed(2)}배` : null].filter(Boolean);
   if (extra.length) today.push(`<p class="mxmute">${list(extra)}</p>`);
   if (today.length) parts.push(sec('오늘', today.join('')));
 
@@ -216,10 +228,20 @@ function metricsHtml(item, d, q) {
     const cols = d.quarters.cols.slice(from);
     const head = `<tr><th></th>${cols.map((c) => `<th>${esc(c.title)}${c.estimate ? 'E' : ''}</th>`).join('')}</tr>`;
     const body = d.quarters.rows.map((r) => `<tr><td>${esc(r.title)}</td>${r.values.slice(from).map((v) => `<td>${fin(v)}</td>`).join('')}</tr>`).join('');
-    earn.push(`<table class="mxt">${head}${body}</table>`);
-    const notes = [usd ? 'USD' : null, cols.some((c) => c.estimate) ? 'E 는 증권사 추정치' : null].filter(Boolean);
+    // 다음 금융 재무(국내) — 같은 분기 열('25.06')에 EPS · ROE · 부채비율 · 주당배당금. 값이 하나도 없는 줄은 뺀다
+    const fx = !usd && dm.finance;
+    const more = fx ? [['EPS(원)', 'eps', (v) => Math.round(v).toLocaleString()], ['ROE', 'roe', (v) => `${v.toFixed(1)}%`],
+      ['부채비율', 'debt', (v) => `${v.toFixed(0)}%`], ['배당(원)', 'dps', (v) => Math.round(v).toLocaleString()]]
+      .map(([title, k, f]) => ({ title, cells: cols.map((c) => (fx[c.title] && fx[c.title][k] != null ? f(fx[c.title][k]) : '—')) }))
+      .filter((r) => r.cells.some((x) => x !== '—'))
+      .map((r) => `<tr><td>${r.title}</td>${r.cells.map((x) => `<td>${x}</td>`).join('')}</tr>`).join('') : '';
+    earn.push(`<table class="mxt">${head}${body}${more}</table>`);
+    const notes = [usd ? 'USD' : null, cols.some((c) => c.estimate) ? 'E 는 증권사 추정치' : null,
+      more ? 'EPS · ROE · 부채비율 · 배당(주당)은 다음 금융' : null].filter(Boolean);
     if (notes.length) earn.push(`<p class="mxmute">${notes.join(' · ')}</p>`);
   }
+  // 공시 요약(국내) — 가장 최근의 잠정실적 · 배당 결정 공시를 다음 금융이 한 줄로 정리한 것
+  for (const n of dm.notices || []) earn.push(`<p>${esc(n.label)}${n.day ? ` <span class="mxmute">${mmdd(n.day)} 공시</span>` : ''} · ${esc(n.line)}</p>`);
   if (earn.length) parts.push(sec('실적', earn.join('')));
 
   // 최근 공시(국내) — 다음 금융의 DART 목록에서 최근 10건. 누르면 DART 원문을 기본 브라우저로(dart:open)
@@ -227,6 +249,14 @@ function metricsHtml(item, d, q) {
     const rows = d.filings.map((f) => `<li data-dart="${esc(f.no)}" title="${esc(f.name)} — 누르면 DART 원문 (브라우저)">`
       + `<span class="mxmute">${mmdd(f.day)}</span> ${esc(f.name)}</li>`).join('');
     parts.push(sec('최근 공시 <span>(DART · 다음 금융)</span>', `<ul class="mxfil">${rows}</ul>`));
+  }
+
+  // 최근 뉴스(국내, 다음 뉴스) — 누르면 기사 원문을 기본 브라우저로(news:open)
+  if (dm.news && dm.news.length) {
+    const rows = dm.news.map((n) => `<li data-news="${esc(n.id)}" title="${esc(n.title)} — 누르면 기사 원문 (브라우저)">`
+      + `<span class="mxmute">${n.at ? `${n.at.slice(5, 10).replace('-', '/')} ${n.at.slice(11)}` : ''}</span> ${esc(n.title)}`
+      + `${n.source ? ` <span class="mxmute">${esc(n.source)}</span>` : ''}</li>`).join('');
+    parts.push(sec('최근 뉴스 <span>(다음 뉴스)</span>', `<ul class="mxfil">${rows}</ul>`));
   }
 
   // 가치 지표 · 컨센서스 — 컨센서스는 증권사 추정치라 기준일과 함께 참고용으로 적는다
@@ -240,6 +270,13 @@ function metricsHtml(item, d, q) {
     val.push(`<p>목표가 평균 <b>${amt(c.target)}</b>${vs}${c.opinion != null ? ` · 의견 ${c.opinion.toFixed(2)} / 5` : ''}${range}</p>`);
     val.push(`<p class="mxmute">${c.date ? `${mmdd(c.date)} 기준 · ` : ''}증권사 추정치, 참고용</p>`);
   }
+  // 추정 실적(국내) — 와이즈에프엔 컨센서스의 추정 EPS · 추정 PER(다음 금융)
+  const est = dm.estimate;
+  if (est) {
+    const bits = [est.eps != null ? `추정 EPS <b>${Math.round(est.eps).toLocaleString()}원</b>` : null,
+      est.per != null ? `추정 PER <b>${est.per.toFixed(2)}배</b>` : null].filter(Boolean);
+    val.push(`<p>${list(bits)}</p><p class="mxmute">${est.date ? `${mmdd(est.date)} 기준 · ` : ''}와이즈에프엔 컨센서스(다음 금융), 참고용</p>`);
+  }
   if (val.length) parts.push(sec('가치 지표', val.join('')));
 
   if (d.etf) {
@@ -251,14 +288,23 @@ function metricsHtml(item, d, q) {
     if (bits.length) parts.push(sec('ETF', `<p>${list(bits)}</p>`));
   }
 
-  if (d.peers && d.peers.length) {
+  // 업종(WICS, 국내 · 다음 금융) — 오늘 업종 등락률 · 업종 PER · 시장 안 시가총액 순위 · 업종 시총 상위 5종목. ETF 는 적지 않는다
+  const sc = d.kind !== 'etf' ? dm.sector : null;
+  if ((d.peers && d.peers.length) || sc) {
     // 이름을 누르면 그 종목으로(pickPeer). 코드가 없는 응답(기억해 둔 예전 것)은 글자만
     const peer = (p) => (p.code ? `<span class="mxpeer" data-peer="${esc(p.code)}" data-name="${esc(p.name)}"`
       + ` title="누르면 이 종목으로 — 관심종목에 없으면 넣는다">${esc(p.name)}</span>` : esc(p.name));
-    parts.push(sec('동종 업종', `<p>${list(d.peers.map((p) => `${peer(p)} ${colored(fmtPct(p.pct), p.pct)}`))}</p>`
+    const chip = (p) => `${peer(p)}${p.pct != null ? ` ${colored(fmtPct(p.pct), p.pct)}` : ''}`;
+    const head = sc ? [sc.name ? `${esc(sc.name)}${sc.pct != null ? ` ${colored(fmtPct(sc.pct), sc.pct)}` : ''}` : null,
+      sc.per != null ? `업종 PER ${sc.per > 0 ? `${sc.per.toFixed(1)}배` : '적자'}` : null,
+      sc.rank ? `${sc.market ? `${sc.market} ` : ''}시총 ${sc.rank}위` : null].filter(Boolean) : [];
+    parts.push(sec('동종 업종', (head.length ? `<p>${list(head)} <span class="mxmute">(WICS)</span></p>` : '')
+      + (sc && sc.top.length ? `<p><span class="mxmute">업종 시총 상위</span> ${list(sc.top.map(chip))}</p>` : '')
+      + (d.peers && d.peers.length ? `<p>${list(d.peers.map(chip))}</p>` : '')
       + '<p class="mxmute" id="peerMsg"></p>'));
   }
-  parts.push('<p class="mxmute mxsrc">자료: 네이버 증권 · 거래량 배수와 기간 수익률은 일봉으로 계산</p>');
+  parts.push(`<p class="mxmute mxsrc">자료: 네이버 증권${Object.values(dm).some((v) => v != null) ? ' · 다음 금융(회사 개요 · 업종 · 추정 실적 · 재무 일부 · 공시 요약 · 뉴스 · 전일 거래량)' : ''}`
+    + ' · 거래량 배수와 기간 수익률은 일봉으로 계산</p>');
   return parts.join('');
 }
 

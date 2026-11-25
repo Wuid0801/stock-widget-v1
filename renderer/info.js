@@ -65,8 +65,9 @@ function cancelHoldEdit() {
   redrawHolding();
 }
 
-// 52주 저점~고점 사이에서 현재가가 어디쯤인지. Yahoo meta 값이라 추가 요청이 없다.
-function renderW52(low, high, price, cur) {
+// 52주 저점~고점 사이에서 현재가가 어디쯤인지. Yahoo meta 값이라 추가 요청이 없다. 국내 종목은 툴팁에 다음 금융의 52주 최고 · 최저 날짜 ·
+// 50일 최고 · 최저 · 오늘 상한가 · 하한가를 붙인다(extra — daumInfo, 2026-11-24).
+function renderW52(low, high, price, cur, extra) {
   const box = document.getElementById('w52');
   if (!low || !high || high <= low || price == null) { box.hidden = true; return; }
 
@@ -77,7 +78,18 @@ function renderW52(low, high, price, cur) {
   document.getElementById('w52mark').style.left = `${pos}%`;
   box.title = `52주 최저 ${money(low, cur)} · 최고 ${money(high, cur)}\n`
     + `현재 ${money(price, cur)} — 저점 대비 ${fmtPct(((price - low) / low) * 100)}, `
-    + `고점 대비 ${fmtPct(((price - high) / high) * 100)}`;
+    + `고점 대비 ${fmtPct(((price - high) / high) * 100)}`
+    + w52Extra(extra, cur);
+}
+
+function w52Extra(x, cur) {
+  if (!x) return '';
+  const day = (d) => (d ? ` (${d.slice(2).replace(/-/g, '/')})` : '');
+  const lines = [];
+  if (x.hi52 != null && x.lo52 != null) lines.push(`52주 최고 ${money(x.hi52, cur)}${day(x.hi52Date)} · 최저 ${money(x.lo52, cur)}${day(x.lo52Date)}`);
+  if (x.hi50 != null && x.lo50 != null) lines.push(`50일 최고 ${money(x.hi50, cur)} · 최저 ${money(x.lo50, cur)}`);
+  if (x.upper != null && x.lower != null) lines.push(`오늘 상한가 ${money(x.upper, cur)} · 하한가 ${money(x.lower, cur)}`);
+  return lines.length ? `\n\n다음 금융\n${lines.join('\n')}` : '';
 }
 
 // 추세 점검 — 이평선 규칙을 지난 5년 일봉에 대 본 결과(backtest.js). 기간 탭과 상관없이
