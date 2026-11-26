@@ -185,7 +185,7 @@ const INDICES = [
   { symbol: '^KQ11', code: 'KOSDAQ', name: '코스닥', page: 0, trend: true },
   { symbol: '^IXIC', code: 'NASDAQ', name: '나스닥', page: 1, overseas: true, trend: true },
   { symbol: '^GSPC', code: 'SPX', name: 'S&P 500', page: 1, overseas: true, trend: true },
-  { symbol: 'NQ=F', code: 'NQ', name: '나스닥 선물', page: 2, overseas: true, delayMin: 10 },
+  { symbol: 'NQ=F', code: 'NQ', name: '나스닥 선물', page: 2, overseas: true, delayMin: 10, trend: true },
   { symbol: 'KRW=X', code: 'USDKRW', name: '원/달러', page: 2, overseas: true },
   { symbol: 'CL=F', code: 'WTI', name: 'WTI', overseas: true, delayMin: 10 },
   // 브렌트유(2026-11-03) — 지수 줄 값은 네이버 LCOcv1, 차트는 야후 BZ=F. 늦음은 아직 재 보지 않아 적지 않는다(WTI 는 10분 실측)

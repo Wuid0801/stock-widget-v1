@@ -3411,7 +3411,7 @@ await test('the 10-year yield keeps three decimals and moves in bp; futures and 
 
 // 지수 줄: 코스피 · 코스닥 → 나스닥 · S&P 500 → 원/달러, 한 장씩. 다섯 개는 340px 한 줄에 들어가지 않는다.
 await test('index line shows one page at a time, marks the selected index, and turns pages unless hovered or viewing one', () => {
-  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'ixTrend']);
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'ixTrend', 'ixTrendOf']);
   run(formatting);
   run(source.match(/^let indexItems = .*$/m)[0]);
   run(source.match(/^let indexPage = .*$/m)[0]);
@@ -3464,7 +3464,7 @@ await test('index line shows one page at a time, marks the selected index, and t
 
 // 지수 줄 오른쪽 끝의 점 — 몇 번째 장인지 보이고, 누르면 그 장으로 바로 간다(4초씩 기다리지 않게).
 await test('index line dots show the page and jump to it; the turn waits a full interval after a click; a viewed index can be paged away from until another pick', () => {
-  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage', 'ixTrend']);
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage', 'ixTrend', 'ixTrendOf']);
   run(formatting);
   for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
   run(source.match(/^const FOLIO_MS = .*$/m)[0]);
@@ -3515,10 +3515,10 @@ await test('index line dots show the page and jump to it; the turn waits a full 
   assert.match(source, /const dot = e\.target\.closest\('\.ixdot'\);\s*if \(dot\) \{ flipIndexPage\(Number\(dot\.dataset\.page\)\); return; \}/);
 });
 
-// 지수 줄 80일선 추세(2026-11-25) — 코스피 · 코스닥 · 나스닥 · S&P 500 옆에 상태와 며칠째. 받아 둔 일봉의 확정 봉으로 —
+// 지수 줄 80일선 추세(2026-11-25) — 코스피 · 코스닥 · 나스닥 · S&P 500 · 나스닥 선물(11-26) 옆에 상태와 며칠째. 받아 둔 일봉의 확정 봉으로 —
 // 장이 열려 있거나 모르면 마지막 봉을 빼고, 닫힌 것이 확실하면 마지막 봉(그날 종가)까지.
-await test('index line: 80-day trend beside the four main indices, from finished daily bars only', () => {
-  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'ixTrend']);
+await test('index line: 80-day trend beside the five flagged items, from finished daily bars only', () => {
+  const { c, run, elements } = harness(['renderIndices', 'indexPages', 'tickIndices', 'ixTrend', 'ixTrendOf']);
   run(formatting);
   for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
   Object.assign(c, { cssVar: () => '#888888', esc: String });
@@ -3542,7 +3542,12 @@ await test('index line: 80-day trend beside the four main indices, from finished
   assert.match(ks(), />상승 36일째</, '장중이면 마지막 봉을 뺀다');
   run("quotes['^KS11'] = { isTrading: false };");
   assert.match(ks(), /\n5\/1 종가 1\.00 [^"]*\n5\/1부터 1일째\n[^"]*">하락전환 1일째<\/span>$/, '닫힌 것이 확실하면 마지막 봉(그날 종가)까지');
-  assert.equal(run("ixTrend(INDICES.find((i) => i.code === 'USDKRW'))"), '', '대상(trend)이 아닌 지수에는 없다');
+  assert.deepEqual([...run("INDICES.filter((i) => i.trend).map((i) => i.code)")], ['KOSPI', 'KOSDAQ', 'NASDAQ', 'SPX', 'NQ'], '지수 줄 대상 — 나스닥 선물까지 다섯');
+  run('indexPage = 1;'); // 원/달러 장(trend 아님) — 일봉이 있어도 지수 줄에는 붙이지 않는다
+  c.renderIndices();
+  assert.match(elements.get('indices').innerHTML, /data-symbol="KRW=X"/);
+  assert.doesNotMatch(elements.get('indices').innerHTML, /class="ixt"/, '대상(trend)이 아닌 지수 줄 칸에는 없다');
+  assert.match(run("ixTrend(INDICES.find((i) => i.code === 'USDKRW'))"), />상승 36일째</, '판정은 어느 항목이든 — 시장 지표 화면의 툴팁이 쓴다');
   run("dailyCache['^KS11'].closes = dailyCache['^KS11'].closes.slice(0, 84);");
   assert.equal(ks(), '', '80일선 + 1주(85봉)보다 적으면 없다');
   run("delete dailyCache['^KS11'];");
@@ -3553,7 +3558,7 @@ await test('index line: 80-day trend beside the four main indices, from finished
 // 지수 줄은 대표 여섯 — 코스피 · 코스닥 → 나스닥 · S&P 500 → 나스닥 선물 · 원/달러(2026-10-27). WTI · 미국채 10년 · VIX · SOX 는
 // 줄에 없고 시장 지표 화면에서 고른다(고를 수 있는 항목으로는 남는다).
 await test('index line: six items on three pages; WTI · 10-year · VIX · SOX stay selectable but off the line', () => {
-  const { c, run } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage', 'ixTrend']);
+  const { c, run } = harness(['renderIndices', 'indexPages', 'tickIndices', 'flipIndexPage', 'ixTrend', 'ixTrendOf']);
   run(formatting);
   for (const name of ['indexItems', 'indexPage', 'indexHover', 'indexManualFor', 'indexFlipAt']) run(source.match(new RegExp(`^let ${name} = .*$`, 'm'))[0]);
   run(source.match(/^const FOLIO_MS = .*$/m)[0]);
@@ -3589,7 +3594,7 @@ const MARKET_ITEMS = `indexItems = [
   { code: 'US10Y', name: '미국채 10년', value: 4.97, change: 0.0167, pct: 0.34 }, { code: 'USDKRW', name: '원/달러', value: 1323.23, change: -1.94, pct: -0.15 }];`;
 const marketHarness = (extra = []) => {
   const h = harness(['marketRow', 'marketExtraRow', 'marketExtraError', 'marketHtml', 'marketCheckInput', 'sparkSvg', 'renderRank', 'setRankView',
-    'rankClick', 'rankHtml', 'dailyVolumesOf', 'k200At', 'intradayTitle', ...extra]);
+    'rankClick', 'rankHtml', 'dailyVolumesOf', 'k200At', 'intradayTitle', 'ixTrendOf', ...extra]);
   if (!extra.includes('loadMarket')) h.c.loadMarket = async () => {}; // 지표 화면을 열면 market:extras 를 묻는다 — 따로 본다
   h.run(formatting);
   h.run(source.match(/^let indexItems = .*$/m)[0]);
@@ -3654,6 +3659,23 @@ await test('market panel: 위험 · 자금 rows explain what each measure is on 
   html = h.c.marketHtml();
   assert.equal(titleOf(html, 'VIX'), h.run('MARKET_DESC.VIX'), '값이 없는 줄(누를 수 없다)도 설명');
   assert.equal(titleOf(html, 'HYOAS'), h.run('MARKET_DESC.HYOAS'), '값이 없으면 누를 수 없다 — 설명만');
+});
+
+// 시장 지표 줄의 80일선 추세(2026-11-26 사용자 요청) — 글자로 붙이니 화면이 빽빽해 줄 툴팁 맨 위 세 줄 + 한계 한 줄로. 지수 줄과 같은 판정
+// (ixTrendOf). 시세가 있는 줄(INDICES)만 — 베이시스 · 수급 줄은 가격이 아니라 없다. 일봉이 모자라면 툴팁은 그대로.
+await test('market panel: rows with prices show the 80-day trend at the top of their tooltip, without adding a line', () => {
+  const h = marketHarness();
+  const titleOf = (html, key) => (new RegExp(`data-key="${key}" title="([^"]*)"`).exec(html) || [])[1];
+  const up = Array.from({ length: 120 }, (_, i) => 100 + i);
+  const times = JSON.stringify(Array.from({ length: 121 }, (_, i) => Date.UTC(2026, 0, 1) + i * 86400000));
+  h.run(`dailyCache['^IXIC'] = { closes: ${JSON.stringify([...up, 1])}, times: ${times} };
+    dailyCache['^VIX'] = { closes: ${JSON.stringify([...up, 1])}, times: ${times} };`);
+  const html = h.c.marketHtml();
+  const head = '80일선 추세 — 상승 추세\n4/30 종가 219.00 · 80일선 179.50 (1주 전 174.50)\n3/26부터 36일째\n지금 상태일 뿐 다음 방향을 맞히는 신호가 아님';
+  assert.equal(titleOf(html, 'NASDAQ'), `${head}\n\n나스닥 차트 보기`, '설명이 없는 줄은 추세 · 차트 보기');
+  assert.equal(titleOf(html, 'VIX'), `${head}\n\n${h.run('MARKET_DESC.VIX')}\n\nVIX 차트 보기`, '설명이 있으면 추세 · 설명 · 차트 보기 순');
+  assert.doesNotMatch(html, /class="ixt"/, '줄에 글자는 더하지 않는다');
+  assert.equal(titleOf(html, 'SPX'), 'S&P 500 차트 보기', '일봉이 모자라면(받기 전) 그대로');
 });
 
 // 코스톨라니 달걀(해석) — 거래량이 있는 주가지수(코스피 · 코스닥 · 나스닥 · S&P 500)만 메모에 국면, 툴팁에 근거. 2026-10-29.

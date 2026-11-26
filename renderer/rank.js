@@ -318,7 +318,9 @@ function marketHtml() {
       const d5 = r.d5Text != null ? r.d5Text : r.d5 == null ? '—' : bp ? fmtBp(r.d5) : fmtPct(r.d5);
       // 위험 · 자금 줄은 툴팁에 그 지표의 뜻(MARKET_DESC) — 누를 수 있으면 그 아래에 '차트 보기', 값이 없어도 설명은 둔다
       const desc = MARKET_DESC[r.key];
-      const tip = r.title || desc;
+      // 80일선 추세(ixTrendOf, 2026-11-26 사용자 요청)는 툴팁 맨 위 — 시세가 있는 줄(INDICES)만. 베이시스 · 수급 줄은 가격이 아니라 없다
+      const trend = r.symbol && !r.empty ? ixTrendOf(INDICES.find((i) => i.symbol === r.symbol)) : null;
+      const tip = [trend && [...trend.head, trend.rules.at(-1)].join('\n'), r.title || desc].filter(Boolean).join('\n\n');
       // 수급 줄은 누르면 확대 차트(openFlow) — 값이 없는 줄(—)은 다른 지표 줄처럼 누를 수 없다
       const flowKind = r.empty ? null : ['SPOT', 'FUTFLOW'].includes(r.key) ? 'daily' : INTRADAY_FIELD[r.key] ? 'intraday'
         : r.key === 'INTRA_PROGRAM' ? 'program' : null; // 프로그램은 앱이 모아 둔 일별 값(flow.js programData)
