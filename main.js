@@ -1748,6 +1748,40 @@ async function fillGaps(symbol, stamps, q) {
   });
 }
 
+// 선물(=F) 일봉의 빈 날(2026-11-26 사용자 제보: 나스닥 선물 1M 이 11/24 다음 11/26). 야후가 끝난 거래일의 일봉 칸에 다음 거래 시간의
+// 시가 · 거래량을 넣고 종가를 비워 준다(NQ · ES · YM · CL · BZ · GC · HG 모두, 기간 · period 로 받아도 같다) — 종가 없는 봉은 빼므로
+// 그날이 사라졌다. 최근 일주일 안에 그런 칸이 있을 때만 1시간봉 5일치를 받아 CME 거래일(전날 18:00 ~ 그날 17:00 뉴욕)로 묶어 채운다.
+// 종가는 정산가가 아니라 마지막 체결가다(11/20~24 나스닥 선물 일봉과 0.14% 안쪽). 브렌트는 1시간봉이 일봉과 다른 월물일 때가 있어
+// (11/20~24 약 3% 낮다) 비율로 맞추지 않는다 — 빈 날 뒤의 진행 중 봉이 1시간봉과 같은 월물이었다(같은 날).
+const etDay = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date(ms)); // 'YYYY-MM-DD'
+async function fillFutureGaps(symbol, stamps, q) {
+  if (!symbol.endsWith('=F') || !Array.isArray(q.close)) return;
+  const gaps = stamps.map((_, i) => i).filter((i) => q.close[i] == null && Date.now() - stamps[i] * 1000 < 7 * 86400000);
+  if (!gaps.length) return;
+  try {
+    const res = await netFetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1h`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return;
+    const r = (await res.json())?.chart?.result?.[0];
+    const h = r?.indicators?.quote?.[0] || {};
+    const days = new Map();
+    (r?.timestamp || []).forEach((t, i) => {
+      const c = h.close?.[i];
+      if (c == null) return;
+      const k = etDay(t * 1000 + 6 * 3600000); // 18:00 뒤는 다음 거래일
+      const d = days.get(k);
+      if (!d) days.set(k, { open: h.open?.[i] ?? c, high: h.high?.[i] ?? c, low: h.low?.[i] ?? c, close: c, volume: h.volume?.[i] || 0 });
+      else Object.assign(d, { high: Math.max(d.high, h.high?.[i] ?? c), low: Math.min(d.low, h.low?.[i] ?? c), close: c, volume: d.volume + (h.volume?.[i] || 0) });
+    });
+    for (const i of gaps) {
+      const d = days.get(etDay(stamps[i] * 1000)); // 일봉 칸은 그날 00:00 뉴욕
+      if (!d) continue;
+      for (const k of ['open', 'high', 'low', 'volume']) if (!Array.isArray(q[k])) q[k] = [];
+      q.open[i] = d.open; q.high[i] = d.high; q.low[i] = d.low; q.close[i] = d.close; q.volume[i] = d.volume;
+    }
+  } catch { /* 지금처럼 그날을 뺀다 */ }
+}
+
 // --- 1D · 1W 시간외 봉 ------------------------------------------------------------
 // 1D · 1W 는 정규장만 그렸다. 프리 · 애프터마켓 봉을 시각 순서대로 이어 붙이고 봉마다 세션을 단다
 // (ext: 'pre' · 'after', 정규장은 null) — 렌더러가 그 구간의 배경을 옅게 칠한다. 렌더러의 정규장 / 전체
@@ -2173,7 +2207,10 @@ ipcMain.handle('yf:chart', async (_e, req) => {
     const json = await res.json();
     const result = json?.chart?.result?.[0];
     if (!result) return { ok: false, error: json?.chart?.error?.description || '데이터 없음' };
-    if (interval === '1d') await fillGaps(symbol, result.timestamp || [], result.indicators?.quote?.[0] || {});
+    if (interval === '1d') {
+      await fillGaps(symbol, result.timestamp || [], result.indicators?.quote?.[0] || {});
+      await fillFutureGaps(symbol, result.timestamp || [], result.indicators?.quote?.[0] || {});
+    }
 
     // 거래량 · 시가 · 고가 · 저가는 close 와 같은 객체에 이미 들어있다(추가 요청 없음). close 에는 실제로 null 이 섞여
     // 나온다 → 그 봉은 뺀다. 시가 · 고가 · 저가가 비면 종가로(밴드 폭 0), 거래량이 비면 0. 열은 다른 경로처럼 toSeries 로.

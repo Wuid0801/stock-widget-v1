@@ -39,11 +39,19 @@ let yahooBody = null;
 let naverReply = () => ({ ok: true, status: 200, body: [] });
 const naverCalls = [];
 const yahooCalls = [];
+let hourReply = null; // 선물 빈 날 채우기(8번)의 야후 1시간봉 응답 — 없으면 다른 야후 요청처럼 yahooBody
+const hourCalls = [];
 const fakeFetch = async (url, opt = {}) => {
   url = String(url);
   if (url.includes('api.stock.naver.com')) {
     naverCalls.push({ url, headers: opt.headers || {} });
     const r = naverReply(url);
+    if (r instanceof Error) throw r;
+    return { ok: r.ok, status: r.status, json: async () => r.body };
+  }
+  if (hourReply && url.includes('interval=1h')) {
+    hourCalls.push(url);
+    const r = hourReply();
     if (r instanceof Error) throw r;
     return { ok: r.ok, status: r.status, json: async () => r.body };
   }
@@ -241,6 +249,55 @@ const chart = (symbol, interval = '1d') => handlers['yf:chart']({}, { symbol, ra
   delete yahooBody.chart.result[0].meta.regularMarketPrice;
   const bare = await chart('JPYKRW=X');
   check('원/엔: 값이 비면 마지막 봉, 52주가 비면 null(0 이 아니다)', bare.ok && near(bare.price, 830) && bare.week52High === null, JSON.stringify(bare));
+}
+
+// --- 8. 선물(=F) 일봉의 빈 날을 야후 1시간봉으로 채운다 ----------------------------------------
+// 야후는 끝난 선물 거래일의 일봉 칸에 다음 거래 시간의 시가 · 거래량을 넣고 종가를 비워 준다(2026-11-26 실측 NQ · CL · BZ · GC …
+// 11/25 칸 — 사용자 제보: 나스닥 선물 1M 이 11/24 다음 11/26). 실제 모양처럼 일봉 칸은 그날 00:00 뉴욕(10월은 EDT, 04:00 UTC),
+// 진행 중 봉은 지금 시각. 지금 = 10-12 21:00 뉴욕 — 10-13 거래일이 10-12 18:00 에 시작했다.
+{
+  const at = (iso) => Date.parse(iso) / 1000;
+  const daily = (rows) => ({ chart: { result: [{
+    timestamp: rows.map(([t]) => at(t)),
+    indicators: { quote: [{ close: rows.map((r) => r[1]), open: rows.map((r) => r[2]), high: rows.map((r) => r[2] + 1),
+      low: rows.map((r) => r[2] - 1), volume: rows.map((r) => r[3]) }] },
+    meta: { regularMarketPrice: 104, currency: 'USD' },
+  }] } });
+  // 10-12 칸: 종가 없이 새 거래 시간의 시가 103 · 거래량 5 (진행 중 봉과 같다). 채우기가 응답을 고치므로 매번 새로 만든다
+  const broken = () => daily([['2026-10-08T04:00:00Z', 100, 99.5, 900], ['2026-10-09T04:00:00Z', 101, 100.2, 800],
+    ['2026-10-12T04:00:00Z', null, 103, 5], ['2026-10-13T00:58:00Z', 104, 103, 5]]);
+  // 1시간봉: 10-09 거래일 끝 · 10-12 거래일(10-11 18:00 ~ 10-12 17:00 뉴욕) · 17:00 쉬는 칸 · 10-13 거래일 첫 봉
+  const hours = { chart: { result: [{
+    timestamp: ['2026-10-09T19:00:00Z', '2026-10-11T22:00:00Z', '2026-10-12T15:00:00Z', '2026-10-12T20:00:00Z', '2026-10-12T21:00:00Z',
+      '2026-10-12T22:00:00Z'].map(at),
+    indicators: { quote: [{ open: [100.5, 101.5, 101.8, 105, null, 103], high: [101.2, 102, 106, 105.5, null, 104],
+      low: [100.3, 101, 99, 102, null, 102.8], close: [101, 101.8, 105, 102.5, null, 103.9], volume: [7, 10, 20, 30, 0, 5] }] },
+  }] } };
+  hourReply = () => ({ ok: true, status: 200, body: hours });
+  yahooBody = broken();
+  const r = await chart('NQ=F');
+  check('빈 날을 그 거래일(전날 18:00 ~ 그날 17:00 뉴욕)의 1시간봉으로 채운다 — 시가 첫 봉 · 고저 · 종가 마지막 체결 · 거래량 합',
+    r.ok && same(r.closes, [100, 101, 102.5, 104]) && same([r.opens[2], r.highs[2], r.lows[2], r.volumes[2]], [101.5, 106, 99, 60]),
+    JSON.stringify([r.closes, r.opens[2], r.highs[2], r.lows[2], r.volumes[2]]));
+  check('채운 날의 시각은 야후 일봉 칸 그대로', r.times[2] === at('2026-10-12T04:00:00Z') * 1000);
+  check('1시간봉 5일치를 한 번 묻는다', hourCalls.length === 1 && hourCalls[0].endsWith('/NQ%3DF?range=5d&interval=1h'), hourCalls.join(' '));
+
+  hourCalls.length = 0;
+  yahooBody = daily([['2026-10-08T04:00:00Z', 100, 99.5, 900], ['2026-10-09T04:00:00Z', 101, 100.2, 800], ['2026-10-12T04:00:00Z', 102, 101, 700]]);
+  await chart('NQ=F');
+  check('빈 날이 없으면 묻지 않는다', hourCalls.length === 0);
+  yahooBody = daily([['2026-09-01T04:00:00Z', null, 99, 5], ['2026-10-09T04:00:00Z', 101, 100.2, 800], ['2026-10-12T04:00:00Z', 102, 101, 700]]);
+  const old = await chart('CL=F');
+  check('일주일보다 오래된 빈 날은 묻지 않고 지금처럼 뺀다(1시간봉 5일치에 없다)', hourCalls.length === 0 && same(old.closes, [101, 102]), JSON.stringify(old.closes));
+  yahooBody = broken();
+  const ix = await chart('^IXIC');
+  check('선물(=F)이 아니면 묻지 않는다(빈 날은 지금처럼 뺀다)', hourCalls.length === 0 && same(ix.closes, [100, 101, 104]), JSON.stringify(ix.closes));
+
+  hourReply = () => new Error('timeout');
+  yahooBody = broken();
+  const failed = await chart('GC=F');
+  check('1시간봉을 못 받아도 차트는 나온다(그날만 빠진다)', hourCalls.length === 1 && failed.ok && same(failed.closes, [100, 101, 104]), JSON.stringify(failed.closes));
+  hourReply = null;
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'}: 실패 ${fails}건`);
