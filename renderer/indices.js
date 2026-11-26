@@ -49,46 +49,32 @@ function renderIndices(animate = false) {
     const color = plColor(it.pct);
     const cls = ix.symbol === state.selected ? 'ix on' : 'ix';
     const move = ix.cur === '%' && it.change != null ? fmtBp(it.change) : fmtPct(it.pct); // 금리는 bp
-    return `<span class="${cls}" data-symbol="${ix.symbol}" title="${ix.name}${ix.delayMin ? ` (${ix.delayMin}분 지연)` : ''} 차트 보기">`
+    const trend = ixTrendTip(ix); // 80일선 추세는 툴팁 맨 위(2026-11-26 사용자 요청 — 글자로 붙이지 않는다)
+    return `<span class="${cls}" data-symbol="${ix.symbol}" title="${esc(`${trend ? `${trend}\n\n` : ''}${ix.name}${ix.delayMin ? ` (${ix.delayMin}분 지연)` : ''} 차트 보기`)}">`
       + `<span class="ixn">${esc(ix.name)}</span><span class="ixv">${money(it.value, curOf(ix.symbol))}</span>`
-      + `<span class="ixp" style="color:${color}">${move}</span>${ix.trend ? ixTrend(ix) : ''}</span>`;
+      + `<span class="ixp" style="color:${color}">${move}</span></span>`;
   }).join('')}</div>${dots}`;
 }
 
 // 80일선 추세(2026-11-25 사용자 요청) — 받아 둔 5년 일봉의 확정 봉으로. 그 지수 장이 열려 있거나 모르면(실시간 없음) 마지막
 // 봉은 움직이는 값이라 빼고, 닫힌 것이 확실하면 마지막 봉(그날 종가)까지 쓴다 — 늘 빼면 한국 낮에 미국 지수가 이미 끝난
-// 지난밤 종가를 빼고 그 전날로 판정했다(2026-11-25 실데이터). 일봉이 모자라면 null. 지수 줄은 INDICES 의 trend 인 것만 글자로,
-// 시장 지표 화면은 시세가 있는 줄 모두의 툴팁 맨 위에(marketHtml, 2026-11-26 사용자 요청 — 글자로 붙이니 화면이 빽빽했다).
+// 지난밤 종가를 빼고 그 전날로 판정했다(2026-11-25 실데이터). 지수 줄 칸 · 시장 지표 줄(marketHtml)의 툴팁 맨 위에 둔다 —
+// 처음엔 지수 줄에 '하락 20일째' 글자로 붙였는데 빽빽해 둘 다 호버로 옮겼다(2026-11-26 사용자 요청). 일봉이 모자라면 ''.
 // shortcut: 개장 직후 야후 일봉(20분 늦다)에 오늘 봉이 아직 없으면 어제 봉을 빼 그 몇 분은 하루 앞 판정이다 — 경계에 걸친 날만 바뀐다.
-// { label: '하락 20일째', color(상승 · 하락만), head: 상태 · 값 · 시작일 세 줄, rules: 규칙 · 한계 } 또는 null
-function ixTrendOf(ix) {
+function ixTrendTip(ix) {
   const d = ix && dailyCache[ix.symbol];
   const len = d && (quotes[ix.symbol]?.isTrading === false ? d.closes.length : d.closes.length - 1);
   const t = d && maTrend(d.closes.slice(0, len), INDEX_TREND_MA, INDEX_TREND_LAG);
-  if (!t) return null;
+  if (!t) return '';
   const day = (i) => { const x = new Date(d.times[i]); return `${x.getUTCMonth() + 1}/${x.getUTCDate()}`; };
   const cur = curOf(ix.symbol);
-  const [short, long] = { up: ['상승', '상승 추세'], down: ['하락', '하락 추세'],
-    upTry: ['상승전환', '상승 전환 시도'], downTry: ['하락전환', '하락 전환 시도'] }[t.state];
-  return {
-    label: `${short} ${t.days}일째`,
-    color: t.state === 'up' ? UP : t.state === 'down' ? DOWN : null,
-    head: [
-      `${INDEX_TREND_MA}일선 추세 — ${long}`,
-      `${day(len - 1)} 종가 ${money(t.close, cur)} · ${INDEX_TREND_MA}일선 ${money(t.ma, cur)} (1주 전 ${money(t.maLag, cur)})`,
-      `${day(len - t.days)}부터 ${t.days}일째`,
-    ],
-    rules: [
-      `상승: 종가가 ${INDEX_TREND_MA}일선 위 · 선이 1주 전보다 높음`,
-      `하락: 종가가 ${INDEX_TREND_MA}일선 아래 · 선이 1주 전보다 낮음`,
-      `전환 시도: 종가가 ${INDEX_TREND_MA}일선을 뚫었지만 선은 아직 반대 방향`,
-      '지금 상태일 뿐 다음 방향을 맞히는 신호가 아님',
-    ],
-  };
-}
-function ixTrend(ix) {
-  const r = ixTrendOf(ix);
-  return r ? `<span class="ixt"${r.color ? ` style="color:${r.color}"` : ''} title="${esc([...r.head, '', ...r.rules].join('\n'))}">${r.label}</span>` : '';
+  const state = { up: '상승 추세', down: '하락 추세', upTry: '상승 전환 시도', downTry: '하락 전환 시도' }[t.state];
+  return [
+    `${INDEX_TREND_MA}일선 추세 — ${state} ${t.days}일째 (${day(len - t.days)}부터)`,
+    `${day(len - 1)} 종가 ${money(t.close, cur)} · ${INDEX_TREND_MA}일선 ${money(t.ma, cur)} (1주 전 ${money(t.maLag, cur)})`,
+    `상승: 종가가 ${INDEX_TREND_MA}일선 위 · 선이 1주 전보다 높음 — 하락은 반대, 둘이 엇갈리면 전환 시도`,
+    '지금 상태일 뿐 다음 방향을 맞히는 신호가 아님',
+  ].join('\n');
 }
 
 // FOLIO_MS 마다 다음 장으로. 한 장뿐이거나, 마우스가 올라가 있거나, 보고 있는 지수가 이 줄에 있으면 그대로.

@@ -774,7 +774,7 @@ async function refreshAll() {
     // 지수도 종목과 같은 시세로 만든다 — 누르면 바로 뜨게 둘 다. 네이버 지수를 못 받았으면
     // 실시간 없이 들어가 야후 값(20분지연)이 된다(종목 폴백과 같다).
     for (const ix of INDICES) await loadQuote(ix, indexLive(indexNow.find((n) => n.code === ix.code)));
-    renderIndices(); // 80일선 추세(ixTrend)는 위에서 받은 일봉으로 — 처음 켤 때도 다음 갱신을 기다리지 않게
+    renderIndices(); // 지수 칸 툴팁의 80일선 추세(ixTrendTip)는 위에서 받은 일봉으로 — 처음 켤 때도 다음 갱신을 기다리지 않게
     checkAlerts();
     err(quoteErrText());
     renderDetail();
