@@ -65,9 +65,6 @@ let lastProfile = null; // 지금 차트의 매물대(drawChart 가 보이는 �
 function renderMaLegend() {
   const box = document.getElementById('maLegend');
   const mas = (lastChart && lastChart.mas) || [];
-  // 확대 중에는 추세선을 그리지 않으므로(drawChart) 범례에서도 뺀다. drawChart 가
-  // zoom 을 먼저 정리한 뒤 이 함수를 부르므로 zoom 이 있으면 확대된 화면이다.
-  const trends = (lastChart && !zoom && lastChart.trends) || [];
   const bands = (lastChart && lastChart.bands) || null;
   const vw = (lastChart && lastChart.vwapLine) || null;
   const vp = lastChart ? lastProfile : null;
@@ -75,7 +72,7 @@ function renderMaLegend() {
   const bl = (lastChart && lastChart.benchLine) || null;
   const rs = (lastChart && lastChart.rsi) || null;
   const st = (lastChart && lastChart.stoch) || null;
-  box.hidden = mas.length === 0 && trends.length === 0 && !bands && !vw && !vp && !sr && !bl && !rs && !st;
+  box.hidden = mas.length === 0 && !bands && !vw && !vp && !sr && !bl && !rs && !st;
   box.innerHTML = '';
 
   // 값 칸은 비어 있어도 자리를 잡아둔다. 마우스가 올라올 때마다 폭이 변하면
@@ -105,7 +102,7 @@ function renderMaLegend() {
     add('BB', lo == null || hi == null ? null : `${money(lo, lastChart.cur)}~${money(hi, lastChart.cur)}`,
       cssVar('--bb-line'), `볼린저 밴드 (${BB_PERIOD}일 ± ${BB_K}표준편차)`, true);
   }
-  // VWAP 는 추세선처럼 마우스를 안 올리면 마지막 값(지금 평균가)을 보여 준다
+  // VWAP 는 마우스를 안 올리면 마지막 값(지금 평균가)을 보여 준다
   if (vw) {
     let i = hoverIdx;
     if (i == null) for (i = vw.length - 1; i > 0 && vw[i] == null; i--);
@@ -160,14 +157,6 @@ function renderMaLegend() {
     const from = vp.lo + vp.poc * vp.step;
     add('매물대', `${money(from, lastChart.cur)}~${money(from + vp.step, lastChart.cur)}`,
       cssVar('--vp-poc'), '보이는 구간에서 거래가 가장 많았던 가격대');
-  }
-  // 추세선은 마우스를 안 올렸을 때 마지막 봉(오늘) 값을 보여준다.
-  // 이동평균과 달리 개수가 둘로 고정이라 늘 떠 있어도 줄이 넘치지 않는다.
-  for (const t of trends) {
-    const sup = t.varName === '--sup-line';
-    const i = hoverIdx == null ? t.data.length - 1 : hoverIdx;
-    add(sup ? '지지' : '저항', t.data[i], cssVar(t.varName),
-      sup ? '저점을 잇는 지지선' : '고점을 잇는 저항선', true);
   }
 }
 
@@ -313,61 +302,15 @@ function renderCrossBadge(crosses, times) {
     + `${MA_CROSS_EVIDENCE[last.pair] ? `\n\n${MA_CROSS_EVIDENCE[last.pair]}` : ''}`;
 }
 
-// 추세선 배지 둘 — 돌파와 수렴.
-//
-// 돌파가 있으면 수렴은 표시하지 않는다. 한쪽이 이미 끝난 선인데 두 선이 만나는
-// 시점을 말하면 틀린 정보가 되고, 폭 340px 에 배지가 셋 이상 들어가면 줄이 접힌다.
-//
-// 수렴은 삼각수렴까지 남은 거래일이다. 벌어지는 중이면 교차점이 과거로 나오는데,
-// 그건 "이미 지났다"가 아니라 값 자체가 의미 없는 경우라 표시하지 않는다.
-function renderTrendBadges(trends, len, times = []) {
-  const brk = document.getElementById('breakout');
-  const el = document.getElementById('converge');
-  brk.hidden = true;
-  el.hidden = true;
-
-  // 양쪽이 다 뚫렸으면 더 크게 벗어난 쪽만 보여준다(배지 하나로 고정).
-  const hit = trends.filter((t) => t.broke).sort((a, b) => b.broke.pct - a.broke.pct)[0];
-  if (hit) {
-    const isSup = hit.varName === '--sup-line';
-    // 크로스 배지와 같은 방식으로 실제 달력 일수를 쓴다.
-    const days = daysAgo(times[hit.broke.at]);
-    brk.hidden = false;
-    brk.classList.toggle('sup', isSup);
-    brk.textContent = `${isSup ? '지지 이탈' : '저항 돌파'} ${fmtPct(hit.broke.pct * 100)}`
-      + ` · ${days}일 전`; // 크로스 배지와 같이 확정 봉만 보므로 "오늘"은 없다
-    // 툴팁에 뜻과 그 기간(3M · 1Y) 추세선의 과거 검증(TREND_EVIDENCE, 2026-11-03) — 색은 방향일 뿐 매매 신호가 아니었다
-    const ev = TREND_EVIDENCE[state.timeframe];
-    brk.title = `${isSup ? '지지선 아래로 뚫었다' : '저항선 위로 뚫었다'} — 지금 그 선에서 ${fmtPct(hit.broke.pct * 100)}${ev ? `\n\n${ev}` : ''}`;
-    return;
-  }
-
-  const sup = trends.find((t) => t.varName === '--sup-line');
-  const res = trends.find((t) => t.varName === '--res-line');
-  if (!sup || !res) return;
-
-  const at = meetAt(sup, res);
-  if (at == null) return;
-  // 교차점은 소수로 나온다. 올림이라 "n거래일"은 "마지막 봉에서 n 번째 봉 안에 만난다".
-  // 반올림하면 0.6(거의 붙음)과 1.4(다음 봉에도 안 만남)가 똑같이 1 이 된다.
-  const bars = Math.ceil(at - (len - 1));
-  if (bars <= 0 || bars > 250) return; // 1년 밖은 사실상 평행선이다
-
-  // 봉은 거래일이다. 달력으로는 대략 7/5 배 — 공휴일은 반영하지 못한다.
-  const weeks = Math.round((bars * 7) / 5 / 7);
-  el.hidden = false;
-  el.textContent = `수렴 ${bars}거래일${weeks >= 2 ? ` · 약 ${weeks}주` : ''}`;
-}
-
 // 캔들. 몸통은 시가~종가, 꼬리는 저가~고가. 색은 시가 대비다 — 전일 종가 대비인
 // 헤더 등락률과 다를 수 있고, 그 차이가 캔들을 보는 이유다.
 //
-// beforeDatasetsDraw 라 이동평균선·추세선 **아래**에 깔린다. crossMarkPlugin 이
+// beforeDatasetsDraw 라 이동평균선 **아래**에 깔린다. crossMarkPlugin 이
 // afterDatasetsDraw(위)인 것과 반대다 — 표식은 덮어야 보이고 캔들은 덮으면 선을
 // 가린다.
 //
 // y축 범위는 투명하게 남겨 둔 고가~저가 밴드 데이터셋이 잡아 준다. 캔버스에만
-// 그리면 꼬리 끝이 축 밖으로 나가 말없이 잘린다(추세선 주석의 그 문제다).
+// 그리면 꼬리 끝이 축 밖으로 나가 말없이 잘린다.
 // 그리는 자리: 거래량 막대(order 4 — 맨 먼저 그린다) 바로 위, 이동평균 · 보조 지표 선 아래. 막대 아래에 깔았더니 평균의
 // 2배를 넘어 진하게 칠한 막대가 같은 색 1px 꼬리를 덮어, 막대 칸까지 내려간 아래 꼬리가 안 보였다(2026-11-09 SK하이닉스
 // 11/06 저가 108만). 거래량 막대가 없는 차트는 맨 아래.
@@ -579,7 +522,6 @@ function clearChart() {
   hoverIdx = null;
   renderMaLegend();
   renderCrossBadge([], []);
-  renderTrendBadges([], 0);
   document.getElementById('chartMode').hidden = true; // 차트가 없으면 전환할 것도 없다
   document.getElementById('plainChart').hidden = true;
   document.getElementById('extHours').hidden = true;
@@ -592,7 +534,7 @@ function drawChart(arg) {
   lastChart = arg;
   const {
     closes, times, up, mas = [], cur = 'KRW',
-    volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], trends = [], ext = null,
+    volumes = [], opens = [], highs = [], lows = [], hLines = [], crosses = [], ext = null,
     bands = null, vwapLine = null, volAvg = null, profile = false, sar = null, rsi = null, benchLine = null, tipBases = null,
     candleBars = null, stoch = null,
   } = arg;
@@ -669,14 +611,14 @@ function drawChart(arg) {
   // RSI 칸을 둘 때 가격 칸의 stack 비중(RSI 칸은 RSI_PANE, 크게 보기면 RSI_TALL). 그림 높이는 캔버스에서 아래 날짜 줄 · 위
   // 여백(약 22px)을 뺀 만큼이라 RSI 칸이 약 그 px 가 된다. 축 옵션은 다시 배치할 때마다 새로 읽혀 창 높이를 바꿔도 칸 높이가 그대로다.
   const rsiPx = rsiTall ? RSI_TALL : RSI_PANE;
-  // 가격 축 범위 — 보이는 봉(확대 구간)의 고 · 저 · 종가와 추세선만으로 정한다(y 의 afterDataLimits). 볼린저 · 지수 비교선 · SAR ·
+  // 가격 축 범위 — 보이는 봉(확대 구간)의 고 · 저 · 종가만으로 정한다(y 의 afterDataLimits). 볼린저 · 지수 비교선 · SAR ·
   // 이동평균 · VWAP 까지 넣으면 범위가 넓어지고, Chart.js 가 눈금(최대 4개)을 1 · 2 · 5 단위로 맞추며 축 끝을 또 넓혀(5만 간격 →
   // 100,000~200,000) 같은 차트가 덧그림을 켜면 3배 넘게 납작했다(2026-11-04 KB금융 1M, 사용자 결정). 범위 밖 덧그림은 축 칸에서
-  // 잘리고 값은 범례에 있다. 추세선은 끝이 말없이 잘리지 않게 넣는다(아래 데이터셋 주석).
+  // 잘리고 값은 범례에 있다.
   let yLo = Infinity;
   let yHi = -Infinity;
   for (let i = zr ? zr.from : 0; i <= (zr ? zr.to : closes.length - 1); i++) {
-    for (const v of [cb.lows[i], cb.highs[i], cb.closes[i], closes[i], ...(zr ? [] : trends).map((t) => t.data[i])]) {
+    for (const v of [cb.lows[i], cb.highs[i], cb.closes[i], closes[i]]) {
       if (v != null && Number.isFinite(v)) { yLo = Math.min(yLo, v); yHi = Math.max(yHi, v); }
     }
   }
@@ -694,8 +636,8 @@ function drawChart(arg) {
         data: closes,
         yAxisID: 'y',
         // Chart.js 는 order 가 큰 것부터 그린다(4.5.1: 오름차순 정렬 후 뒤에서부터) — 아래부터
-        // 거래량 막대(4) · 캔들(candlePlugin) · 이동평균(3) · 주가선(2) · 고저 밴드(1) · 거래량 평균선(0) · RSI(-0.5) ·
-        // 추세선(-1). 밴드는 옅어서 주가선을 가리지 않는다.
+        // 거래량 막대(4) · 캔들(candlePlugin) · 이동평균(3) · 주가선(2) · 고저 밴드(1) · 거래량 평균선(0) · RSI(-0.5).
+        // 밴드는 옅어서 주가선을 가리지 않는다.
         order: 2,
         borderColor: candles ? 'transparent' : color,
         borderWidth: 2,
@@ -800,22 +742,6 @@ function drawChart(arg) {
         borderWidth: maWidth(m.p),
         tension: 0.2,
       })),
-      // 지지·저항 추세선 (3M · 1Y 에서만 전달된다).
-      // 점선 1.6px — 이동평균과 헷갈리지 않게 하고, 선이 하나 더 늘어도 눌리지 않게 한다.
-      // 맨 위에 그린다(order -1). 아래에 깔면 1Y 라인 모드의 주가 채움에 물들고, 같은 주황
-      // 계열인 5일선이 저항선을 덮는다.
-      // 가격 축 범위(yLo ~ yHi)에 넣는다 — 덧그림 중 추세선만. 캔버스에 직접 그리면
-      // 기울어진 선의 양 끝이 축 밖으로 나가 말없이 잘린다(시간외 선에서 겪음).
-      // 확대 중에는 숨긴다. "지금"을 말하는 선(최근 5봉을 빼고 만들어 오늘 값 · 돌파를
-      // 계산)이고, 과거 구간 가격에서 먼 선이 y축을 다시 벌려 확대 효과를 깎는다.
-      ...(zr ? [] : trends).map((t) => ({
-        data: t.data,
-        yAxisID: 'y',
-        order: -1,
-        borderColor: cssVar(t.varName),
-        borderWidth: 1.6,
-        borderDash: [5, 3],
-      })),
       // 거래량. label 이 빈 문자열이라 툴팁 본문에는 줄이 생기지 않고,
       // 값은 beforeBody 에서 주가 밑에 따로 붙인다.
       ...(maxVol > 0 ? [{
@@ -844,7 +770,7 @@ function drawChart(arg) {
       }] : []),
       // RSI · 시그널(보조 지표) — 가격 칸 아래 따로 둔 칸(축 yRsi, RSI_PANE)에 그린다. RSI 는 옅은 실선, 시그널은 점선,
       // 30 · 70 은 아주 옅은 점선(paneLines). 시그널을 뚫은
-      // 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 평균선(0) 위 · 추세선(-1) 아래에 그린다. 그 봉의 값은
+      // 봉(확정된 교차)에 작은 점 — 위로 빨강 · 아래로 파랑. 거래량 평균선(0) 위에 그린다. 그 봉의 값은
       // 툴팁 footer, 지금 상태는 renderMaLegend 가 맡아 마우스 대상에서 뺀다.
       ...(rsi ? [...paneLines([30, 70], rsi.data, rsi.signal, '--rsi-line'), {
         data: closes.map((_, i) => (rsiDot.has(i) ? rsi.data[i] : null)),
@@ -880,7 +806,7 @@ function drawChart(arg) {
       plugins: {
         // 범례는 띄우지 않는다. 이동평균을 여러 개 켜면 두 줄로 늘어나
         // 150px 짜리 차트에서 35px 가까이 잡아먹는다.
-        // 이동평균과 추세선은 차트 위 범례(renderMaLegend)가 색과 값으로 알려준다.
+        // 이동평균은 차트 위 범례(renderMaLegend)가 색과 값으로 알려준다.
         legend: { display: false },
         hLine: { lines: hLines, cur },
         crossMark: { list: crosses },

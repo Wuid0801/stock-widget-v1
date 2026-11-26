@@ -533,7 +533,7 @@ async function loadChart() {
   }
   const seq = ++chartSeq;
   const tf = chartTf(state.timeframe);
-  // 차트만 보기(차트 위 버튼): 이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지를 그리지 않는다.
+  // 차트만 보기(차트 위 버튼): 이동평균 · 보조 지표 · 교차 · 가로선 · 기간 배지를 그리지 않는다.
   // 칩 설정은 그대로 두고 그리기만 건너뛰어, 다시 누르면 원래대로 돌아온다. 가격과 거래량 막대는 남는다.
   const plain = state.plainChart === true;
   // 지수 대비 수익률(보조 지표)은 같은 기간의 지수 차트가 필요하다 — 종목 차트와 함께 받는다(같은 캐시).
@@ -680,19 +680,6 @@ async function loadChart() {
     ? await venueCandles(item.symbol, times, opens, highs, lows, closes, q) : null;
   if (seq !== chartSeq) return;
 
-  // 추세선은 3M · 1Y 에서만. 검사를 통과 못 한 쪽은 빠지므로
-  // 지지선만, 저항선만, 또는 둘 다 없는 상태가 정상이다.
-  const trends = [];
-  if (!plain && TREND_TF.has(state.timeframe)) {
-    const len = closes.length;
-    const sup = trendLine(lows, len, true);
-    const res = trendLine(highs, len, false);
-    // 선을 만들 때 빼둔 최근 봉이 그 선을 뚫었는지 같이 담는다.
-    if (sup) trends.push({ ...sup, varName: '--sup-line', broke: breakoutOf(sup, lows, len, true) });
-    if (res) trends.push({ ...res, varName: '--res-line', broke: breakoutOf(res, highs, len, false) });
-  }
-  renderTrendBadges(trends, closes.length, times);
-
   // 보조 지표(설정의 칩). 볼린저 밴드는 이동평균처럼 일봉 기간에만, VWAP 는 1D 정규장 봉만 —
   // 시간외 거래량은 기준이 달라(미국 프리 0, 국내는 NXT) 섞으면 평균가의 뜻이 흐려진다.
   const ind = plain ? {} : state.indicators || {};
@@ -745,7 +732,7 @@ async function loadChart() {
 
   const chart = {
     closes, times, up, mas, cur: curOf(item.symbol),
-    volumes, opens, highs, lows, crosses, hLines, trends, ext, bands, vwapLine, volAvg, sar, rsi, stoch, benchLine: bline, tipBases: tips,
+    volumes, opens, highs, lows, crosses, hLines, ext, bands, vwapLine, volAvg, sar, rsi, stoch, benchLine: bline, tipBases: tips,
     profile: !!ind.vp && daily, // 매물대 — 보이는 구간(확대 포함)으로 drawChart 가 계산한다
     candleBars, // 캔들의 시 · 고 · 저 · 종(통합 / KRX) — 국내 일봉 캔들 모드만, 없으면 위 값으로 그린다
   };

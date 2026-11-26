@@ -1,5 +1,5 @@
 // 끌어서 확대 회귀 가드 — 앱을 띄우지 않고 indicators.js 의 구간 계산을 검증한다
-// (candle.mjs · trend.mjs 와 같은 방식).
+// (candle.mjs 와 같은 방식).
 //
 // 두 가지를 고정한다.
 //

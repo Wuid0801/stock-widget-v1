@@ -276,7 +276,7 @@ await test('1D appends only active regular; pre/after lines retain price origin 
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
     renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run('let lastDrawSig = null;');
@@ -325,7 +325,7 @@ await test('1D from Naver real-time bars: no end point is added; while trading t
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
     renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run('let lastDrawSig = null;');
@@ -359,7 +359,7 @@ await test('1D ends at the verified close until Yahoo\'s close bar arrives; neve
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
     renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run('let lastDrawSig = null;');
@@ -526,7 +526,7 @@ await test('1D US chart: no end point from the live quote; the over-market line 
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
     renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'USD',
+    curOf: () => 'USD',
     drawChart: (data) => draws.push(data),
   });
   run("let lastDrawSig = null; state.watchlist.push({symbol:'SOXL', name:'SOXL'}); state.selected = 'SOXL';");
@@ -556,7 +556,7 @@ await test('1D with extended bars: the regular end point sits before the after b
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
     renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run('let lastDrawSig = null;');
@@ -657,7 +657,7 @@ await test('indicators: loadChart passes only the enabled overlays — bands and
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
     renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run('let lastDrawSig = null;');
@@ -887,7 +887,7 @@ await test('indicators: loadChart passes SAR on 1D, 1W and the daily periods onl
   let bars;
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
-    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    renderMaChips: () => {}, renderCrossBadge: () => {}, curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run("let lastDrawSig = null; quotes['005930.KS'] = { price: 104, prevClose: 100, change: 4 };");
@@ -920,7 +920,7 @@ await test('loadChart redraws when only a quote-derived overlay changes (first c
     highs: Array.from({ length: n }, (_, i) => 101 + (i % 4)), lows: Array.from({ length: n }, (_, i) => 99 + (i % 4)) };
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
-    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    renderMaChips: () => {}, renderCrossBadge: () => {}, curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run("let lastDrawSig = null; delete quotes['005930.KS']; state.timeframe = '1M'; state.indicators = cleanIndicators({ bb: true });");
@@ -1107,7 +1107,7 @@ await test('indicators: loadChart passes RSI on 1D, 1W and the daily periods onl
   let bars;
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
-    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    renderMaChips: () => {}, renderCrossBadge: () => {}, curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
     rsiWarmFor: async (symbol, first) => { warms.push([symbol, first]); return { closes: Array.from({ length: 30 }, (_, i) => 100 + (i % 7)) }; },
   });
@@ -1144,7 +1144,7 @@ await test('indicators: loadChart passes the stochastic in the RSI pane spot, wa
   const W = Array.from({ length: 30 }, (_, i) => 100 + (i % 7));
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '', renderPeriod: () => {},
-    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW',
+    renderMaChips: () => {}, renderCrossBadge: () => {}, curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
     rsiWarmFor: async (symbol, first) => { warms.push(first); return { closes: W, highs: W.map((v) => v + 2), lows: W.map((v) => v - 2) }; },
   });
@@ -1269,7 +1269,7 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   assert.ok(Math.abs(-tvmin / (tall.yVol.max - tvmin) - run('RSI_TALL') / (pw + run('RSI_TALL'))) < 1e-9, '거래량 0 = 가격 칸 바닥');
   run('rsiTall = false;');
   const on = cfg.data.datasets.filter((d) => d.yAxisID === 'yRsi');
-  assert.ok(on.every((d) => d.order < 0 && d.order > -1), '거래량 막대(0) 위 · 추세선(-1) 아래');
+  assert.ok(on.every((d) => d.order < 0 && d.order > -1), '거래량 평균선(0) 위');
   assert.ok(on.every((d) => !d.pointHitRadius), '마우스 대상은 주가선 하나다');
   const line = on.find((d) => JSON.stringify(d.data) === '[null,40,55,60]' && d.showLine !== false);
   assert.equal(line.borderColor, 'a0.7', 'RSI 는 옅은 실선');
@@ -1308,9 +1308,9 @@ await test('indicators: drawChart puts RSI and its signal in their own pane unde
   assert.equal(configs.at(-1).options.scales.yVol.min, undefined, '거래량도 예전처럼 그림 바닥부터');
 });
 
-// 가격 축은 보이는 봉의 고 · 저 · 종가와 추세선에만 맞춘다 — 볼린저 · 지수 비교선 · 이동평균까지 넣으면 범위가 넓어지고 눈금 반올림
+// 가격 축은 보이는 봉의 고 · 저 · 종가에만 맞춘다 — 볼린저 · 지수 비교선 · 이동평균까지 넣으면 범위가 넓어지고 눈금 반올림
 // (최대 4개, 1 · 2 · 5 단위)으로 또 넓어져 같은 차트가 덧그림을 켜면 3배 넘게 납작했다(2026-11-04 KB금융 1M).
-await test('chart: the price axis fits the visible prices and trendlines only, so overlays do not flatten the line', () => {
+await test('chart: the price axis fits the visible prices only, so overlays do not flatten the line', () => {
   const { c, run } = harness(['drawChart', 'labelFor']);
   run(formatting);
   const configs = [];
@@ -1330,9 +1330,6 @@ await test('chart: the price axis fits the visible prices and trendlines only, s
   // 그래야 Chart.js 가 1 · 2 · 5 단위로 넓혀 눈금을 2개 넘게 단다
   const fit = () => { const y = configs.at(-1).options.scales.y; const s = { min: 120, max: 190 }; y.afterDataLimits(s); return [y.min, y.max, s.min, s.max]; };
   assert.deepEqual(fit(), [undefined, undefined, 148, 162], '저가 148 ~ 고가 162');
-  // 추세선은 넣는다 — 끝이 말없이 잘리지 않게
-  run("arg_ = { ...arg_, trends: [{ data: [null, null, 165, 170], varName: '--res-line' }] }; drawChart(arg_);");
-  assert.deepEqual(fit(), [undefined, undefined, 148, 170], '추세선 끝 170 까지');
 });
 
 await test('indicators: the RSI pane fits the visible bars when zoomed, like the price axis', () => {
@@ -1448,7 +1445,7 @@ await test('indicators: loadChart fetches the matching index with the chart — 
   Object.assign(c, {
     fetchChartCached: async (s) => { asked.push(s); return charts[s] || series([100, 110]); },
     err: () => {}, quoteErrText: () => '', renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW', drawChart: () => {},
+    curOf: () => 'KRW', drawChart: () => {},
     renderPeriod: (first, last, rel) => periods.push({ first, last, rel }),
   });
   run("let lastDrawSig = null; state.watchlist = [{ symbol: '005930.KS', name: 'a' }, { symbol: '247540.KQ', name: 'b' }, { symbol: 'SOXL', name: 'c' }];");
@@ -2154,7 +2151,7 @@ await test('settings: a hint says plain chart is on; opening also redraws the in
   assert.ok(run('sortBefore') === null && notes.at(-1) === '', '열 때 지난 정렬 안내 · 되돌리기를 비운다(그 사이 종목이 바뀔 수 있다)');
 });
 
-// 차트만 보기: 버튼 하나로 덧그림(이동평균 · 보조 지표 · 추세선 · 교차 · 가로선 · 기간 배지)을 다 끈다.
+// 차트만 보기: 버튼 하나로 덧그림(이동평균 · 보조 지표 · 교차 · 가로선 · 기간 배지)을 다 끈다.
 // 칩 설정은 그대로라 다시 누르면 돌아온다. 가격과 거래량 막대는 남는다.
 await test('plain chart: one switch hides every overlay and keeps price and volume; switching back restores them', async () => {
   const { c, run, elements } = harness(['loadChart', 'alignByDay', 'bandFor', 'dailyVolAvg', 'seriesVolAvg', 'prevDayRange', 'maFor', 'rsiFor']);
@@ -2167,8 +2164,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
     fetchChartCached: async (s) => { asked.push(s); return s === '005930.KS' ? bars : { ok: false, error: 'x' }; },
     err: () => {}, quoteErrText: () => '', renderMaChips: () => {}, curOf: () => 'KRW',
     renderPeriod: (...a) => periods.push(a),
-    renderCrossBadge: (x) => badges.push(`cross ${x.length}`), renderTrendBadges: (x) => badges.push(`trend ${x.length}`),
-    trendLine: () => ({ from: 0, to: 1 }), breakoutOf: () => false, // 추세선이 늘 하나씩 나오게
+    renderCrossBadge: (x) => badges.push(`cross ${x.length}`),
     drawChart: (data) => draws.push(data), rsiWarmFor: async () => null,
   });
   const day = 86400000;
@@ -2197,7 +2193,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   };
 
   let d = await show('3M', false, daily);
-  assert.ok(d.mas.length && d.bands && d.volAvg && d.profile && d.rsi && d.trends.length && d.hLines.length, '켜 둔 덧그림이 다 있다');
+  assert.ok(d.mas.length && d.bands && d.volAvg && d.profile && d.rsi && d.hLines.length, '켜 둔 덧그림이 다 있다');
   assert.deepEqual([...asked], ['005930.KS', '^KS11']);
   const drawn = draws.length;
   const shownPeriods = periods.length;
@@ -2205,7 +2201,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
 
   d = await show('3M', true, daily);
   assert.equal(draws.length, drawn + 1, '켜기만 해도 다시 그린다');
-  assert.deepEqual([d.mas.length, d.trends.length, d.crosses.length, d.hLines.length], [0, 0, 0, 0]);
+  assert.deepEqual([d.mas.length, d.crosses.length, d.hLines.length], [0, 0, 0]);
   assert.equal(d.bands, null);
   assert.equal(d.volAvg, null);
   assert.equal(d.vwapLine, null);
@@ -2216,7 +2212,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   assert.deepEqual([...asked], ['005930.KS'], '지수 대비를 안 보이므로 지수 차트도 받지 않는다');
   assert.equal(elements.get('period').hidden, true, '기간 · 지수 대비 배지도 숨긴다');
   assert.equal(periods.length, shownPeriods);
-  assert.deepEqual(badges.slice(-2), ['cross 0', 'trend 0'], '교차 · 추세 배지도 비운다');
+  assert.deepEqual(badges.slice(-1), ['cross 0'], '교차 배지도 비운다');
   assert.equal(JSON.stringify(run('state.indicators')),
     '{"bb":true,"vwap":true,"volAvg":true,"prevHL":true,"vp":true,"rel":true,"sar":false,"rsi":true,"stoch":false}', '칩 설정은 지우지 않는다');
   assert.equal(JSON.stringify(run('state.maPeriods')), '[5]');
@@ -2229,14 +2225,7 @@ await test('plain chart: one switch hides every overlay and keeps price and volu
   assert.deepEqual([...d.hLines.map((l) => l.label)], ['평단', '전일', '전고', '전저'], '다시 누르면 돌아온다');
   assert.ok(d.vwapLine && d.volAvg);
   d = await show('3M', false, daily);
-  assert.ok(d.mas.length && d.bands && d.trends.length, '일봉 덧그림도 돌아온다');
-
-  // 추세선만 있는 화면(이동평균 · 지표 · 평단 없음) — 다른 값이 그대로여도 다시 그려 추세선을 지운다
-  run('state.maPeriods = []; state.indicators = cleanIndicators({}); state.holdings = {};');
-  d = await show('3M', false, daily);
-  assert.equal(d.trends.length, 2, '지지선 · 저항선');
-  d = await show('3M', true, daily);
-  assert.equal(d.trends.length, 0, '추세선만 있던 화면도 다시 그린다');
+  assert.ok(d.mas.length && d.bands, '일봉 덧그림도 돌아온다');
 });
 
 await test('plain chart: the switch beside the candle/line icon shows its state and hides with the chart', () => {
@@ -2421,7 +2410,7 @@ await test('ext hours: switching redraws even when both views return the same ba
   const same = { ok: true, closes: [6700, 6620], times: [t0, t0 + 300000], volumes: [1, 1], opens: [6700, 6620], highs: [6700, 6620], lows: [6700, 6620] };
   Object.assign(c, {
     fetchChartCached: async () => same, err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {},
-    renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+    renderCrossBadge: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
   });
   run("let lastDrawSig = null; state.timeframe = '1W'; state.indicators = cleanIndicators({}); state.extHours = true;");
   await c.loadChart();
@@ -2457,7 +2446,7 @@ await test('ext hours: the period badge starts at the first regular bar, so 정�
       opens: [90, 100, 110], highs: [90, 100, 110], lows: [90, 100, 110], ext: ['pre', null, null] }),
     benchReturn: (_b, _g, since) => { periods.push(['since', since]); return null; },
     err: () => {}, quoteErrText: () => '', renderPeriod: (...a) => periods.push(a), renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: () => {},
+    curOf: () => 'KRW', drawChart: () => {},
   });
   run(`let lastDrawSig = null; state.timeframe = '1W'; state.indicators = cleanIndicators({});
     quotes['005930.KS'] = { price: 120, prevClose: 110, change: 10 };`);
@@ -2480,7 +2469,7 @@ await test('slow network: a failed refresh of the same chart keeps it with the e
     volumes: closes.map(() => 1), opens: closes, highs: closes, lows: closes });
   Object.assign(c, {
     fetchChartCached: async () => reply, err: (m) => errs.push(m), quoteErrText: () => '', renderPeriod: () => {},
-    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: () => {},
+    renderMaChips: () => {}, renderCrossBadge: () => {}, curOf: () => 'KRW', drawChart: () => {},
     clearChart: () => { cleared++; run('drawnKey = null;'); }, intradayWaitText: () => 'WAIT',
   });
   run("let lastDrawSig = null; state.timeframe = '1M';");
@@ -2515,7 +2504,7 @@ await test('slow network: switching symbol or period clears the old chart and sh
   Object.assign(c, {
     fetchChartCached: () => new Promise((resolve) => { pending = resolve; }),
     err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+    curOf: () => 'KRW', drawChart: (d) => draws.push(d),
     clearChart: () => { cleared++; },
   });
   run("let lastDrawSig = null; state.timeframe = '1M';");
@@ -2601,7 +2590,7 @@ await test('indicators: loadChart passes the comparison line with the index char
   Object.assign(c, {
     fetchChartCached: async (s) => (s === '^KS11' ? series([2000, 2100]) : series([100, 110])),
     err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+    curOf: () => 'KRW', drawChart: (d) => draws.push(d),
   });
   run("let lastDrawSig = null; state.timeframe = '1M'; state.indicators = cleanIndicators({ rel: true }); quotes['005930.KS'] = { price: 110, prevClose: 100, change: 10 };");
   await c.loadChart();
@@ -2630,7 +2619,7 @@ await test('indicators: the index comparison is off on 1W — 30-minute bars can
   Object.assign(c, {
     fetchChartCached: async (s) => { asked.push(s); return series; },
     err: () => {}, quoteErrText: () => '', renderPeriod: (...a) => periods.push(a), renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+    curOf: () => 'KRW', drawChart: (d) => draws.push(d),
   });
   run(`let lastDrawSig = null; state.timeframe = '1W'; state.indicators = cleanIndicators({ rel: true });
     quotes['005930.KS'] = { price: 110, prevClose: 100, change: 10 };`);
@@ -2742,7 +2731,7 @@ await test('tooltip: loadChart hands drawChart the base for every bar', async ()
     fetchChartCached: async () => ({ ok: true, closes: [100, 110], times: [day('2026-09-01'), day('2026-09-02')],
       volumes: [1, 1], opens: [100, 110], highs: [100, 110], lows: [100, 110] }),
     err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, curOf: () => 'KRW', drawChart: (d) => draws.push(d),
+    curOf: () => 'KRW', drawChart: (d) => draws.push(d),
   });
   run(`let lastDrawSig = null; state.timeframe = '1M'; state.indicators = cleanIndicators({});
     quotes['005930.KS'] = { price: 110, prevClose: 100, change: 10, daily: { times: [${day('2026-08-31')}], closes: [98] } };`);
@@ -3052,7 +3041,7 @@ await test('daily chart syncs the last bar to the live candle, older bars untouc
   Object.assign(c, {
     fetchChartCached: async () => bars, err: () => {}, quoteErrText: () => '',
     renderPeriod: () => {}, renderMaChips: () => {}, renderCrossBadge: () => {},
-    renderTrendBadges: () => {}, TREND_TF: new Set(), curOf: () => 'KRW',
+    curOf: () => 'KRW',
     drawChart: (data) => draws.push(data),
   });
   run('let lastDrawSig = null;');
@@ -4302,7 +4291,7 @@ await test('loadChart draws the selected index from its Yahoo symbol in points',
       return { ok: true, closes: [6900, 7000], times: [1, 2], volumes: [1, 2], highs: [6950, 7010], lows: [6890, 6990] };
     },
     err: () => {}, quoteErrText: () => '', renderPeriod: () => {}, renderMaChips: () => {},
-    renderCrossBadge: () => {}, renderTrendBadges: () => {}, TREND_TF: new Set(),
+    renderCrossBadge: () => {},
     drawChart: (data) => draws.push(data),
   });
   run(`let lastDrawSig = null; state.selected = '^KS11';
@@ -4357,8 +4346,8 @@ await test('indexLive rejects a non-positive value or previous close, like the s
 });
 
 // Chart.js 는 order 가 큰 데이터셋부터 그린다(4.5.1: _sortedMetasets 를 order 오름차순으로
-// 정렬한 뒤 뒤에서부터 _drawDataset). 추세선이 맨 위에 오려면 다른 어떤 것보다 order 가 작아야 한다.
-await test('drawChart draws trend lines on top of every other dataset, and drops them while zoomed', () => {
+// 정렬한 뒤 뒤에서부터 _drawDataset). 거래량 막대가 맨 먼저(맨 아래)여야 캔들이 그 바로 위에 온다.
+await test('drawChart draws the volume bars first, under every other dataset', () => {
   const { c, run } = harness(['drawChart', 'labelFor']);
   run(formatting);
   const configs = [];
@@ -4373,25 +4362,13 @@ await test('drawChart draws trend lines on top of every other dataset, and drops
   run(`state.timeframe = '3M'; state.maPeriods = [5];
     var T_ = Array.from({ length: 30 }, (_, i) => ${t0} + i * ${day});
     var C_ = Array.from({ length: 30 }, (_, i) => 100 + i);
-    var trend_ = { data: C_.map((v) => v + 5), slope: 1, from: 0, to: 20, varName: '--res-line', broke: null };
     var arg_ = { closes: C_, times: T_, up: true, volumes: C_.map(() => 10), highs: C_, lows: C_,
-      mas: [{ p: 5, data: C_ }], trends: [trend_] };`);
+      mas: [{ p: 5, data: C_ }] };`);
   run('drawChart(arg_);');
-  let cfg = configs.at(-1);
-  const sets = cfg.data.datasets;
-  const trendSet = sets.find((d) => Array.isArray(d.borderDash));
-  const others = sets.filter((d) => d !== trendSet);
-  assert.ok(trendSet, 'trend dataset is drawn');
-  assert.ok(others.length >= 4, 'price, high/low band, MA and volume are there to compare against');
-  assert.ok(others.every((d) => trendSet.order < d.order),
-    `trend order ${trendSet.order} must be below ${others.map((d) => d.order).join(',')}`);
+  const sets = configs.at(-1).data.datasets;
+  assert.ok(sets.length >= 4, 'price, high/low band, MA and volume are there to compare against');
   const volSet = sets.find((d) => d.isVolume);
   assert.ok(sets.every((d) => d === volSet || d.order < volSet.order), '거래량 막대를 맨 먼저 그린다 — 캔들이 그 바로 위');
-
-  // 확대 중에는 추세선이 숨는다
-  run('zoom = { start: T_[5], end: T_[25] }; drawChart(arg_);');
-  cfg = configs.at(-1);
-  assert.equal(cfg.data.datasets.some((d) => Array.isArray(d.borderDash)), false);
 });
 
 // 야후에는 3년 구간(range=3y)이 없다. 3Y 는 5년치 일봉을 받아 마지막 봉에서 달력 3년
@@ -4406,7 +4383,7 @@ await test('3Y fetches five years of daily bars and draws only the last three ca
   Object.assign(c, {
     fetchChartCached: async (symbol, tf) => { asked.push(`${tf.range}/${tf.interval}`); return bars; },
     err: () => {}, quoteErrText: () => '', renderPeriod: (from, to) => periods.push([from, to]),
-    renderMaChips: () => {}, renderCrossBadge: () => {}, renderTrendBadges: () => {},
+    renderMaChips: () => {}, renderCrossBadge: () => {},
     curOf: () => 'KRW', drawChart: (data) => draws.push(data),
   });
   run(`let lastDrawSig = null; state.timeframe = '3Y';
@@ -4462,7 +4439,7 @@ await test('전체 asks Yahoo for the whole history and draws it without daily m
   Object.assign(c, {
     fetchChartCached: async (symbol, tf) => { asked.push(`${tf.range}/${tf.interval}`); return bars; },
     err: () => {}, quoteErrText: () => '', renderPeriod: (from, to) => periods.push([from, to]),
-    renderMaChips: () => chips.push(run('chartBars')), renderCrossBadge: () => {}, renderTrendBadges: () => {},
+    renderMaChips: () => chips.push(run('chartBars')), renderCrossBadge: () => {},
     curOf: () => 'KRW', drawChart: (data) => draws.push(data),
     maFor: () => { throw new Error('일 단위 이동평균을 월봉에 그리면 안 된다'); },
   });
@@ -4476,7 +4453,6 @@ await test('전체 asks Yahoo for the whole history and draws it without daily m
   // vm 안에서 만든 배열이라 펼쳐서 비교한다(프로토타입이 달라 [] 끼리도 deepEqual 이 실패한다)
   assert.deepEqual([...d.mas], [], '이동평균선 없음');
   assert.deepEqual([...d.crosses], [], '골든/데드 없음');
-  assert.deepEqual([...d.trends], [], '추세선 없음');
   assert.deepEqual(d.highs, [6100, 31000, 240000], '마지막 봉을 오늘 캔들로 덮지 않는다(일봉만)');
   assert.equal(run('chartBars'), 0, '이평선 칩은 1D · 1W 처럼 흐려진다');
   assert.deepEqual(chips, [0]);
@@ -4753,7 +4729,7 @@ await test('removing the last stock while its chart is loading leaves no chart b
       release = () => r({ ok: true, closes: [1, 2, 3], times: [1, 2, 3], volumes: [1, 1, 1] });
     }),
     err() {}, quoteErrText: () => '', renderPeriod() {}, renderMaChips() {}, renderCrossBadge() {},
-    renderTrendBadges() {}, renderMaLegend() {}, drawChart: (d) => draws.push(d),
+    renderMaLegend() {}, drawChart: (d) => draws.push(d),
   });
   a.run(`state.watchlist = ${JSON.stringify([SAM])}; state.selected = '005930.KS'; state.timeframe = '1M';`);
   const loading = a.run('loadChart()');
@@ -4807,50 +4783,6 @@ await test('Esc closes the settings panel only — it does not also fold the wid
   docKey({ key: 'Escape', target: { tagName: 'BODY' }, preventDefault() {} });
   assert.equal(c.searchEl.hidden, true, '검색도 닫힌다');
   assert.deepEqual(folds, [true], '패널을 닫을 때는 접지 않는다');
-});
-
-// 수렴 배지는 실데이터에서 아직 뜬 적이 없다 — 깨져도 "안 뜨는 게 정상" 처럼 보인다.
-// 지지 100 + i · 저항 b − i 는 (b − 100) / 2 봉에서 만나고, 마지막 봉은 59 다.
-await test('trend badges: convergence counts up from the last bar, hides when past or too far, and gives way to a breakout', () => {
-  const { c, run, elements } = harness(['renderTrendBadges']);
-  run(formatting);
-  const toggled = [];
-  for (const id of ['breakout', 'converge']) {
-    c.document.getElementById(id).classList = { toggle: (k, on) => toggled.push([id, k, on]) };
-  }
-  const brk = elements.get('breakout');
-  const conv = elements.get('converge');
-  const ln = (varName, b, slope, broke = null) =>
-    ({ varName, slope, from: 0, data: Array.from({ length: 60 }, (_, i) => b + slope * i), broke });
-  const shown = (b) => {
-    c.renderTrendBadges([ln('--sup-line', 100, 1), ln('--res-line', b, -1)], 60, []);
-    return conv.hidden ? null : conv.textContent;
-  };
-  assert.equal(shown(222.6), '수렴 3거래일', '61.3봉 → 2.3봉 뒤 → 올림 3');
-  assert.equal(shown(242), '수렴 12거래일 · 약 2주', '71봉 → 12거래일 ≈ 16.8일');
-  assert.equal(shown(218), null, '마지막 봉(59)에서 이미 만났다');
-  assert.equal(shown(200), null, '벌어지는 중 — 교차점이 과거(50봉)');
-  assert.equal(shown(718), '수렴 250거래일 · 약 50주', '309봉 → 250거래일까지는 말한다');
-  assert.equal(shown(720), null, '251거래일 — 사실상 평행선');
-  assert.equal(brk.hidden, true);
-
-  // 돌파가 있으면 수렴(여기선 12거래일)은 숨고 돌파만 말한다. 57봉 = 09-07 09:00 KST, 지금 09-10
-  const times = [];
-  times[57] = Date.parse('2026-09-07T00:00:00Z');
-  c.renderTrendBadges([ln('--sup-line', 100, 1),
-    ln('--res-line', 242, -1, { at: 57, gap: 9, pct: 0.0523 })], 60, times);
-  assert.equal(conv.hidden, true);
-  assert.equal(brk.hidden, false);
-  assert.equal(brk.textContent, '저항 돌파 +5.23% · 3일 전');
-  assert.deepEqual(toggled.at(-1), ['breakout', 'sup', false]);
-  // 툴팁에 그 기간(3M · 1Y) 추세선의 과거 검증 — 매매 신호가 아니었다(2026-11-03)
-  run("state.timeframe = '1Y';");
-  c.renderTrendBadges([ln('--sup-line', 100, 1), ln('--res-line', 242, -1, { at: 57, gap: 9, pct: 0.0523 })], 60, times);
-  assert.equal(brk.title, `저항선 위로 뚫었다 — 지금 그 선에서 +5.23%\n\n${run("TREND_EVIDENCE['1Y']")}`);
-  run("state.timeframe = '3M';");
-  c.renderTrendBadges([ln('--sup-line', 100, 1, { at: 57, gap: -9, pct: 0.04 }), ln('--res-line', 242, -1)], 60, times);
-  assert.match(brk.title, /^지지선 아래로 뚫었다 — /);
-  assert.ok(brk.title.endsWith(run("TREND_EVIDENCE['3M']")));
 });
 
 // 골든 · 데드 크로스 배지 — 툴팁에 뜻과 그 쌍(5/20 · 20/60)의 과거 검증. 색은 방향일 뿐 매매 신호가 아니었다(2026-11-03).

@@ -233,8 +233,7 @@ function crossings(short, long) {
 // 덮어쓰므로(closes[closes.length - 1] = price) 그 봉의 이평선은 30초 폴링마다
 // 움직인다. 종가로 확정되기 전이라 장중에 생겼다 사라질 수 있고, 무효가 되면
 // 다음 날 다시 "오늘"로 뜬다 — 삼성전자 2026-09-22 장중 실측에서 5/20 골든이
-// 마지막 봉(당일)에 잡혔다. 추세선이 최근 봉을 빼고 선을 만드는 것
-// (TREND_LOOKBACK)과 같은 이유다.
+// 마지막 봉(당일)에 잡혔다.
 // 대가는 하루 늦음이다: 당일 교차는 다음 거래일에 "1일 전"으로 처음 뜬다.
 function confirmedCrosses(crosses, len) {
   return crosses.filter((c) => c.i < len - 1);
@@ -376,151 +375,6 @@ function lastYears(r, years) {
     closes: cut(r.closes), times: cut(r.times), opens: cut(r.opens),
     highs: cut(r.highs), lows: cut(r.lows), volumes: cut(r.volumes),
   };
-}
-
-// --- 추세선 ---------------------------------------------------------------------
-// 저점끼리 이으면 지지선, 고점끼리 이으면 저항선. 3M · 1Y 에서만 그린다 —
-// 1M(21봉)은 구간이 짧고, 1D/1W 는 분봉이라 "추세"라고 부를 구간이 아니다.
-const TREND_TF = new Set(['3M', '1Y']);
-
-// 이 정도는 걸쳐야 추세라고 부를 수 있다(봉 수).
-const TREND_MIN_SPAN = 20;
-// 선을 만들 때 빼두는 최근 봉 수. 이 봉들은 껍질에 넣지 않으므로 선을 뚫을 수 있다.
-// 마지막 봉까지 넣으면 껍질이 늘 그 봉을 감싸서 선이 정의상 절대 뚫리지 않는다 —
-// 돌파가 일어나도 선이 오늘 고가에 다시 맞춰질 뿐이라 돌파를 말할 수 없었다.
-const TREND_LOOKBACK = 5;
-// 선분 끝점이 피팅 창 끝에서 이보다 멀면 채택하지 않는다. 오래된 선분을 끝까지
-// 연장하는 것이 "껍질이 엉뚱한 데를 가리킨다"의 실제 원인이었다 — 상승 뒤 급락
-// 구간에서 최장 선분이 상승 구간이라 삼성전자 1Y 저항이 +75% 로 나왔다.
-const TREND_MAX_EXTEND = 10;
-// 이보다 적게 넘은 것은 돌파로 치지 않는다. 껍질은 원래 선에 닿으므로 스치는 일이
-// 흔하다 — 실측에서 Apple 3M 저가가 지지선을 0.035%(11센트) 스쳤다. 실제 돌파는
-// 2.6% · 4.2% · 8.5% 로 나와서 0.5~2% 어디를 잡아도 결과가 같다.
-const TREND_MIN_BREAK = 0.01;
-// 피팅 창 끝에서 선과 실제값이 이만큼 넘게 벌어지면 채택하지 않는다. 이격을 창
-// 끝에서 재는 것이 핵심이다 — 그 지점은 제외 구간 앞이라 돌파가 값에 영향을 주지
-// 않으므로, 거리 기준을 되살려도 돌파가 걸러지지 않는다. 실측에서 실제 8개 선은
-// |이격| ≤ 6.50% 이고 급락 시나리오는 36% · 71% 라 10~30% 어디를 잡아도 같다.
-const TREND_MAX_DRIFT = 0.20;
-
-// 볼록 껍질(Andrew monotone chain). 점은 x 오름차순으로 들어온다.
-// 피팅 창 안의 모든 봉을 넣는다. 스윙 피벗만 넣으면 피벗이 아닌 봉이 선 아래로
-// 삐져나온다 — 실제로 20봉 중 3봉이 최대 17,871원까지 뚫었다.
-// (창 밖의 최근 봉이 뚫는 것은 의도한 것이고, 그게 돌파다)
-function hull(pts, low) {
-  const out = [];
-  for (const p of pts) {
-    while (out.length >= 2) {
-      const a = out[out.length - 2]; const b = out[out.length - 1];
-      const cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-      if (low ? cross <= 0 : cross >= 0) out.pop();
-      else break;
-    }
-    out.push(p);
-  }
-  return out;
-}
-
-// 껍질에서 가장 긴 선분이 추세선이다. 마지막 선분을 쓰면 안 된다 —
-// 껍질은 기울기가 단조라 마지막이 언제나 가장 가파른 선분이고,
-// 그걸 앞으로 연장하면 현재가를 뚫고 올라간다(지지선이 주가 위로 갔다).
-//
-// 선은 그 선분의 시작점부터 마지막 봉까지만 채우고 앞쪽은 null 로 둔다.
-// 카테고리 축이라 봉이 없는 구간으로는 뻗을 수 없고, 뒤로 늘이면 y축만 넓어진다.
-function trendLine(values, len, low) {
-  const fitEnd = len - TREND_LOOKBACK; // 껍질에 넣는 봉은 [0, fitEnd) 뿐이다
-  const pts = [];
-  for (let i = 0; i < fitEnd; i++) if (values[i] != null) pts.push([i, values[i]]);
-  const h = hull(pts, low);
-
-  let best = null;
-  for (let k = 1; k < h.length; k++) {
-    const span = h[k][0] - h[k - 1][0];
-    if (!best || span > best.span) best = { span, a: h[k - 1], b: h[k] };
-  }
-  if (!best || best.span < TREND_MIN_SPAN) return null;
-
-  const [x1, y1] = best.a;
-  const [x2, y2] = best.b;
-  if (fitEnd - 1 - x2 > TREND_MAX_EXTEND) return null;
-
-  const slope = (y2 - y1) / (x2 - x1);
-  // 앞으로 연장한 선이 0 이하를 가리키면 그리지 않는다. 0 이하의 가격은 뜻이 없고,
-  // 정규 데이터셋이라 y축이 그 값까지 늘어나 눈금에 음수가 찍힌다 — 92% 급락 뒤
-  // 반등한 구간에서 지지선 오늘값이 -1,224 로 나왔다. 기울기가 단조라 그려지는
-  // 구간의 최솟값은 양 끝 중 하나다.
-  const last = y1 + slope * (len - 1 - x1);
-  if (Math.min(y1, last) <= 0) return null;
-
-  // 피팅 창의 마지막 실제 점에서 선이 얼마나 벌어졌는지 본다. 창 끝에서 재므로
-  // 제외 구간의 돌파는 이 값에 섞이지 않는다.
-  const [xEnd, vEnd] = pts[pts.length - 1];
-  if (!(vEnd > 0)) return null;
-  if (Math.abs((y1 + slope * (xEnd - x1) - vEnd) / vEnd) > TREND_MAX_DRIFT) return null;
-
-  const out = new Array(len).fill(null);
-  for (let i = x1; i < len; i++) out[i] = y1 + slope * (i - x1);
-  return { data: out, slope, from: x1, to: x2 };
-}
-
-// i 봉이 선에서 얼마나 벗어났는지. y <= 0 이면 나눌 때 부호가 뒤집혀 이탈이 아닌 봉을
-// 큰 이탈로 보고하므로 아예 뺀다(선 -488 / 저가 2,861 인데 "지지 이탈 +686%").
-function excessAt(line, extremes, i, low) {
-  const y = line.data[i];
-  const v = extremes[i];
-  if (y == null || v == null || y <= 0) return null;
-  const gap = low ? y - v : v - y;
-  return { gap, pct: gap / y };
-}
-
-// 뚫은 날 = 빼둔 구간에서 문턱을 처음 넘은 봉, 없으면 null. 이탈이 가장 큰 봉을 고르면
-// 안 된다 — 저항선은 내려가고 주가는 오르니 초과폭이 날마다 커져서 늘 최근 봉이 뽑힌다.
-// SK하이닉스 실측에서 09-07 에 뚫었는데 배지가 09-10 을 가리켰다.
-// 닿기만 한 봉은 돌파가 아니다 — 껍질은 원래 선에 닿는다.
-//
-// 마지막 봉은 판정에서 뺀다. 그 봉의 고가·저가는 장중에 실시간 값으로 계속
-// 덮이므로, 넣으면 배지가 장중에 떴다 사라지고 다음 날 또 뜬다(크로스 배지와
-// 같은 이유).
-function firstBreak(line, extremes, len, low) {
-  for (let i = len - TREND_LOOKBACK; i < len - 1; i++) {
-    const e = excessAt(line, extremes, i, low);
-    if (e && e.gap > 0 && e.pct >= TREND_MIN_BREAK) return i;
-  }
-  return null;
-}
-
-// 빼둔 최근 봉이 선을 넘었는가. 문턱(TREND_MIN_BREAK)을 처음 넘은 확정 봉(at)을 돌려주고,
-// 폭(gap · pct)은 마지막 봉에서 잰다 — 되밀렸으면 음수다.
-// 저항은 고가가 선 위로, 지지는 저가가 선 아래로 나간 것이 돌파다.
-// 껍질을 피팅 창 [0, len - TREND_LOOKBACK) 의 봉으로만 만들므로 그 봉들은 선을 넘지 않는다
-// — 제외 구간만 보면 된다. extremes 는 선을 만든 값 그대로다(저항은 고가, 지지는 저가).
-function breakoutOf(line, extremes, len, low) {
-  const at = firstBreak(line, extremes, len, low);
-  if (at == null) return null;
-
-  // 한 봉 전 계산에서 돌파로 잡은 봉 위로 선이 다시 그어졌으면 끈다. 뚫은 봉도 5봉이
-  // 지나면 피팅 창에 들어가 껍질이 그 봉을 지나도록 선을 다시 잡고, 오름세가 이어지면
-  // 다음 봉이 새 선을 또 넘는다 — 그대로 두면 배지가 몇 주씩 켜진 채 날짜가 늘
-  // "4봉 전"에 머문다. 오래된 돌파는 이미 새 추세의 일부라, 뚫은 뒤 4봉까지만 말한다.
-  // 한 봉 전 결과는 이 검사를 거치지 않은 값이다 — 끈 날에도 움직임이 이어지면 계속 끈다.
-  const prev = trendLine(extremes, len - 1, low);
-  const prevAt = prev && firstBreak(prev, extremes, len - 1, low);
-  if (prevAt != null && line.to >= prevAt) return null;
-
-  // 폭은 마지막 봉 기준. "지금 선에서 얼마나 떨어져 있나" 가 알고 싶은 값이고
-  // 뚫은 날의 폭은 이미 지난 숫자다. 되밀렸으면 음수로 나온다 — 사건이 아니라 현재 상태다.
-  const now = excessAt(line, extremes, len - 1, low) || excessAt(line, extremes, at, low);
-  return { at, gap: now.gap, pct: now.pct };
-}
-
-
-// 두 추세선이 만나는 봉 인덱스. 기울기가 같으면 평행이라 만나지 않는다.
-// 인덱스는 소수로 나오고, 마지막 봉보다 뒤여야(수렴 중이어야) 의미가 있다.
-function meetAt(a, b) {
-  if (a.slope === b.slope) return null;
-  const ay = a.data[a.from] - a.slope * a.from; // y절편
-  const by = b.data[b.from] - b.slope * b.from;
-  return (by - ay) / (a.slope - b.slope);
 }
 
 // --- 기법 점검(지표 화면) --------------------------------------------------------
@@ -711,8 +565,6 @@ if (typeof module !== 'undefined') {
     calcRSI, rsiSeries, rsiSignal, RSI_MIN_SPAN, rsiScale, stochSeries, weekCloses, sma, bollinger, vwap, parabolicSar, volumeProfile, returnSince, monthsBack, crossings, confirmedCrosses, midnightOf, daysAgo, candleOf, candleGeom,
     CANDLE_MAX_BARS, candleMode, candleWidth, candleBody,
     ZOOM_TF, ZOOM_MIN_BARS, ZOOM_MIN_PX, dragToRange, zoomRange, lastYears,
-    TREND_TF, TREND_MIN_SPAN, TREND_LOOKBACK, TREND_MAX_EXTEND, TREND_MIN_BREAK, TREND_MAX_DRIFT,
-    hull, trendLine, breakoutOf, meetAt,
     trendFollow, maTrend, momentum, dcaCost, reboundCheck, EGG_SURGE, EGG_HOT, EGG_PANIC, EGG_CONFIRM, EGG_ORDER, eggNext, eggSeries, eggPhase,
   };
 }

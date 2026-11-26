@@ -27,7 +27,7 @@ if (!path.resolve(CFG_PATH).startsWith(path.resolve(USER_DATA_DIR) + path.sep)) 
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// 빠른 것부터. 앱을 띄우지 않는 rsi · trend · dom-contract 가 먼저 돌아
+// 빠른 것부터. 앱을 띄우지 않는 rsi · dom-contract 가 먼저 돌아
 // 계산 회귀와 DOM 계약 위반을 즉시 잡는다.
 const ORDER = [
   'isolation.mjs',
@@ -37,7 +37,6 @@ const ORDER = [
   'techniques.mjs',
   'sources.mjs',
   'renderer-load.mjs',
-  'trend.mjs',
   'backtest.mjs',
   'cross.mjs',
   'candle.mjs',
